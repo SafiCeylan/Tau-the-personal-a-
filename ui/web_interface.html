@@ -1,0 +1,2232 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAU - Kişisel Asistan</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/all.min.css">
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+
+<body>
+
+    <div class="app-container">
+
+        <!-- Dinleme Overlay -->
+        <div class="listening-overlay" id="listeningOverlay">
+            <div class="listening-pulse">
+                <i class="fa-solid fa-microphone"></i>
+            </div>
+            <div class="listening-text">Seni Dinliyorum...</div>
+            <button class="action-button" onclick="cancelListening()"
+                style="margin-top: 20px; background: rgba(255, 255, 255, 0.1);">İptal</button>
+        </div>
+
+        <aside class="sidebar">
+            <div class="sidebar-header"
+                style="position: relative; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-brain"></i> TAU
+                <button class="icon-button" onclick="openHelpModal()" title="Kullanım Kılavuzu"
+                    style="position: absolute; right: 10px; width: 30px; height: 30px; font-size: 14px;">
+                    <i class="fa-solid fa-circle-question"></i>
+                </button>
+            </div>
+            <nav class="sidebar-menu">
+                <a href="#" class="menu-item active" data-tab="chat">
+                    <i class="fa-solid fa-comments"></i>
+                    <span>Sohbet</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="memory">
+                    <i class="fa-solid fa-star"></i>
+                    <span>Memory</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="reminders">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                    <span>Hatırlatmalar</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="analytics">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>İstatistikler</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="modules">
+                    <i class="fa-solid fa-puzzle-piece"></i>
+                    <span>Modüller</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="chat-area">
+
+            <header class="chat-header">
+                <div class="header-left">
+                    <h2 id="userName">Merhaba Safi</h2>
+                </div>
+
+                <!-- Ana Sayfa / Galaksi Seçici -->
+                <div class="header-center">
+                    <div class="view-selector">
+                        <button class="view-btn active" id="homeViewBtn" onclick="switchView('home')">
+                            <i class="fa-solid fa-house"></i>
+                            <span>Ana Sayfa</span>
+                        </button>
+                        <button class="view-btn" id="pomodoroViewBtn" onclick="switchView('pomodoro')">
+                            <i class="fa-solid fa-clock"></i>
+                            <span>Pomodoro</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="header-icons">
+                    <!-- Online/Offline Mod Toggle -->
+                    <div class="mode-toggle-container">
+                        <span class="mode-label" id="modeLabel">Offline</span>
+                        <label class="mode-switch">
+                            <input type="checkbox" id="modeToggle">
+                            <span class="mode-slider"></span>
+                        </label>
+                    </div>
+                    <i class="fa-solid fa-moon" id="themeToggle"></i>
+                    <i class="fa-solid fa-user" id="userSettings"></i>
+                </div>
+            </header>
+
+            <!-- Pomodoro View Container -->
+            <div id="pomodoroView" class="view-container pomodoro-view" style="display: none;">
+                <div class="pomodoro-content">
+
+                    <div class="timer-card">
+                        <div class="timer-header">
+                            <span class="status-badge" id="timerModeBadge">ODAKLANMA</span>
+                        </div>
+
+                        <div class="timer-circle-container">
+                            <svg class="timer-svg" width="300" height="300" viewBox="0 0 300 300">
+                                <circle class="timer-bg-ring" cx="150" cy="150" r="130"></circle>
+                                <circle class="timer-progress-ring" id="timerProgress" cx="150" cy="150" r="130">
+                                </circle>
+                            </svg>
+                            <div class="timer-text">
+                                <div class="time-display" id="timeDisplay">25:00</div>
+                                <div class="time-label" id="timeLabel">Çalışma Zamanı</div>
+                            </div>
+                        </div>
+
+                        <div class="timer-controls">
+                            <button class="control-btn main" id="startTimerBtn" onclick="toggleTimer()">
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                            <button class="control-btn secondary" onclick="resetTimer()">
+                                <i class="fa-solid fa-rotate-right"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-sliders"></i> Süre Ayarları</h3>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label>Çalışma Süresi</label>
+                                <span class="setting-desc">Odaklanma periyodu (dk)</span>
+                            </div>
+                            <div class="setting-control">
+                                <button class="adjust-btn" onclick="adjustTime('work', -1)">-</button>
+                                <input type="number" id="workDuration" value="25" min="1" max="60" readonly>
+                                <button class="adjust-btn" onclick="adjustTime('work', 1)">+</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label>Mola Süresi</label>
+                                <span class="setting-desc">Dinlenme periyodu (dk)</span>
+                            </div>
+                            <div class="setting-control">
+                                <button class="adjust-btn" onclick="adjustTime('break', -1)">-</button>
+                                <input type="number" id="breakDuration" value="5" min="1" max="30" readonly>
+                                <button class="adjust-btn" onclick="adjustTime('break', 1)">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <h3><i class="fa-solid fa-chart-simple"></i> Günlük Özet</h3>
+                        <div class="stats-grid">
+                            <div class="stat-box">
+                                <span class="stat-value" id="cycleCount">0</span>
+                                <span class="stat-label">Tamamlanan</span>
+                            </div>
+                            <div class="stat-box">
+                                <span class="stat-value" id="totalFocusTime">0</span>
+                                <span class="stat-label">Odak (dk)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Ana Sayfa View Container -->
+            <div id="homeView" class="view-container">
+                <!-- Mevcut chat içeriği buraya gelecek -->
+
+                <div class="message-list" id="messageList">
+
+                    <div class="message-group assistant">
+                        <div class="message-bubble">
+                            <p>Merhaba! Ben TAU, kişisel asistanınız. Size nasıl yardımcı olabilirim? 😊</p>
+                        </div>
+                        <span class="timestamp">14:30</span>
+                    </div>
+
+                </div>
+
+                <footer class="chat-input-area">
+                    <button class="icon-button" id="menuButton"><i class="fa-solid fa-list-ul"></i></button>
+                    <input type="text" id="messageInput" placeholder="Mesajınızı yazın...">
+                    <button class="icon-button" id="sendButton"><i class="fa-solid fa-paper-plane"></i></button>
+                    <button class="icon-button" id="historyButton"><i
+                            class="fa-solid fa-clock-rotate-left"></i></button>
+
+                    <!-- Mikrofon ve Özellik Butonları -->
+                    <div class="mic-features-container">
+                        <div class="mic-features" id="micFeatures">
+                            <button class="feature-button" title="Ses Kaydı" id="voiceRecord">
+                                <i class="fa-solid fa-microphone-lines"></i>
+                            </button>
+                            <button class="feature-button" title="Ses Notları" id="voiceNotes">
+                                <i class="fa-solid fa-note-sticky"></i>
+                            </button>
+                            <button class="feature-button" title="Ses Çeviri" id="voiceTranslate">
+                                <i class="fa-solid fa-language"></i>
+                            </button>
+                        </div>
+                        <button class="icon-button mic-button" id="micButton"><i
+                                class="fa-solid fa-microphone"></i></button>
+                    </div>
+
+                    <button class="icon-button" id="settingsButton"><i class="fa-solid fa-cog"></i></button>
+                </footer>
+            </div>
+            <!-- Ana Sayfa View Container Bitiş -->
+
+        </main>
+    </div>
+
+    <!-- Sidebar İçerikleri -->
+    <div id="memoryPanel" class="sidebar-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>🧠 Memory Yönetimi</h3>
+            <button class="close-panel" onclick="closePanel('memoryPanel')">×</button>
+        </div>
+        <div class="panel-content">
+            <!-- Yeni Kayıt Ekle Butonu -->
+            <div class="memory-header-actions">
+                <button class="btn-primary" id="addMemoryBtn" onclick="openAddMemoryModal()">
+                    <i class="fa-solid fa-plus"></i> Yeni Kayıt Ekle
+                </button>
+            </div>
+
+            <div class="memory-list" id="memoryList">
+                <!-- Memory öğeleri buraya gelecek -->
+                <div class="empty-state" id="memoryEmptyState">
+                    <i class="fa-solid fa-inbox"></i>
+                    <p>Henüz kayıt yok. Yeni kayıt eklemek için butona tıklayın.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Yeni Kayıt Ekleme Modal -->
+    <div id="addMemoryModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📝 Yeni Kayıt Ekle</h3>
+                <button class="close-modal" onclick="closeAddMemoryModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="addMemoryForm">
+                    <div class="form-group">
+                        <label for="memoryKey">Anahtar (Key):</label>
+                        <input type="text" id="memoryKey" name="key" placeholder="Örn: isim, yaş, şehir..." required>
+                    </div>
+                    <div class="form-group">
+                        <label for="memoryValue">Değer (Value):</label>
+                        <textarea id="memoryValue" name="value" rows="4" placeholder="Bilgiyi buraya yazın..."
+                            required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="memoryCategory">Kategori (Opsiyonel):</label>
+                        <input type="text" id="memoryCategory" name="category"
+                            placeholder="Örn: Kişisel, İş, Notlar...">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeAddMemoryModal()">İptal</button>
+                <button class="btn-primary" onclick="saveMemory()">
+                    <i class="fa-solid fa-save"></i> Kaydet
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="remindersPanel" class="sidebar-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>Hatırlatmalar</h3>
+            <button class="close-panel" onclick="closePanel('remindersPanel')">×</button>
+        </div>
+        <div class="panel-content">
+            <div class="reminder-list" id="reminderList">
+                <!-- Hatırlatmalar buraya gelecek -->
+            </div>
+            <div class="panel-actions">
+                <button class="action-button" onclick="addReminder()">Yeni Hatırlatma</button>
+                <button class="action-button" onclick="completeReminder()">Tamamla</button>
+                <button class="action-button delete" onclick="deleteReminder()">Sil</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="analyticsPanel" class="sidebar-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>İstatistikler</h3>
+            <button class="close-panel" onclick="closePanel('analyticsPanel')">×</button>
+        </div>
+        <div class="panel-content">
+            <div class="analytics-content" id="analyticsContent">
+                <!-- İstatistikler buraya gelecek -->
+            </div>
+        </div>
+    </div>
+
+    <div id="modulesPanel" class="sidebar-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>🔌 Modül Yönetimi</h3>
+            <button class="close-panel" onclick="closePanel('modulesPanel')">×</button>
+        </div>
+        <div class="panel-content">
+            <div class="modules-list" id="modulesList">
+                <!-- Modüller buraya gelecek -->
+            </div>
+            <div class="panel-actions">
+                <button class="action-button" onclick="addModule()">
+                    <i class="fa-solid fa-plus"></i> Yeni Modül Ekle
+                </button>
+                <button class="action-button" onclick="refreshModules()">
+                    <i class="fa-solid fa-rotate"></i> Yenile
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kullanım Kılavuzu Modal -->
+    <div id="helpModal" class="modal" style="display: none; z-index: 2000;">
+        <div class="modal-content" style="max-width: 600px; background-color: #1A1A2E; border: 1px solid #2A2A4E;">
+            <div class="modal-header" style="border-bottom: 1px solid #2A2A4E;">
+                <h3 style="color: #007BFF;">📖 Kullanım Kılavuzu</h3>
+                <button class="close-modal" onclick="closeHelpModal()" style="color: #9A9A9A;">×</button>
+            </div>
+            <div class="modal-body" style="color: #E0E0E0;">
+                <div class="help-section">
+                    <h4 style="color: #00C851; margin-bottom: 8px;">⏰ Hatırlatıcı & Alarm</h4>
+                    <ul style="list-style-type: none; padding-left: 10px;">
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"10 dakika sonra makarna pişti de"</code>
+                        </li>
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"Yarın 14:00'te toplantı var hatırlat"</code>
+                        </li>
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"Sabah 8'e alarm kur"</code>
+                        </li>
+                    </ul>
+                </div>
+                <div class="help-section" style="margin-top: 20px;">
+                    <h4 style="color: #FFBB33; margin-bottom: 8px;">🧠 Hafıza & Öğrenme</h4>
+                    <ul style="list-style-type: none; padding-left: 10px;">
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"Öğren: Kedimin adı Pamuk"</code>
+                        </li>
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"Kedimin adı ne?"</code>
+                        </li>
+                    </ul>
+                </div>
+                <div class="help-section" style="margin-top: 20px;">
+                    <h4 style="color: #FF4444; margin-bottom: 8px;">📊 Analiz & Rapor</h4>
+                    <ul style="list-style-type: none; padding-left: 10px;">
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"Haftalık analiz raporu"</code>
+                        </li>
+                        <li style="margin-bottom: 5px;"><i class="fa-solid fa-angle-right"
+                                style="color: #007BFF; margin-right: 5px;"></i> <code
+                                style="background: rgba(0, 123, 255, 0.1); padding: 2px 5px; border-radius: 4px;">"Dün ne yaptım?"</code>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top: 1px solid #2A2A4E;">
+                <button class="btn-primary" onclick="closeHelpModal()" style="width: 100%;">Anlaşıldı 👍</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global değişkenler
+        let currentView = 'home'; // 'home' veya 'galaxy'
+        let isOnlineMode = false;
+        let currentTab = 'chat';
+        let selectedMemory = null;
+        let selectedReminder = null;
+
+        // Help Modal Fonksiyonları
+        function openHelpModal() {
+            const modal = document.getElementById('helpModal');
+            modal.style.display = 'flex';
+            setTimeout(() => {
+                modal.classList.add('modal-open');
+            }, 10);
+        }
+
+        function closeHelpModal() {
+            const modal = document.getElementById('helpModal');
+            modal.classList.remove('modal-open');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 300);
+        }
+
+        // Modal dışına tıklayınca kapatma
+        window.onclick = function (event) {
+            const helpModal = document.getElementById('helpModal');
+            if (event.target == helpModal) {
+                closeHelpModal();
+            }
+        }
+
+        // Pomodoro State
+        let pomodoroState = {
+            isRunning: false,
+            timeLeft: 25 * 60,
+            mode: 'work', // 'work' or 'break'
+            workDuration: 25,
+            breakDuration: 5,
+            interval: null,
+            totalFocusTime: 0,
+            completedCycles: 0
+        };
+
+        const CIRCLE_Circumference = 2 * Math.PI * 130; // r=130
+
+        // Timer Fonksiyonları
+        function toggleTimer() {
+            const btn = document.getElementById('startTimerBtn');
+            const icon = btn.querySelector('i');
+
+            if (pomodoroState.isRunning) {
+                pauseTimer();
+                icon.className = 'fa-solid fa-play';
+            } else {
+                startTimer();
+                icon.className = 'fa-solid fa-pause';
+            }
+        }
+
+        function startTimer() {
+            if (pomodoroState.isRunning) return;
+
+            pomodoroState.isRunning = true;
+            pomodoroState.interval = setInterval(() => {
+                if (pomodoroState.timeLeft > 0) {
+                    pomodoroState.timeLeft--;
+                    updateTimerDisplay();
+                } else {
+                    completeCycle();
+                }
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            pomodoroState.isRunning = false;
+            clearInterval(pomodoroState.interval);
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            const btn = document.getElementById('startTimerBtn');
+            btn.querySelector('i').className = 'fa-solid fa-play';
+
+            // Ayarlara göre süreyi sıfırla
+            pomodoroState.timeLeft = (pomodoroState.mode === 'work' ?
+                pomodoroState.workDuration : pomodoroState.breakDuration) * 60;
+
+            updateTimerDisplay();
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(pomodoroState.timeLeft / 60);
+            const seconds = pomodoroState.timeLeft % 60;
+
+            // Metin güncelle
+            const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('timeDisplay').textContent = timeString;
+
+            // Progress Ring güncelle
+            const totalTime = (pomodoroState.mode === 'work' ?
+                pomodoroState.workDuration : pomodoroState.breakDuration) * 60;
+
+            const progress = pomodoroState.timeLeft / totalTime;
+            const offset = CIRCLE_Circumference - (progress * CIRCLE_Circumference);
+
+            const ring = document.getElementById('timerProgress');
+            if (ring) ring.style.strokeDashoffset = offset;
+        }
+
+        function adjustTime(type, amount) {
+            if (pomodoroState.isRunning) return;
+
+            if (type === 'work') {
+                const input = document.getElementById('workDuration');
+                let newValue = parseInt(input.value) + amount;
+                if (newValue >= 1 && newValue <= 60) {
+                    input.value = newValue;
+                    pomodoroState.workDuration = newValue;
+                    if (pomodoroState.mode === 'work') resetTimer();
+                }
+            } else {
+                const input = document.getElementById('breakDuration');
+                let newValue = parseInt(input.value) + amount;
+                if (newValue >= 1 && newValue <= 30) {
+                    input.value = newValue;
+                    pomodoroState.breakDuration = newValue;
+                    if (pomodoroState.mode === 'break') resetTimer();
+                }
+            }
+        }
+
+        function switchTimerMode(mode) {
+            pomodoroState.mode = mode;
+            const badge = document.getElementById('timerModeBadge');
+            const label = document.getElementById('timeLabel');
+            const ring = document.getElementById('timerProgress');
+
+            if (mode === 'break') {
+                badge.textContent = "MOLA ZAMANI";
+                badge.className = "status-badge break";
+                label.textContent = "Dinlenme Zamanı";
+                ring.style.stroke = "#00C851"; // Yeşil
+            } else {
+                badge.textContent = "ODAKLANMA";
+                badge.className = "status-badge";
+                label.textContent = "Çalışma Zamanı";
+                ring.style.stroke = "#007BFF"; // Mavi
+            }
+
+            resetTimer();
+        }
+
+        function completeCycle() {
+            pauseTimer();
+
+            // Basit bildirim sesi (tarayıcı desteği varsa)
+            try {
+                const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+                audio.play();
+            } catch (e) { }
+
+            pomodoroState.completedCycles++;
+
+            if (pomodoroState.mode === 'work') {
+                // Çalışma bitti -> Molaya geç
+                pomodoroState.totalFocusTime += pomodoroState.workDuration;
+
+                // İstatistikleri güncelle
+                document.getElementById('cycleCount').textContent = pomodoroState.completedCycles;
+                document.getElementById('totalFocusTime').textContent = pomodoroState.totalFocusTime;
+
+                if (confirm("Odaklanma bitti! Mola verilsin mi?")) {
+                    switchTimerMode('break');
+                    startTimer();
+                } else {
+                    switchTimerMode('break');
+                }
+            } else {
+                // Mola bitti -> Çalışmaya geç
+                if (confirm("Mola bitti! Çalışmaya dönülsün mü?")) {
+                    switchTimerMode('work');
+                    startTimer();
+                } else {
+                    switchTimerMode('work');
+                }
+            }
+        }
+
+        // TAU event listener'ları
+        function setupTauEventListeners() {
+            // Window resize için pozisyon güncelleme
+            window.addEventListener('resize', () => {
+                updateModulePositions();
+            });
+
+            // Mouse hareketi için paralaks - Şimdilik devre dışı (çakışma yaratıyordu)
+            /*
+            document.addEventListener('mousemove', (e) => {
+                if (window.innerWidth > 768) {
+                    tauSystemState.mousePos = {
+                        x: (e.clientX / window.innerWidth - 0.5) * 20,
+                        y: (e.clientY / window.innerHeight - 0.5) * 20
+                    };
+
+                    const scene = document.getElementById('tauScene');
+                    if (scene) {
+                        scene.style.transform = `translate(${tauSystemState.mousePos.x}px, ${tauSystemState.mousePos.y}px)`;
+                    }
+                }
+            });
+            */
+
+            // Modal kapatma
+            document.getElementById('modalClose').addEventListener('click', closeModuleModal);
+
+            // Modal overlay'e tıklayınca kapat
+            document.getElementById('tauModalOverlay').addEventListener('click', (e) => {
+                if (e.target.id === 'tauModalOverlay') {
+                    closeModuleModal();
+                }
+            });
+        }
+
+        // Modül modal'ı aç
+        function openModuleModal(module) {
+            tauSystemState.activeModule = module;
+
+            // Modal içeriğini güncelle
+            updateModalContent(module);
+
+            // Modal'ı göster
+            document.getElementById('tauModalOverlay').style.display = 'flex';
+            document.getElementById('tauModal').classList.add('modal-open');
+        }
+
+        // Modal içeriğini güncelle
+        function updateModalContent(module) {
+            // Sol panel
+            document.getElementById('modalIcon').innerHTML = ICONS[module.icon];
+            document.getElementById('modalTitle').textContent = module.name;
+            document.getElementById('modalDesc').textContent = module.desc;
+
+            // Sağ panel başlık
+            const headerText = module.type === 'interactive' ? 'SİNAPTİK BAĞLANTI' : 'SİSTEM GÜNLÜĞÜ';
+            document.getElementById('modalHeaderText').textContent = headerText;
+
+            // Modal gövdesi
+            const modalBody = document.getElementById('modalBody');
+
+            if (module.type === 'interactive') {
+                modalBody.innerHTML = `
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chatMessages">
+                            ${tauSystemState.chatHistory.map(msg => `
+                                <div class="chat-message ${msg.role === 'user' ? 'user' : 'ai'}">
+                                    ${msg.role === 'ai' ? '<div class="message-label">TAU</div>' : ''}
+                                    <div class="message-content">${msg.content}</div>
+                                </div>
+                            `).join('')}
+                            ${tauSystemState.isProcessing ? '<div class="typing-indicator">Yazıyor...</div>' : ''}
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chatInput" placeholder="Komut girin..." value="${tauSystemState.userInput}">
+                            <button id="sendButton" ${tauSystemState.isProcessing ? 'disabled' : ''}>
+                                ${ICONS.send}
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                // Event listener'lar
+                const chatInput = document.getElementById('chatInput');
+                const sendButton = document.getElementById('sendButton');
+
+                chatInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') sendMessage();
+                });
+
+                sendButton.addEventListener('click', sendMessage);
+
+            } else if (module.type === 'action') {
+                modalBody.innerHTML = `
+                    <div class="action-container">
+                        ${!tauSystemState.reportData ? `
+                            <div class="action-placeholder">
+                                <div class="action-icon">${ICONS.globe}</div>
+                                <p>Küresel tarama başlatmak için yetki bekleniyor.</p>
+                                <button class="action-button" id="generateReportBtn">
+                                    ${ICONS.sparkles}
+                                    <span>RAPOR OLUŞTUR</span>
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="report-content">
+                                <div class="report-header">
+                                    ${ICONS.lock}
+                                    <span>GİZLİ BELGE - TAU-88</span>
+                                </div>
+                                <div class="report-text">${tauSystemState.reportData}</div>
+                            </div>
+                        `}
+                    </div>
+                `;
+
+                if (!tauSystemState.reportData) {
+                    document.getElementById('generateReportBtn').addEventListener('click', generateReport);
+                }
+
+            } else if (module.type === 'static') {
+                modalBody.innerHTML = `
+                    <div class="static-container">
+                        <div class="static-indicator">
+                            <div class="indicator-bar">
+                                <div class="indicator-fill"></div>
+                            </div>
+                        </div>
+                        <p>Sistemler nominal değerlerde çalışıyor.</p>
+                        <div class="system-stats">
+                            CPU: %${(Math.random() * 20 + 10).toFixed(1)} / RAM: 12TB
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Mesaj gönder
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            tauSystemState.userInput = "";
+            input.value = "";
+
+            // Kullanıcı mesajını ekle
+            tauSystemState.chatHistory.push({ role: "user", content: message });
+            updateChatDisplay();
+
+            // AI yanıtı için işlem başlat
+            tauSystemState.isProcessing = true;
+            updateChatDisplay();
+
+            try {
+                const response = await callTauAPI(message);
+                tauSystemState.chatHistory.push({ role: "ai", content: response });
+            } catch (error) {
+                tauSystemState.chatHistory.push({ role: "ai", content: "Hata: Bağlantı kesildi." });
+            }
+
+            tauSystemState.isProcessing = false;
+            updateChatDisplay();
+        }
+
+        // Chat görünümünü güncelle
+        function updateChatDisplay() {
+            const chatMessages = document.getElementById('chatMessages');
+            if (!chatMessages) return;
+
+            chatMessages.innerHTML = tauSystemState.chatHistory.map(msg => `
+                <div class="chat-message ${msg.role === 'user' ? 'user' : 'ai'}">
+                    ${msg.role === 'ai' ? '<div class="message-label">TAU</div>' : ''}
+                    <div class="message-content">${msg.content}</div>
+                </div>
+            `).join('');
+
+            if (tauSystemState.isProcessing) {
+                chatMessages.innerHTML += '<div class="typing-indicator">Yazıyor...</div>';
+            }
+
+            // Scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Rapor oluştur
+        async function generateReport() {
+            tauSystemState.reportData = "";
+            updateModalContent(tauSystemState.activeModule);
+
+            try {
+                const prompt = "Dünya gezegeni için siberpunk/distopik tarzda, 3 maddelik çok kısa bir 'Gezegensel Durum Raporu' oluştur. Enerji, hava durumu ve veri trafiğinden bahset.";
+                tauSystemState.reportData = await callTauAPI(prompt);
+                updateModalContent(tauSystemState.activeModule);
+            } catch (error) {
+                tauSystemState.reportData = "Rapor oluşturulamadı.";
+                updateModalContent(tauSystemState.activeModule);
+            }
+        }
+
+        // TAU API çağrısı
+        async function callTauAPI(prompt) {
+            // Burada gerçek API çağrısı yapılacak
+            // Şimdilik demo yanıt
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            if (prompt.toLowerCase().includes('hava')) {
+                return "Hava durumu analizi: Güneş paneli etkinliği %87. Rüzgar hızı 12km/s. Yağış ihtimali düşük.";
+            } else if (prompt.toLowerCase().includes('enerji')) {
+                return "Enerji durumu: Soğuk füzyon reaktörü stabil. Çıkış gücü 2.4 TW. Yedek sistemler aktif.";
+            } else {
+                return "Operatör, komutunuz işleniyor. Sistem durumu nominal. Ek veri için spesifik sorgu yapınız.";
+            }
+        }
+
+        // Modal kapat
+        function closeModuleModal() {
+            document.getElementById('tauModalOverlay').style.display = 'none';
+            document.getElementById('tauModal').classList.remove('modal-open');
+            tauSystemState.activeModule = null;
+        }
+
+        // Sayfa yüklendiğinde çalışacak fonksiyonlar
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeApp();
+            setupEventListeners();
+            loadUserData();
+            initStarsBackground();
+        });
+
+        function initializeApp() {
+            // Mikrofon butonu toggle fonksiyonu
+            const micButton = document.getElementById('micButton');
+            const micFeatures = document.getElementById('micFeatures');
+            let isActive = false;
+
+            micButton.addEventListener('click', function (e) {
+                e.stopPropagation();
+                // Görsel feedback
+                if (isActive) {
+                    micFeatures.classList.remove('active');
+                    micButton.style.animation = 'pulse 2s infinite';
+                } else {
+                    micFeatures.classList.add('active');
+                    micButton.style.animation = 'none';
+                    micButton.style.backgroundColor = '#005BCC';
+                }
+                isActive = !isActive;
+
+                // Python tarafını tetikle
+                if (window.pyqtBridge && window.pyqtBridge.voiceCommand) {
+                    setListeningState(true);
+                    window.pyqtBridge.voiceCommand();
+                }
+            });
+
+
+
+            // Sayfa dışına tıklandığında özellikleri gizle
+            document.addEventListener('click', function (e) {
+                if (!micButton.contains(e.target) && !micFeatures.contains(e.target)) {
+                    micFeatures.classList.remove('active');
+                    micButton.style.animation = 'pulse 2s infinite';
+                    micButton.style.backgroundColor = '#007BFF';
+                    isActive = false;
+                }
+            });
+
+            // Özellik butonlarına tıklama olayları
+            const featureButtons = document.querySelectorAll('.feature-button');
+            featureButtons.forEach((button, index) => {
+                button.addEventListener('click', function () {
+                    const titles = ['Ses Kaydı', 'Ses Notları', 'Ses Çeviri'];
+                    console.log(`${titles[index]} özelliği aktifleştirildi!`);
+
+                    // Python'a ses komutu gönder
+                    if (window.pywebchannel) {
+                        window.pywebchannel.handleVoiceCommand(titles[index]);
+                    }
+
+                    button.style.transform = 'scale(0.9)';
+                    setTimeout(() => {
+                        button.style.transform = '';
+                    }, 150);
+                });
+            });
+        }
+
+        function setupEventListeners() {
+            // Mesaj gönderme
+            const sendButton = document.getElementById('sendButton');
+            const messageInput = document.getElementById('messageInput');
+
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+
+            // Mode toggle
+            const modeToggle = document.getElementById('modeToggle');
+            const modeLabel = document.getElementById('modeLabel');
+
+            modeToggle.addEventListener('change', function () {
+                // Online mode has been removed; always remain offline
+                this.checked = false;
+                isOnlineMode = false;
+                modeLabel.textContent = 'Offline';
+                modeLabel.className = 'mode-label offline';
+                addMessage('TAU', '🔌 Online mod kaldırıldı; uygulama sadece offline modda çalışır.');
+            });
+
+            // Sidebar menü öğeleri
+            const menuItems = document.querySelectorAll('.menu-item');
+            menuItems.forEach(item => {
+                item.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const tab = this.getAttribute('data-tab');
+                    switchTab(tab);
+                });
+            });
+
+            // Diğer butonlar
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+            document.getElementById('userSettings').addEventListener('click', openSettings);
+            document.getElementById('menuButton').addEventListener('click', toggleMenu);
+            document.getElementById('historyButton').addEventListener('click', showHistory);
+            document.getElementById('settingsButton').addEventListener('click', openSettings);
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+
+            if (!message) return;
+
+            // Kullanıcı mesajını göster
+            addMessage('user', message);
+            messageInput.value = '';
+
+            // Python'a mesaj gönder
+            console.log('Mesaj Python a gönderiliyor:', message, 'Online mod:', isOnlineMode);
+
+            // Önce QWebChannel bridge'i dene
+            if (window.pyqtBridge && window.pyqtBridge.sendMessage) {
+                try {
+                    // Mod bilgisini sadece değiştiyse ayarla (sessiz)
+                    if (window.pyqtBridge.setMode) {
+                        const mode = isOnlineMode ? 'gemini' : 'offline';
+                        window.pyqtBridge.setMode(mode); // Artık sessiz çalışıyor
+                    }
+                    window.pyqtBridge.sendMessage(message);
+                    return;
+                } catch (e) {
+                    console.error('QWebChannel hatası:', e);
+                }
+            }
+
+            // Fallback: window.external dene
+            if (window.external && window.external.sendMessage) {
+                try {
+                    window.external.sendMessage(message, isOnlineMode);
+                    return;
+                } catch (e) {
+                    console.error('window.external hatası:', e);
+                }
+            }
+
+            // Eğer hiçbir bağlantı yoksa demo mesaj göster
+            console.log('Python backend bağlantısı yok, demo mesaj gösteriliyor');
+            setTimeout(() => {
+                addMessage('assistant', 'Bu bir demo mesajdır. Python backend bağlantısı kurulduğunda gerçek cevaplar gelecek.');
+            }, 1000);
+        }
+
+        function addMessage(sender, message, originalQuestion = null) {
+            const messageList = document.getElementById('messageList');
+            if (!messageList) {
+                console.error('messageList bulunamadı!');
+                return;
+            }
+
+            const timestamp = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+
+            // Sender'ı normalize et (TAU -> assistant)
+            if (sender === 'TAU' || sender === 'assistant') {
+                sender = 'assistant';
+            }
+
+            const messageGroup = document.createElement('div');
+            messageGroup.className = `message-group ${sender}`;
+
+            const messageBubble = document.createElement('div');
+            messageBubble.className = 'message-bubble';
+
+            // Mesajı paragraf içine al
+            const messageParagraph = document.createElement('p');
+
+            // Güvenli HTML escape işlemi
+            let safeMessage = message
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+
+            // Emojileri FontAwesome ikonlarına dönüştür
+            safeMessage = safeMessage
+                .replace(/😊/g, '<i class="fa-solid fa-face-smile" style="color: #FFD43B;"></i>')
+                .replace(/😔/g, '<i class="fa-solid fa-face-sad-tear" style="color: #FFD43B;"></i>')
+                .replace(/😐/g, '<i class="fa-solid fa-face-meh" style="color: #FFD43B;"></i>')
+                .replace(/⚠️/g, '<i class="fa-solid fa-triangle-exclamation" style="color: #FFD43B;"></i>')
+                .replace(/🎉/g, '<i class="fa-solid fa-wand-magic-sparkles" style="color: #FFD43B;"></i>')
+                .replace(/⏰/g, '<i class="fa-solid fa-clock" style="color: #74C0FC;"></i>')
+                .replace(/💡/g, '<i class="fa-solid fa-lightbulb" style="color: #FFD43B;"></i>')
+                .replace(/✅/g, '<i class="fa-solid fa-circle-check" style="color: #63E6BE;"></i>')
+                .replace(/❌/g, '<i class="fa-solid fa-circle-xmark" style="color: #ff6b6b;"></i>')
+                .replace(/📅/g, '<i class="fa-solid fa-calendar-days" style="color: #74C0FC;"></i>')
+                .replace(/📊/g, '<i class="fa-solid fa-chart-pie" style="color: #B197FC;"></i>')
+                .replace(/\n/g, '<br>');
+
+            messageParagraph.innerHTML = safeMessage;
+            messageBubble.appendChild(messageParagraph);
+            messageGroup.appendChild(messageBubble);
+
+            // Feedback mekanizması (Sadece asistan cevapları için ve soru varsa)
+            // Feedback mekanizması (Sadece asistan cevapları için ve soru varsa)
+            if (sender === 'assistant' && originalQuestion) {
+                const feedbackContainer = document.createElement('div');
+                feedbackContainer.className = 'feedback-container';
+
+                const feedbackText = document.createElement('span');
+                feedbackText.className = 'feedback-text';
+                feedbackText.textContent = 'Cevabı beğendin mi?';
+
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'feedback-actions';
+
+                // Evet butonu
+                const btnYes = document.createElement('button');
+                btnYes.className = 'feedback-btn yes';
+                btnYes.innerHTML = '<i class="fa-solid fa-thumbs-up"></i> Evet';
+                // Click handler'ı doğrudan ata (güvenli)
+                btnYes.onclick = function () {
+                    learnAnswer(originalQuestion, message, btnYes);
+                };
+
+                // Hayır butonu
+                const btnNo = document.createElement('button');
+                btnNo.className = 'feedback-btn no';
+                btnNo.innerHTML = '<i class="fa-solid fa-thumbs-down"></i> Hayır';
+                btnNo.onclick = function () {
+                    feedbackContainer.remove();
+                };
+
+                actionsDiv.appendChild(btnYes);
+                actionsDiv.appendChild(btnNo);
+
+                feedbackContainer.appendChild(feedbackText);
+                feedbackContainer.appendChild(actionsDiv);
+
+                messageGroup.appendChild(feedbackContainer);
+            }
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'timestamp';
+            timeSpan.textContent = timestamp;
+            messageGroup.appendChild(timeSpan);
+
+            messageList.appendChild(messageGroup);
+            messageList.scrollTop = messageList.scrollHeight; // Otomatik scroll
+        }
+
+        // Cevabı öğrenme fonksiyonu
+        function learnAnswer(question, answer, btn) {
+            if (window.pyqtBridge && window.pyqtBridge.learnQA) {
+                window.pyqtBridge.learnQA(question, answer);
+
+                // UI Güncelleme
+                const container = btn.parentElement.parentElement;
+                container.innerHTML = '<span class="feedback-success"><i class="fa-solid fa-check"></i> Öğrenildi!</span>';
+                setTimeout(() => container.remove(), 2000);
+            } else {
+                console.error("Backend bağlantısı yok (learnQA)");
+            }
+        }
+
+
+        function switchTab(tab) {
+            // Menü öğelerini güncelle
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+
+            currentTab = tab;
+
+            // Panel göster/gizle
+            const panels = ['memoryPanel', 'remindersPanel', 'analyticsPanel', 'modulesPanel'];
+            panels.forEach(panelId => {
+                const panel = document.getElementById(panelId);
+                if (panelId === tab + 'Panel') {
+                    panel.style.display = 'block';
+                    loadPanelData(tab);
+                } else {
+                    panel.style.display = 'none';
+                }
+            });
+        }
+
+        function loadPanelData(tab) {
+            switch (tab) {
+                case 'memory':
+                    loadMemories();
+                    break;
+                case 'reminders':
+                    loadReminders();
+                    break;
+                case 'analytics':
+                    loadAnalytics();
+                    break;
+                case 'modules':
+                    loadModules();
+                    break;
+            }
+        }
+
+        function loadMemories() {
+            if (window.pywebchannel) {
+                window.pywebchannel.getMemories();
+            }
+        }
+
+        function loadReminders() {
+            if (window.pywebchannel) {
+                window.pywebchannel.getReminders();
+            }
+        }
+
+        function loadAnalytics() {
+            if (window.pywebchannel) {
+                window.pywebchannel.getAnalytics();
+            }
+        }
+
+        function loadModules() {
+            if (window.pyqtBridge && window.pyqtBridge.getModules) {
+                window.pyqtBridge.getModules();
+            } else {
+                // Demo modüller göster
+                updateModules([
+                    { id: 1, name: 'Hava Durumu', description: 'Hava durumu bilgisi verir', enabled: true },
+                    { id: 2, name: 'Çeviri', description: 'Metin çevirisi yapar', enabled: false },
+                    { id: 3, name: 'Hesap Makinesi', description: 'Matematiksel işlemler yapar', enabled: true }
+                ]);
+            }
+        }
+
+        function updateModules(modules) {
+            const modulesList = document.getElementById('modulesList');
+            modulesList.innerHTML = '';
+
+            if (modules.length === 0) {
+                modulesList.innerHTML = '<div class="empty-state">Henüz modül eklenmemiş.</div>';
+                return;
+            }
+
+            modules.forEach((module, index) => {
+                const moduleItem = document.createElement('div');
+                moduleItem.className = `module-item ${module.enabled ? 'enabled' : 'disabled'}`;
+
+                // Başlangıçta görünmez yap
+                moduleItem.style.opacity = '0';
+                moduleItem.style.transform = 'translateY(20px)';
+
+                moduleItem.innerHTML = `
+                    <div class="module-header">
+                        <h4>${module.name}</h4>
+                        <label class="module-toggle">
+                            <input type="checkbox" ${module.enabled ? 'checked' : ''} 
+                                   onchange="toggleModule(${module.id}, this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p class="module-description">${module.description || 'Açıklama yok'}</p>
+                    <div class="module-actions">
+                        <button class="module-btn edit" onclick="editModule(${module.id})">
+                            <i class="fa-solid fa-edit"></i> Düzenle
+                        </button>
+                        <button class="module-btn delete" onclick="deleteModule(${module.id})">
+                            <i class="fa-solid fa-trash"></i> Sil
+                        </button>
+                    </div>
+                `;
+                modulesList.appendChild(moduleItem);
+
+                // Sıralı animasyon ekle
+                setTimeout(() => {
+                    moduleItem.style.transition = 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                    moduleItem.style.opacity = '1';
+                    moduleItem.style.transform = 'translateY(0)';
+                }, index * 100 + 100);
+            });
+        }
+
+        function addModule() {
+            const name = prompt('Modül Adı:');
+            if (!name) return;
+
+            const description = prompt('Modül Açıklaması:');
+
+            if (window.pyqtBridge && window.pyqtBridge.addModule) {
+                window.pyqtBridge.addModule(name, description || '');
+            } else {
+                alert('Modül ekleme özelliği henüz aktif değil.');
+            }
+        }
+
+        function editModule(moduleId) {
+            if (window.pyqtBridge && window.pyqtBridge.editModule) {
+                window.pyqtBridge.editModule(moduleId);
+            } else {
+                alert('Modül düzenleme özelliği henüz aktif değil.');
+            }
+        }
+
+        function deleteModule(moduleId) {
+            if (confirm('Bu modülü silmek istediğinizden emin misiniz?')) {
+                if (window.pyqtBridge && window.pyqtBridge.deleteModule) {
+                    window.pyqtBridge.deleteModule(moduleId);
+                } else {
+                    alert('Modül silme özelliği henüz aktif değil.');
+                }
+            }
+        }
+
+        function toggleModule(moduleId, enabled) {
+            if (window.pyqtBridge && window.pyqtBridge.toggleModule) {
+                window.pyqtBridge.toggleModule(moduleId, enabled);
+            } else {
+                console.log(`Modül ${moduleId} ${enabled ? 'aktif' : 'pasif'} yapıldı`);
+            }
+        }
+
+        function refreshModules() {
+            loadModules();
+        }
+
+        function switchView(view) {
+            currentView = view;
+
+            // Butonları güncelle
+            const homeBtn = document.getElementById('homeViewBtn');
+            const pomodoroBtn = document.getElementById('pomodoroViewBtn');
+
+            const homeView = document.getElementById('homeView');
+            const pomodoroView = document.getElementById('pomodoroView');
+
+            if (view === 'home') {
+                homeBtn.classList.add('active');
+                pomodoroBtn.classList.remove('active');
+                homeView.style.display = 'block';
+                pomodoroView.style.display = 'none';
+            } else if (view === 'pomodoro') {
+                homeBtn.classList.remove('active');
+                pomodoroBtn.classList.add('active');
+                homeView.style.display = 'none';
+                pomodoroView.style.display = 'flex';
+
+                // İlk açılışta timer'ı resetle
+                if (!pomodoroState.interval && !pomodoroState.isRunning) {
+                    resetTimer();
+                }
+            }
+        }
+
+        // Yörünge çizgilerini oluştur
+        function initOrbits() {
+            const svg = document.getElementById('orbitLines');
+            if (!svg) return;
+
+            const container = document.getElementById('galaxyView');
+            if (!container) return;
+
+            svg.setAttribute('width', container.offsetWidth);
+            svg.setAttribute('height', container.offsetHeight);
+
+            const centerX = container.offsetWidth / 2;
+            const centerY = container.offsetHeight / 2;
+
+            // Farklı yörünge yarıçapları
+            const orbits = [
+                { radius: 180, opacity: 0.3, glowIntensity: 0.4 },
+                { radius: 250, opacity: 0.25, glowIntensity: 0.3 },
+                { radius: 320, opacity: 0.2, glowIntensity: 0.25 },
+                { radius: 390, opacity: 0.15, glowIntensity: 0.2 },
+                { radius: 460, opacity: 0.1, glowIntensity: 0.15 }
+            ];
+
+            svg.innerHTML = '';
+
+            // Ana yörünge çizgileri
+            orbits.forEach((orbit, index) => {
+                // Glow efekti için çoklu çizgiler
+                for (let i = 3; i >= 0; i--) {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', centerX);
+                    circle.setAttribute('cy', centerY);
+                    circle.setAttribute('r', orbit.radius);
+
+                    if (i === 0) {
+                        // Ana çizgi
+                        circle.setAttribute('fill', 'none');
+                        circle.setAttribute('stroke', 'rgba(0, 123, 255, ' + orbit.opacity + ')');
+                        circle.setAttribute('stroke-width', '2');
+                        circle.setAttribute('stroke-dasharray', '8,8');
+                        circle.classList.add('orbit-main');
+                        circle.dataset.orbitIndex = index;
+                    } else {
+                        // Glow çizgileri
+                        const glowOpacity = orbit.opacity * orbit.glowIntensity * (0.8 / i);
+                        circle.setAttribute('fill', 'none');
+                        circle.setAttribute('stroke', 'rgba(0, 212, 255, ' + glowOpacity + ')');
+                        circle.setAttribute('stroke-width', (i * 2) + 'px');
+                        circle.setAttribute('stroke-linecap', 'round');
+                        circle.classList.add('orbit-glow');
+                        circle.style.filter = 'blur(' + (i * 2) + 'px)';
+                    }
+
+                    svg.appendChild(circle);
+                }
+            });
+
+            // Bağlantı çizgileri için grup
+            const connectionsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            connectionsGroup.id = 'orbitConnections';
+            svg.appendChild(connectionsGroup);
+        }
+
+        // Yörünge çizgisini parlat
+        function highlightOrbit(radius, active = true) {
+            const orbits = document.querySelectorAll('.orbit-main');
+            orbits.forEach(orbit => {
+                const orbitRadius = parseFloat(orbit.getAttribute('r'));
+                if (Math.abs(orbitRadius - radius) < 10) {
+                    if (active) {
+                        orbit.style.stroke = 'rgba(0, 212, 255, 0.8)';
+                        orbit.style.strokeDasharray = '15,5';
+                        orbit.style.animation = 'orbitPulse 1s ease-in-out infinite';
+                    } else {
+                        orbit.style.stroke = 'rgba(0, 123, 255, 0.3)';
+                        orbit.style.strokeDasharray = '8,8';
+                        orbit.style.animation = 'none';
+                    }
+                }
+            });
+        }
+
+        // Bağlantı çizgilerini güncelle
+        function updateConnectionLines() {
+            const connectionsGroup = document.getElementById('orbitConnections');
+            if (!connectionsGroup) return;
+
+            const galaxyView = document.getElementById('galaxyView');
+            if (!galaxyView) return;
+
+            const centerX = galaxyView.offsetWidth / 2;
+            const centerY = galaxyView.offsetHeight / 2;
+
+            // Yörüngedeki modülleri bul
+            const planets = document.querySelectorAll('.module-planet.in-orbit');
+            if (planets.length < 2) {
+                connectionsGroup.innerHTML = '';
+                return;
+            }
+
+            connectionsGroup.innerHTML = '';
+
+            // Her yörünge için bağlantı çizgileri
+            const orbits = {};
+            planets.forEach(planet => {
+                const orbitRadius = parseFloat(planet.dataset.orbitRadius);
+                if (!orbits[orbitRadius]) orbits[orbitRadius] = [];
+                orbits[orbitRadius].push(planet);
+            });
+
+            // Aynı yörüngedeki modüller arasında bağlantı
+            Object.keys(orbits).forEach(radius => {
+                const orbitPlanets = orbits[radius];
+                if (orbitPlanets.length > 1) {
+                    for (let i = 0; i < orbitPlanets.length; i++) {
+                        for (let j = i + 1; j < orbitPlanets.length; j++) {
+                            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            const planet1 = orbitPlanets[i];
+                            const planet2 = orbitPlanets[j];
+
+                            const x1 = parseFloat(planet1.style.left) + planet1.offsetWidth / 2;
+                            const y1 = parseFloat(planet1.style.top) + planet1.offsetHeight / 2;
+                            const x2 = parseFloat(planet2.style.left) + planet2.offsetWidth / 2;
+                            const y2 = parseFloat(planet2.style.top) + planet2.offsetHeight / 2;
+
+                            line.setAttribute('x1', x1);
+                            line.setAttribute('y1', y1);
+                            line.setAttribute('x2', x2);
+                            line.setAttribute('y2', y2);
+                            line.setAttribute('stroke', 'rgba(0, 212, 255, 0.4)');
+                            line.setAttribute('stroke-width', '1');
+                            line.setAttribute('stroke-dasharray', '3,3');
+                            line.classList.add('connection-line');
+
+                            connectionsGroup.appendChild(line);
+                        }
+                    }
+                }
+            });
+        }
+
+        // Demo modülleri oluştur (farklı gezegen tasarımları)
+        function initDemoModules() {
+            const container = document.getElementById('modulesOrbitContainer');
+            if (!container) return;
+
+            const galaxyView = document.getElementById('galaxyView');
+            if (!galaxyView) return;
+
+            container.innerHTML = '';
+
+            // Farklı modül tasarımları - başlangıçta yörüngede değil, serbest
+            const demoModules = [
+                {
+                    id: 1,
+                    name: 'Hava Durumu',
+                    size: 50,
+                    color: '#4A90E2',
+                    type: 'ice',
+                    orbitSpeed: 60
+                },
+                {
+                    id: 2,
+                    name: 'Çeviri',
+                    size: 45,
+                    color: '#50C878',
+                    type: 'earth',
+                    orbitSpeed: 80
+                },
+                {
+                    id: 3,
+                    name: 'Hesap Makinesi',
+                    size: 55,
+                    color: '#FF6B6B',
+                    type: 'fire',
+                    orbitSpeed: 100
+                },
+                {
+                    id: 4,
+                    name: 'Notlar',
+                    size: 40,
+                    color: '#9B59B6',
+                    type: 'gas',
+                    orbitSpeed: 70
+                },
+                {
+                    id: 5,
+                    name: 'Takvim',
+                    size: 48,
+                    color: '#F39C12',
+                    type: 'rocky',
+                    orbitSpeed: 120
+                },
+                {
+                    id: 6,
+                    name: 'Ses Kayıt',
+                    size: 42,
+                    color: '#1ABC9C',
+                    type: 'ocean',
+                    orbitSpeed: 85
+                }
+            ];
+
+            // Rastgele başlangıç pozisyonları
+            const centerX = galaxyView.offsetWidth / 2;
+            const centerY = galaxyView.offsetHeight / 2;
+
+            demoModules.forEach((module, index) => {
+                // Rastgele pozisyon (TAU'dan uzakta)
+                const angle = (360 / demoModules.length) * index + Math.random() * 30;
+                const distance = 300 + Math.random() * 200;
+                const radian = (angle * Math.PI) / 180;
+                const x = centerX + distance * Math.cos(radian);
+                const y = centerY + distance * Math.sin(radian);
+
+                module.x = x;
+                module.y = y;
+                module.vx = (Math.random() - 0.5) * 0.5; // Rastgele hız
+                module.vy = (Math.random() - 0.5) * 0.5;
+                module.inOrbit = false;
+                module.orbitRadius = null;
+                module.orbitAngle = null;
+
+                const moduleElement = createModulePlanet(module);
+                container.appendChild(moduleElement);
+            });
+
+            // Animasyonu başlat
+            animateModules();
+        }
+
+        // Modül gezegeni oluştur
+        function createModulePlanet(module) {
+            const planet = document.createElement('div');
+            planet.className = `module-planet planet-${module.type}`;
+            planet.dataset.moduleId = module.id;
+            planet.dataset.inOrbit = 'false';
+            planet.style.width = module.size + 'px';
+            planet.style.height = module.size + 'px';
+            planet.style.left = (module.x - module.size / 2) + 'px';
+            planet.style.top = (module.y - module.size / 2) + 'px';
+
+            // Verileri sakla
+            planet.moduleData = module;
+
+            // Gezegen içeriği
+            const planetCore = document.createElement('div');
+            planetCore.className = 'planet-core';
+            planetCore.style.backgroundColor = module.color;
+
+            const planetName = document.createElement('div');
+            planetName.className = 'planet-name';
+            planetName.textContent = module.name;
+
+            planet.appendChild(planetCore);
+            planet.appendChild(planetName);
+
+            // Drag & Drop özelliği
+            setupDragAndDrop(planet);
+
+            return planet;
+        }
+
+        // Dinleme durumu kontrolü
+        function setListeningState(active) {
+            const overlay = document.getElementById('listeningOverlay');
+            if (overlay) {
+                if (active) overlay.classList.add('active');
+                else overlay.classList.remove('active');
+            }
+        }
+
+        function cancelListening() {
+            setListeningState(false);
+        }
+
+        // Drag & Drop özelliği - Akıcı sürükleme
+        function setupDragAndDrop(planet) {
+            let isDragging = false;
+            let dragOffset = { x: 0, y: 0 };
+            let currentPos = { x: 0, y: 0 };
+            let targetPos = { x: 0, y: 0 };
+            let animationId = null;
+            let lastTime = 0;
+            let lastOrbitCheck = 0;
+
+            // İnterpolasyon için easing fonksiyonu
+            function easeOutCubic(t) {
+                return 1 - Math.pow(1 - t, 3);
+            }
+
+            // Akıcı animasyon fonksiyonu
+            function animateDrag(currentTime) {
+                if (!isDragging) {
+                    animationId = null;
+                    return;
+                }
+
+                const deltaTime = currentTime - lastTime;
+                lastTime = currentTime;
+
+                // Daha akıcı interpolasyon - cubic easing
+                const lerpFactor = Math.min(deltaTime * 0.03, 0.9);
+                currentPos.x += (targetPos.x - currentPos.x) * lerpFactor;
+                currentPos.y += (targetPos.y - currentPos.y) * lerpFactor;
+
+                // Pozisyon güncelle
+                planet.style.left = currentPos.x + 'px';
+                planet.style.top = currentPos.y + 'px';
+
+                // Yörünge kontrolü - performans için throttling
+                if (currentTime - lastOrbitCheck > 50) { // 50ms'de bir
+                    checkOrbitSnap(planet, currentPos.x, currentPos.y);
+                    lastOrbitCheck = currentTime;
+                }
+
+                animationId = requestAnimationFrame(animateDrag);
+            }
+
+            // Mouse/Touch down
+            function startDrag(e) {
+                isDragging = true;
+                planet.classList.add('dragging');
+                planet.style.cursor = 'grabbing';
+                planet.style.zIndex = '100';
+
+                const rect = planet.getBoundingClientRect();
+                dragOffset.x = e.clientX - rect.left - rect.width / 2;
+                dragOffset.y = e.clientY - rect.top - rect.height / 2;
+
+                // Mevcut pozisyonu al
+                currentPos.x = targetPos.x = parseFloat(planet.style.left) || 0;
+                currentPos.y = targetPos.y = parseFloat(planet.style.top) || 0;
+
+                e.preventDefault();
+
+                // Animasyonu başlat
+                if (!animationId) {
+                    lastTime = performance.now();
+                    animateDrag(lastTime);
+                }
+            }
+
+            // Mouse/Touch move - throttling ile performans iyileştirmesi
+            let lastMoveTime = 0;
+            function moveDrag(e) {
+                if (!isDragging) return;
+
+                const now = performance.now();
+                if (now - lastMoveTime < 16) return; // 60fps limit
+                lastMoveTime = now;
+
+                const galaxyView = document.getElementById('galaxyView');
+                const rect = galaxyView.getBoundingClientRect();
+
+                let x = e.clientX - rect.left - dragOffset.x;
+                let y = e.clientY - rect.top - dragOffset.y;
+
+                // Sınırları kontrol et
+                const margin = 10;
+                x = Math.max(margin, Math.min(galaxyView.offsetWidth - planet.offsetWidth - margin, x));
+                y = Math.max(margin, Math.min(galaxyView.offsetHeight - planet.offsetHeight - margin, y));
+
+                // Hedef pozisyonu güncelle
+                targetPos.x = x;
+                targetPos.y = y;
+            }
+
+            // Mouse/Touch up
+            function endDrag() {
+                if (!isDragging) return;
+
+                isDragging = false;
+                planet.classList.remove('dragging');
+                planet.style.cursor = 'grab';
+
+                // Animasyonu durdur
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+
+                // Yörüngeye oturttuysa
+                if (planet.dataset.inOrbit === 'true') {
+                    snapToOrbit(planet);
+                } else {
+                    // Z-index'i eski haline getir
+                    setTimeout(() => {
+                        planet.style.zIndex = '6';
+                    }, 300);
+                }
+            }
+
+            // Event listeners
+            planet.addEventListener('mousedown', startDrag);
+            planet.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startDrag(e.touches[0]);
+            });
+
+            document.addEventListener('mousemove', moveDrag);
+            document.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                moveDrag(e.touches[0]);
+            });
+
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('touchend', endDrag);
+
+            // Mouse leave - sürükleme sırasında mouse çıkarsa
+            document.addEventListener('mouseleave', endDrag);
+        }
+
+        // Yörünge yakınlık kontrolü
+        function checkOrbitSnap(planet, x, y) {
+            const galaxyView = document.getElementById('galaxyView');
+            const centerX = galaxyView.offsetWidth / 2;
+            const centerY = galaxyView.offsetHeight / 2;
+
+            const planetCenterX = x + planet.offsetWidth / 2;
+            const planetCenterY = y + planet.offsetHeight / 2;
+
+            const distance = Math.sqrt(
+                Math.pow(planetCenterX - centerX, 2) +
+                Math.pow(planetCenterY - centerY, 2)
+            );
+
+            // Yörünge yarıçapları
+            const orbits = [180, 250, 320, 390, 460];
+            const snapThreshold = 30; // Yörüngeye yakınlık eşiği
+
+            let snapped = false;
+            orbits.forEach(orbitRadius => {
+                if (Math.abs(distance - orbitRadius) < snapThreshold) {
+                    planet.dataset.inOrbit = 'true';
+                    planet.dataset.orbitRadius = orbitRadius;
+                    planet.classList.add('snapping');
+                    snapped = true;
+                }
+            });
+
+            if (!snapped && planet.dataset.inOrbit === 'true') {
+                planet.dataset.inOrbit = 'false';
+                planet.dataset.orbitRadius = null;
+                planet.classList.remove('snapping');
+            }
+        }
+
+        // Yörüngeye oturt
+        function snapToOrbit(planet) {
+            const module = planet.moduleData;
+            const galaxyView = document.getElementById('galaxyView');
+            const centerX = galaxyView.offsetWidth / 2;
+            const centerY = galaxyView.offsetHeight / 2;
+
+            const orbitRadius = parseFloat(planet.dataset.orbitRadius);
+
+            // Açıyı hesapla
+            const planetCenterX = parseFloat(planet.style.left) + planet.offsetWidth / 2;
+            const planetCenterY = parseFloat(planet.style.top) + planet.offsetHeight / 2;
+            const angle = Math.atan2(planetCenterY - centerY, planetCenterX - centerX) * 180 / Math.PI;
+
+            module.inOrbit = true;
+            module.orbitRadius = orbitRadius;
+            module.orbitAngle = angle;
+            module.orbitSpeed = parseFloat(module.orbitSpeed);
+
+            planet.dataset.orbitRadius = orbitRadius;
+            planet.dataset.orbitAngle = angle;
+            planet.dataset.orbitSpeed = module.orbitSpeed;
+            planet.classList.remove('snapping');
+            planet.classList.add('in-orbit');
+
+            // Bağlanma efekti
+            createSnapEffect(planetCenterX, planetCenterY, orbitRadius);
+
+            // Bağlantı çizgilerini güncelle
+            setTimeout(updateConnectionLines, 500);
+
+            // Yörünge parlamasını kapat
+            highlightOrbit(orbitRadius, false);
+        }
+
+        // Bağlanma efekti oluştur
+        function createSnapEffect(x, y, orbitRadius) {
+            const container = document.getElementById('modulesOrbitContainer');
+            if (!container) return;
+
+            // Küçük patlama efekti
+            for (let i = 0; i < 8; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'snap-particle';
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+
+                const angle = (i / 8) * Math.PI * 2;
+                const distance = 20 + Math.random() * 30;
+
+                particle.style.setProperty('--dx', Math.cos(angle) * distance + 'px');
+                particle.style.setProperty('--dy', Math.sin(angle) * distance + 'px');
+
+                container.appendChild(particle);
+
+                // 1 saniye sonra kaldır
+                setTimeout(() => {
+                    if (particle.parentNode) {
+                        particle.parentNode.removeChild(particle);
+                    }
+                }, 1000);
+            }
+        }
+
+        // Modülleri animasyonla hareket ettir
+        function animateModules() {
+            const container = document.getElementById('modulesOrbitContainer');
+            if (!container) return;
+
+            const planets = container.querySelectorAll('.module-planet');
+            const galaxyView = document.getElementById('galaxyView');
+            if (!galaxyView) return;
+
+            const centerX = galaxyView.offsetWidth / 2;
+            const centerY = galaxyView.offsetHeight / 2;
+            const maxSpeed = 0.8; // Maksimum hız
+            const friction = 0.98; // Sürtünme
+            const boundaryMargin = 20; // Kenar boşluğu
+
+            function animate() {
+                planets.forEach(planet => {
+                    const module = planet.moduleData;
+
+                    if (module.inOrbit) {
+                        // Yörüngede dön
+                        let angle = parseFloat(planet.dataset.orbitAngle);
+                        const orbitRadius = parseFloat(planet.dataset.orbitRadius);
+                        const orbitSpeed = parseFloat(planet.dataset.orbitSpeed);
+
+                        angle += (360 / orbitSpeed) * 0.016;
+                        if (angle >= 360) angle -= 360;
+                        planet.dataset.orbitAngle = angle;
+
+                        const radian = (angle * Math.PI) / 180;
+                        const x = centerX + orbitRadius * Math.cos(radian);
+                        const y = centerY + orbitRadius * Math.sin(radian);
+
+                        planet.style.left = (x - planet.offsetWidth / 2) + 'px';
+                        planet.style.top = (y - planet.offsetHeight / 2) + 'px';
+                    } else {
+                        // Serbest dolaşım - smooth drift hareketi
+                        let x = parseFloat(planet.style.left) || module.x;
+                        let y = parseFloat(planet.style.top) || module.y;
+
+                        // İlk hız yoksa rastgele ver
+                        if (module.vx === undefined) {
+                            module.vx = (Math.random() - 0.5) * 0.3;
+                            module.vy = (Math.random() - 0.5) * 0.3;
+                        }
+
+                        // Yavaş rastgele hız değişimi (daha smooth)
+                        if (Math.random() < 0.1) { // %10 ihtimalle hız değişimi
+                            module.vx += (Math.random() - 0.5) * 0.05;
+                            module.vy += (Math.random() - 0.5) * 0.05;
+                        }
+
+                        // Sürtünme uygula
+                        module.vx *= friction;
+                        module.vy *= friction;
+
+                        // Hızı sınırla
+                        const speed = Math.sqrt(module.vx * module.vx + module.vy * module.vy);
+                        if (speed > maxSpeed) {
+                            module.vx = (module.vx / speed) * maxSpeed;
+                            module.vy = (module.vy / speed) * maxSpeed;
+                        }
+
+                        // Minimum hız kontrolü (çok yavaşlarsa yeni hız ver)
+                        if (speed < 0.05) {
+                            module.vx = (Math.random() - 0.5) * 0.3;
+                            module.vy = (Math.random() - 0.5) * 0.3;
+                        }
+
+                        // Yeni pozisyon
+                        x += module.vx;
+                        y += module.vy;
+
+                        // Sınırları kontrol et - düzeltilmiş mantık
+                        const planetWidth = planet.offsetWidth;
+                        const planetHeight = planet.offsetHeight;
+                        const maxX = galaxyView.offsetWidth - planetWidth - boundaryMargin;
+                        const maxY = galaxyView.offsetHeight - planetHeight - boundaryMargin;
+
+                        if (x < boundaryMargin) {
+                            x = boundaryMargin;
+                            module.vx = Math.abs(module.vx) * 0.5; // Yumuşak geri sekme
+                        } else if (x > maxX) {
+                            x = maxX;
+                            module.vx = -Math.abs(module.vx) * 0.5;
+                        }
+
+                        if (y < boundaryMargin) {
+                            y = boundaryMargin;
+                            module.vy = Math.abs(module.vy) * 0.5;
+                        } else if (y > maxY) {
+                            y = maxY;
+                            module.vy = -Math.abs(module.vy) * 0.5;
+                        }
+
+                        // TAU'ya çok yaklaşma kontrolü (yörünge dışında)
+                        const planetCenterX = x + planetWidth / 2;
+                        const planetCenterY = y + planetHeight / 2;
+                        const distanceToTau = Math.sqrt(
+                            Math.pow(planetCenterX - centerX, 2) +
+                            Math.pow(planetCenterY - centerY, 2)
+                        );
+                        const minDistance = 100; // TAU'dan minimum mesafe
+
+                        if (distanceToTau < minDistance) {
+                            // TAU'dan uzaklaştır
+                            const angle = Math.atan2(planetCenterY - centerY, planetCenterX - centerX);
+                            const pushForce = (minDistance - distanceToTau) * 0.02;
+                            module.vx += Math.cos(angle) * pushForce;
+                            module.vy += Math.sin(angle) * pushForce;
+                        }
+
+                        // Modüller arası çarpışma kontrolü
+                        planets.forEach(otherPlanet => {
+                            if (otherPlanet === planet || otherPlanet.moduleData.inOrbit) return;
+
+                            const otherX = parseFloat(otherPlanet.style.left);
+                            const otherY = parseFloat(otherPlanet.style.top);
+                            const otherCenterX = otherX + otherPlanet.offsetWidth / 2;
+                            const otherCenterY = otherY + otherPlanet.offsetHeight / 2;
+
+                            const distance = Math.sqrt(
+                                Math.pow(planetCenterX - otherCenterX, 2) +
+                                Math.pow(planetCenterY - otherCenterY, 2)
+                            );
+
+                            const minSeparation = (planetWidth + otherPlanet.offsetWidth) / 2 + 10;
+
+                            if (distance < minSeparation) {
+                                // Çarpışma - birbirinden uzaklaştır
+                                const angle = Math.atan2(planetCenterY - otherCenterY, planetCenterX - otherCenterX);
+                                const pushForce = (minSeparation - distance) * 0.01;
+
+                                module.vx += Math.cos(angle) * pushForce;
+                                module.vy += Math.sin(angle) * pushForce;
+
+                                otherPlanet.moduleData.vx -= Math.cos(angle) * pushForce;
+                                otherPlanet.moduleData.vy -= Math.sin(angle) * pushForce;
+                            }
+                        });
+
+                        // Bağlantı çizgilerini güncelle
+                        updateConnectionLines();
+
+                        planet.style.left = x + 'px';
+                        planet.style.top = y + 'px';
+                    }
+                });
+
+                requestAnimationFrame(animate);
+            }
+
+            animate();
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-theme');
+        }
+
+        function openSettings() {
+            if (window.pywebchannel) {
+                window.pywebchannel.openSettings();
+            }
+        }
+
+        function toggleMenu() {
+            // Menü toggle fonksiyonu
+            console.log('Menü toggle');
+        }
+
+        function showHistory() {
+            if (window.pywebchannel) {
+                window.pywebchannel.showHistory();
+            }
+        }
+
+        function closePanel(panelId) {
+            document.getElementById(panelId).style.display = 'none';
+            document.querySelector('.menu-item.active').classList.remove('active');
+            document.querySelector('[data-tab="chat"]').classList.add('active');
+            currentTab = 'chat';
+        }
+
+        // Modal fonksiyonları
+        function openAddMemoryModal() {
+            const modal = document.getElementById('addMemoryModal');
+            if (modal) {
+                modal.style.display = 'flex';
+                // Formu temizle
+                document.getElementById('addMemoryForm').reset();
+            }
+        }
+
+        function closeAddMemoryModal() {
+            const modal = document.getElementById('addMemoryModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // Modal dışına tıklanınca kapat
+        window.onclick = function (event) {
+            const modal = document.getElementById('addMemoryModal');
+            if (event.target === modal) {
+                closeAddMemoryModal();
+            }
+        }
+
+        function saveMemory() {
+            console.log('💾 saveMemory çağrıldı');
+
+            const key = document.getElementById('memoryKey').value.trim();
+            const value = document.getElementById('memoryValue').value.trim();
+            const category = document.getElementById('memoryCategory').value.trim();
+
+            console.log('📝 Form verileri:', { key, value: value.substring(0, 50), category });
+
+            if (!key || !value) {
+                alert('Lütfen anahtar ve değer alanlarını doldurun!');
+                return;
+            }
+
+            // Python backend kontrolü
+            console.log('🔍 Backend kontrolü:', {
+                hasPyqtBridge: !!window.pyqtBridge,
+                hasAddMemory: !!(window.pyqtBridge && window.pyqtBridge.addMemory)
+            });
+
+            if (!window.pyqtBridge) {
+                alert('❌ Backend bağlantısı yok! window.pyqtBridge bulunamadı.\n\nLütfen:\n1. Uygulamayı yeniden başlatın\n2. Konsolu kontrol edin (F12)');
+                console.error('window.pyqtBridge yok!');
+                return;
+            }
+
+            if (!window.pyqtBridge.addMemory) {
+                alert('❌ addMemory fonksiyonu bulunamadı!\n\nBackend bağlantısı kurulmuş ama addMemory fonksiyonu yok.');
+                console.error('window.pyqtBridge.addMemory yok!');
+                console.log('Mevcut fonksiyonlar:', Object.keys(window.pyqtBridge));
+                return;
+            }
+
+            try {
+                // Kaydet butonunu devre dışı bırak
+                const saveBtn = document.querySelector('#addMemoryModal .btn-primary');
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Kaydediliyor...';
+                }
+
+                console.log('📤 Backend\'e gönderiliyor...');
+                // Backend'e gönder
+                window.pyqtBridge.addMemory(key, value, category || 'Genel');
+                console.log('✅ Backend\'e gönderildi');
+
+                // Modal'ı kapat
+                closeAddMemoryModal();
+
+                // Memory listesini hemen yenile (backend zaten güncelliyor ama emin olmak için)
+                setTimeout(() => {
+                    console.log('🔄 Memory listesi yenileniyor...');
+                    if (window.pyqtBridge && window.pyqtBridge.getMemories) {
+                        window.pyqtBridge.getMemories();
+                    }
+                }, 500);
+            } catch (e) {
+                console.error('❌ Kayıt ekleme hatası:', e);
+                alert('Kayıt eklenirken bir hata oluştu: ' + e.message);
+                // Butonu tekrar aktif et
+                const saveBtn = document.querySelector('#addMemoryModal .btn-primary');
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fa-solid fa-save"></i> Kaydet';
+                }
+            }
+        }
+
+        // Eski fonksiyon (geriye dönük uyumluluk)
+        function addMemory() {
+            openAddMemoryModal();
+        }
+
+        function editMemory() {
+            if (selectedMemory && window.pywebchannel) {
+                const newValue = prompt('Yeni değer:', selectedMemory.value);
+                if (newValue) {
+                    window.pywebchannel.editMemory(selectedMemory.key, newValue);
+                }
+            }
+        }
+
+        function deleteMemory() {
+            if (selectedMemory && window.pywebchannel) {
+                if (confirm('Bu memory\'yi silmek istediğinizden emin misiniz?')) {
+                    window.pywebchannel.deleteMemory(selectedMemory.key);
+                }
+            }
+        }
+
+        function addReminder() {
+            const text = prompt('Hatırlatma metni:');
+            const date = prompt('Tarih (YYYY-MM-DD HH:MM):');
+            if (text && date && window.pywebchannel) {
+                window.pywebchannel.addReminder(text, date);
+            }
+        }
+
+        function completeReminder() {
+            if (selectedReminder && window.pywebchannel) {
+                window.pywebchannel.completeReminder(selectedReminder.id);
+            }
+        }
+
+        function deleteReminder() {
+            if (selectedReminder && window.pywebchannel) {
+                if (confirm('Bu hatırlatmayı silmek istediğinizden emin misiniz?')) {
+                    window.pywebchannel.deleteReminder(selectedReminder.id);
+                }
+            }
+        }
+
+        function loadUserData() {
+            if (window.pywebchannel) {
+                window.pywebchannel.getUserData();
+            }
+        }
+
+        // Python'dan gelen verileri işleme fonksiyonları
+        function updateMemories(memories) {
+            const memoryList = document.getElementById('memoryList');
+            const emptyState = document.getElementById('memoryEmptyState');
+
+            if (!memoryList) return;
+
+            memoryList.innerHTML = '';
+
+            if (!memories || memories.length === 0) {
+                // Boş durum göster
+                if (emptyState) {
+                    emptyState.style.display = 'block';
+                    memoryList.appendChild(emptyState);
+                }
+                return;
+            }
+
+            // Boş durumu gizle
+            if (emptyState) {
+                emptyState.style.display = 'none';
+            }
+
+            memories.forEach(memory => {
+                const item = document.createElement('div');
+                item.className = 'memory-item';
+
+                // Kategori badge'i
+                const categoryBadge = memory.category ?
+                    `<span class="category-badge">${memory.category}</span>` : '';
+
+                // Tarih formatla
+                const dateStr = memory.created_at ?
+                    new Date(memory.created_at).toLocaleDateString('tr-TR') : '';
+
+                item.innerHTML = `
+                    <div class="memory-header">
+                        <div class="memory-key">${escapeHtml(memory.key)}</div>
+                        ${categoryBadge}
+                    </div>
+                    <div class="memory-value">${escapeHtml(memory.value)}</div>
+                    ${dateStr ? `<div class="memory-date">${dateStr}</div>` : ''}
+                `;
+
+                item.addEventListener('click', () => {
+                    selectedMemory = memory;
+                    document.querySelectorAll('.memory-item').forEach(i => i.classList.remove('selected'));
+                    item.classList.add('selected');
+                });
+                memoryList.appendChild(item);
+            });
+        }
+
+        // XSS koruması için HTML escape
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateReminders(reminders) {
+            const reminderList = document.getElementById('reminderList');
+            reminderList.innerHTML = '';
+
+            reminders.forEach(reminder => {
+                const item = document.createElement('div');
+                item.className = 'reminder-item';
+                item.innerHTML = `
+                    <div class="reminder-text">${reminder.text}</div>
+                    <div class="reminder-date">${reminder.date}</div>
+                    <div class="reminder-status">${reminder.status}</div>
+                `;
+                item.addEventListener('click', () => {
+                    selectedReminder = reminder;
+                    document.querySelectorAll('.reminder-item').forEach(i => i.classList.remove('selected'));
+                    item.classList.add('selected');
+                });
+                reminderList.appendChild(item);
+            });
+        }
+
+        function updateAnalytics(analytics) {
+            const analyticsContent = document.getElementById('analyticsContent');
+            analyticsContent.innerHTML = `
+                <div class="analytics-item">
+                    <h4>Toplam Mesaj</h4>
+                    <div class="analytics-value">${analytics.totalMessages}</div>
+                </div>
+                <div class="analytics-item">
+                    <h4>Bu Hafta</h4>
+                    <div class="analytics-value">${analytics.thisWeek}</div>
+                </div>
+                <div class="analytics-item">
+                    <h4>Ruh Hali Analizi</h4>
+                    <div class="analytics-value">${analytics.moodAnalysis}</div>
+                </div>
+            `;
+        }
+
+        function updateUserName(name) {
+            document.getElementById('userName').textContent = `Merhaba ${name}`;
+        }
+
+        // Python WebChannel için global fonksiyonlar
+        window.updateMemories = updateMemories;
+        window.updateReminders = updateReminders;
+        window.updateAnalytics = updateAnalytics;
+        window.updateUserName = updateUserName;
+        window.addMessage = addMessage;
+
+        // QWebChannel bağlantısını kur
+        if (typeof QWebChannel !== 'undefined') {
+            new QWebChannel(qt.webChannelTransport, function (channel) {
+                window.pyqtBridge = channel.objects.pyqtBridge;
+                console.log('✅ QWebChannel bağlantısı kuruldu!');
+
+                // Bağlantı kurulduğunda hoş geldin mesajı göster
+                if (window.pyqtBridge) {
+                    console.log('PyQt5 Bridge hazır!');
+                    // receiveMessage callback'i ekle
+                    if (window.pyqtBridge.receiveMessage) {
+                        // Python'dan gelen mesajları dinle
+                        console.log('receiveMessage fonksiyonu mevcut');
+                    }
+                }
+            });
+        } else {
+            console.log('QWebChannel yüklenemedi, window.external kullanılacak');
+            // window.external'ı manuel oluştur (geriye dönük uyumluluk)
+            if (!window.external) {
+                window.external = {
+                    sendMessage: function (message, isOnline) {
+                        console.log('window.external.sendMessage çağrıldı:', message);
+                    }
+                };
+            }
+        }
+
+        // Python'dan mesaj almak için global fonksiyon (artık kullanılmıyor, addMessage kullanılıyor)
+        // window.receiveMessageFromPython = function(message) {
+        //     addMessage('assistant', message);
+        // };
+    </script>
+
+</body>
+
+</html>

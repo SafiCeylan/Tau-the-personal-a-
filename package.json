@@ -1,0 +1,13 @@
+{
+  "name": "kendizekam",
+  "version": "1.0.0",
+  "description": "A web application for Kendizekam",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "build": "echo 'Build script not defined'"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {}
+}

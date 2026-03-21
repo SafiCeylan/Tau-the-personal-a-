@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAU - Kişisel Asistan</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <img src="assets/icons/icon-app.svg" alt="TAU" class="icon-img" width="28" height="28">
+                <span>TAU</span>
+            </div>
+            <nav class="sidebar-menu">
+                <a href="#" class="menu-item active" data-tab="chat">
+                    <img src="assets/icons/icon-chat.svg" class="icon-img" alt="Sohbet">
+                    <span>Sohbet</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="memory">
+                    <img src="assets/icons/icon-memory.svg" class="icon-img" alt="Hafıza">
+                    <span>Hafıza</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="reminders">
+                    <img src="assets/icons/icon-reminder.svg" class="icon-img" alt="Hatırlatmalar">
+                    <span>Hatırlatmalar</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="analytics">
+                    <img src="assets/icons/icon-analytics.svg" class="icon-img" alt="Analiz">
+                    <span>Analiz</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="chat-area">
+            
+            <header class="chat-header">
+                <h2 id="userGreeting">Merhaba!</h2>
+                <div class="header-icons">
+                    <!-- Online mode removed -->
+                    <button class="icon-button" id="modeToggle" title="Offline Mod" disabled>
+                                <img src="assets/icons/icon-wifi.svg" class="icon-img" alt="Mod">
+                            </button>
+                    <button class="icon-button" id="settingsBtn" title="Ayarlar">
+                        <img src="assets/icons/icon-settings.svg" class="icon-img" alt="Ayarlar">
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-area">
+                <!-- Chat Tab -->
+                <div id="chatTab" class="tab-content active">
+                    <div class="message-list" id="messageList">
+                        <div class="message-group assistant">
+                            <div class="message-bubble">
+                                <p>Merhaba! Ben TAU, kişisel asistanınız. Size nasıl yardımcı olabilirim? 😊</p>
+                            </div>
+                            <span class="timestamp" id="welcomeTime"></span>
+                        </div>
+                    </div>
+
+                    <footer class="chat-input-area">
+                        <button class="icon-button" id="menuBtn"><img src="assets/icons/icon-app.svg" class="icon-img" alt="Menu"></button>
+                        <input type="text" id="messageInput" placeholder="Mesajınız">
+                        <button class="icon-button" id="sendBtn"><img src="assets/icons/icon-send.svg" class="icon-img" alt="Gönder"></button>
+                        <button class="icon-button" id="historyBtn"><img src="assets/icons/icon-history.svg" class="icon-img" alt="Geçmiş"></button>
+                        
+                        <!-- Mikrofon ve Özellik Butonları -->
+                        <div class="mic-features-container">
+                            <div class="mic-features" id="micFeatures">
+                                <button class="feature-button" title="Ses Kaydı">
+                                    <img src="assets/icons/icon-mic.svg" class="icon-img" alt="Ses">
+                                </button>
+                                <button class="feature-button" title="Ses Notları">
+                                    <img src="assets/icons/icon-memory.svg" class="icon-img" alt="Not">
+                                </button>
+                                <button class="feature-button" title="Ses Çeviri">
+                                    <img src="assets/icons/icon-wifi.svg" class="icon-img" alt="Çeviri">
+                                </button>
+                            </div>
+                            <button class="icon-button mic-button" id="micButton"><img src="assets/icons/icon-mic.svg" class="icon-img" alt="Mic"></button>
+                        </div>
+                        
+                        <button class="icon-button" id="settingsBtn2"><img src="assets/icons/icon-settings.svg" class="icon-img" alt="Ayarlar"></button>
+                    </footer>
+                </div>
+
+                <!-- Memory Tab -->
+                <div id="memoryTab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>🧠 Hafıza Yönetimi</h3>
+                        <button class="btn-primary" id="addMemoryBtn">+ Yeni Hafıza</button>
+                    </div>
+                    <div class="memory-list" id="memoryList">
+                        <!-- Memory items will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Reminders Tab -->
+                <div id="remindersTab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>⏰ Hatırlatmalar</h3>
+                        <button class="btn-primary" id="addReminderBtn">+ Yeni Hatırlatma</button>
+                    </div>
+                    <div class="reminder-list" id="reminderList">
+                        <!-- Reminder items will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Analytics Tab -->
+                <div id="analyticsTab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>📊 Analiz Raporu</h3>
+                        <button class="btn-primary" id="generateReportBtn">Rapor Oluştur</button>
+                    </div>
+                    <div class="analytics-content" id="analyticsContent">
+                        <!-- Analytics content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Tau Web UI JavaScript
+        class TauWebUI {
+            constructor() {
+                this.mode = 'offline'; // online modes removed
+                this.currentTab = 'chat';
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.updateWelcomeTime();
+                this.loadUserData();
+            }
+
+            setupEventListeners() {
+                // Tab switching
+                document.querySelectorAll('.menu-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const tab = item.dataset.tab;
+                        this.switchTab(tab);
+                    });
+                });
+
+                // Message sending
+                document.getElementById('sendBtn').addEventListener('click', () => this.sendMessage());
+                document.getElementById('messageInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendMessage();
+                });
+
+                // Microphone features
+                document.getElementById('micButton').addEventListener('click', () => this.toggleMicFeatures());
+                
+                // Mode toggle removed — keep offline only
+                document.getElementById('modeToggle').addEventListener('click', () => alert('Online mod kaldırıldı; uygulama sadece offline modda çalışır.'));
+
+                // Tab buttons
+                document.getElementById('addMemoryBtn').addEventListener('click', () => this.addMemory());
+                document.getElementById('addReminderBtn').addEventListener('click', () => this.addReminder());
+                document.getElementById('generateReportBtn').addEventListener('click', () => this.generateReport());
+
+                // Click outside to close mic features
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.mic-features-container')) {
+                        this.closeMicFeatures();
+                    }
+                });
+            }
+
+            switchTab(tabName) {
+                // Update active tab
+                document.querySelectorAll('.menu-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+                // Show corresponding content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(`${tabName}Tab`).classList.add('active');
+
+                this.currentTab = tabName;
+            }
+
+            sendMessage() {
+                const input = document.getElementById('messageInput');
+                const message = input.value.trim();
+                
+                if (!message) return;
+
+                // Add user message
+                this.addMessage('user', message);
+                input.value = '';
+
+                // Send to Tau backend
+                this.sendToTau(message);
+            }
+
+            addMessage(sender, message, timestamp = null) {
+                const messageList = document.getElementById('messageList');
+                const time = timestamp || new Date().toLocaleTimeString('tr-TR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+
+                const messageGroup = document.createElement('div');
+                messageGroup.className = `message-group ${sender}`;
+                
+                messageGroup.innerHTML = `
+                    <div class="message-bubble">
+                        <p>${message}</p>
+                    </div>
+                    <span class="timestamp">${time}</span>
+                `;
+
+                messageList.appendChild(messageGroup);
+                messageList.scrollTop = messageList.scrollHeight;
+            }
+
+            sendToTau(message) {
+                // This will communicate with PyQt5 backend
+                if (window.pyqtBridge) {
+                    // Mod bilgisini de gönder
+                    if (window.pyqtBridge.setMode) {
+                        window.pyqtBridge.setMode(this.mode);
+                    }
+                    window.pyqtBridge.sendMessage(message);
+                } else {
+                    // Fallback for testing
+                    setTimeout(() => {
+                        this.addMessage('assistant', 'Bu özellik PyQt5 backend ile çalışır.');
+                    }, 1000);
+                }
+            }
+
+            toggleMicFeatures() {
+                const micFeatures = document.getElementById('micFeatures');
+                const micButton = document.getElementById('micButton');
+                
+                if (micFeatures.classList.contains('active')) {
+                    micFeatures.classList.remove('active');
+                    micButton.style.animation = 'pulse 2s infinite';
+                } else {
+                    micFeatures.classList.add('active');
+                    micButton.style.animation = 'none';
+                    micButton.style.backgroundColor = '#005BCC';
+                }
+            }
+
+            closeMicFeatures() {
+                const micFeatures = document.getElementById('micFeatures');
+                const micButton = document.getElementById('micButton');
+                
+                micFeatures.classList.remove('active');
+                micButton.style.animation = 'pulse 2s infinite';
+                micButton.style.backgroundColor = '#007BFF';
+            }
+
+            toggleMode() {
+                // Online mode removed — always show offline
+                this.mode = 'offline';
+                const modeIcon = document.querySelector('#modeToggle i');
+                const modeButton = document.getElementById('modeToggle');
+                if (window.pyqtBridge && window.pyqtBridge.setMode) {
+                    window.pyqtBridge.setMode('offline');
+                }
+                modeIcon.className = 'fa-solid fa-wifi-slash';
+                modeButton.title = 'Offline Mod (TAU Local)';
+                modeButton.style.color = '#ff6b6b';
+                alert('Online mod kaldırıldı; uygulama sadece offline modda çalışır.');
+            }
+            }
+
+            updateWelcomeTime() {
+                document.getElementById('welcomeTime').textContent = 
+                    new Date().toLocaleTimeString('tr-TR', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+            }
+
+            loadUserData() {
+                // Load user data from Tau backend
+                if (window.pyqtBridge) {
+                    window.pyqtBridge.loadUserData();
+                }
+            }
+
+            addMemory() {
+                const key = prompt('Hafıza anahtarı:');
+                const value = prompt('Hafıza değeri:');
+                
+                if (key && value) {
+                    if (window.pyqtBridge) {
+                        window.pyqtBridge.addMemory(key, value);
+                    }
+                }
+            }
+
+            addReminder() {
+                const text = prompt('Hatırlatma metni:');
+                const time = prompt('Tarih (YYYY-MM-DD HH:MM):');
+                
+                if (text && time) {
+                    if (window.pyqtBridge) {
+                        window.pyqtBridge.addReminder(text, time);
+                    }
+                }
+            }
+
+            generateReport() {
+                if (window.pyqtBridge) {
+                    window.pyqtBridge.generateReport();
+                }
+            }
+        }
+
+        // PyQt5 Bridge functions
+        let tauUIInstance = null;
+        
+        window.pyqtBridge = {
+            sendMessage: (message) => {
+                // This will be called by PyQt5
+                console.log('Sending to Tau:', message);
+            },
+            
+            receiveMessage: (message) => {
+                // This will be called by PyQt5 to add assistant messages
+                if (!tauUIInstance) {
+                    tauUIInstance = new TauWebUI();
+                }
+                tauUIInstance.addMessage('assistant', message);
+            },
+            
+            toggleMode: () => {
+                // Mod değiştirme
+                console.log('Toggling mode...');
+            },
+            
+            setMode: (mode) => {
+                // Belirli bir moda geç
+                console.log('Setting mode to:', mode);
+            },
+            
+            loadUserData: () => {
+                console.log('Loading user data...');
+            },
+            
+            addMemory: (key, value) => {
+                console.log('Adding memory:', key, value);
+            },
+            
+            addReminder: (text, time) => {
+                console.log('Adding reminder:', text, time);
+            },
+            
+            generateReport: () => {
+                console.log('Generating report...');
+            }
+        };
+        
+        // Initialize Tau Web UI
+        document.addEventListener('DOMContentLoaded', () => {
+            tauUIInstance = new TauWebUI();
+        });
+    </script>
+
+</body>
+</html>

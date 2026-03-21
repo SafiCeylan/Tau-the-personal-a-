@@ -1,0 +1,31 @@
+# Node modules
+node_modules/
+# Build output
+/dist
+# Logs
+logs/
+*.log
+# Dependency directories
+jspm_packages/
+# Optional npm cache directory
+.npm
+# Optional eslint cache
+.eslintcache
+# Build directories
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Project specific
+bilgiler.db
+ffplay.exe
+output.mp3
+output.pdf
+yanit.mp3
+*.db
+*.sqlite3

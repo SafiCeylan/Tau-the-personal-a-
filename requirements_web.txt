@@ -1,0 +1,5 @@
+PyQt5>=5.15.0
+PyQtWebEngine>=5.15.0
+gtts>=2.3.0
+rapidfuzz>=2.0.0
+requests>=2.25.0
