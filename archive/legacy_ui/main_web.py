@@ -34,7 +34,7 @@ class TauWebBridge(QWidget):
         self.last_api_call = 0  # Rate limit için zaman sakla
         # Load optional Ollama config from config.json
         try:
-            cfg_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+            cfg_path = os.path.join(os.path.dirname(__file__), 'config.json')
             with open(cfg_path, 'r', encoding='utf-8') as cf:
                 cfg = json.load(cf)
             self.use_ollama = cfg.get('use_ollama', False)
@@ -170,7 +170,7 @@ class TauWebMainWindow(QMainWindow):
         
         # Serve the project root over a lightweight local HTTP server so
         # external CDN fonts (FontAwesome) can be loaded without CORS errors.
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        project_root = os.path.abspath(os.path.dirname(__file__))
 
         def find_free_port(start=8000, end=8999):
             for p in range(start, end + 1):

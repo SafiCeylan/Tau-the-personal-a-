@@ -1,0 +1,8 @@
+PyQt5>=5.15.0
+rapidfuzz>=2.0.0
+requests>=2.25.0
+
+# Sesli komut (opsiyonel — kurulu değilse mikrofon özelliği devre dışı kalır, uygulama yine çalışır)
+gtts>=2.3.0
+pygame>=2.1.0
+SpeechRecognition>=3.10.0

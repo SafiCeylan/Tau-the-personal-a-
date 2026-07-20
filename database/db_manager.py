@@ -74,20 +74,51 @@ class DatabaseManager:
                         self.logger.info("Memory tablosuna category kolonu eklendi.")
                 except sqlite3.Error as e:
                     self.logger.warning(f"Category kolonu eklenirken hata: {e}")
+
+                # bilgiler tablosuna geri bildirim/doğrulama kolonlarını ekle (eğer yoksa)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("PRAGMA table_info(bilgiler)")
+                    columns = [row[1] for row in cursor.fetchall()]
+                    if 'dogru_cevap' not in columns:
+                        cursor.execute("ALTER TABLE bilgiler ADD COLUMN dogru_cevap BOOLEAN")
+                        conn.commit()
+                        self.logger.info("bilgiler tablosuna dogru_cevap kolonu eklendi.")
+                    if 'son_dogrulama' not in columns:
+                        cursor.execute("ALTER TABLE bilgiler ADD COLUMN son_dogrulama TIMESTAMP")
+                        conn.commit()
+                        self.logger.info("bilgiler tablosuna son_dogrulama kolonu eklendi.")
+                except sqlite3.Error as e:
+                    self.logger.warning(f"bilgiler geri bildirim kolonları eklenirken hata: {e}")
                     
             self.logger.info("Veritabanı başarıyla başlatıldı.")
         except (sqlite3.Error, IOError) as e:
             self.logger.error(f"Veritabanı başlatılamadı: {e}")
             raise
 
+    def _get_or_create_kategori_id(self, conn: sqlite3.Connection, kategori: Optional[str]) -> Optional[int]:
+        """Kategori adına karşılık gelen id'yi döner; kategori yoksa oluşturur, boşsa None döner."""
+        if not kategori:
+            return None
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO kategoriler (kategori_adi)
+            VALUES (?)
+            ON CONFLICT(kategori_adi) DO NOTHING
+        """, (kategori,))
+        cursor.execute("SELECT id FROM kategoriler WHERE kategori_adi = ?", (kategori,))
+        row = cursor.fetchone()
+        return row['id'] if row else None
+
     def add_question_answer(self, soru: str, cevap: str, kategori: Optional[str] = None) -> int:
         try:
             with self.get_connection() as conn:
+                kategori_id = self._get_or_create_kategori_id(conn, kategori)
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO bilgiler (soru, cevap, kategori)
+                    INSERT INTO bilgiler (soru, cevap, kategori_id)
                     VALUES (?, ?, ?)
-                """, (soru, cevap, kategori))
+                """, (soru, cevap, kategori_id))
                 conn.commit()
                 result = cursor.lastrowid
                 return result if result is not None else 0
@@ -100,12 +131,13 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT id, cevap, kategori, dogru_cevap
-                    FROM bilgiler
-                    WHERE soru = ?
+                    SELECT b.id, b.cevap, k.kategori_adi AS kategori, b.dogru_cevap
+                    FROM bilgiler b
+                    LEFT JOIN kategoriler k ON k.id = b.kategori_id
+                    WHERE b.soru = ?
                 """, (soru,))
                 result = cursor.fetchone()
-                
+
                 if result:
                     return {
                         'id': result['id'],
@@ -123,9 +155,9 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO sohbet_gecmisi (soru, cevap, cevap_id)
+                    INSERT INTO sohbet_gecmisi (soru_id, kullanici_girisi, sistem_cevabi)
                     VALUES (?, ?, ?)
-                """, (soru, cevap, cevap_id))
+                """, (cevap_id, soru, cevap))
                 conn.commit()
                 return cursor.lastrowid
         except sqlite3.Error as e:
@@ -139,17 +171,17 @@ class DatabaseManager:
                 # Sohbet geçmişindeki geribildirimi güncelle
                 cursor.execute("""
                     UPDATE sohbet_gecmisi
-                    SET kullanici_geribildirimi = ?
+                    SET dogru_mu = ?
                     WHERE id = ?
                 """, (feedback, conversation_id))
-                
+
                 # İlgili cevabın doğruluğunu güncelle
                 cursor.execute("""
                     UPDATE bilgiler
                     SET dogru_cevap = ?,
                         son_dogrulama = CURRENT_TIMESTAMP
                     WHERE id = (
-                        SELECT cevap_id
+                        SELECT soru_id
                         FROM sohbet_gecmisi
                         WHERE id = ?
                     )
@@ -220,16 +252,16 @@ class DatabaseManager:
             raise
 
     # Basit hafıza sistemi fonksiyonları
-    def add_memory(self, key: str, value: str) -> None:
+    def add_memory(self, key: str, value: str, category: Optional[str] = None) -> None:
         """Belirtilen anahtar ile yeni bir hafıza kaydı ekler veya günceller."""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO memory (key, value)
-                    VALUES (?, ?)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, created_at=CURRENT_TIMESTAMP
-                """, (key, value))
+                    INSERT INTO memory (key, value, category)
+                    VALUES (?, ?, COALESCE(?, 'Genel'))
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, category=excluded.category, created_at=CURRENT_TIMESTAMP
+                """, (key, value, category))
                 conn.commit()
         except sqlite3.Error as e:
             self.logger.error(f"Hafıza kaydı eklenirken/güncellenirken hata oluştu: {e}")
@@ -259,12 +291,12 @@ class DatabaseManager:
             raise
 
     def list_memory(self) -> list:
-        """Tüm hafıza kayıtlarını (key, value) olarak listeler."""
+        """Tüm hafıza kayıtlarını (key, value, category) olarak listeler."""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT key, value FROM memory ORDER BY created_at DESC")
-                return [(row['key'], row['value']) for row in cursor.fetchall()]
+                cursor.execute("SELECT key, value, category FROM memory ORDER BY created_at DESC")
+                return [(row['key'], row['value'], row['category']) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             self.logger.error(f"Hafıza kayıtları listelenirken hata oluştu: {e}")
             raise 

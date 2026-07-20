@@ -1,9 +1,10 @@
 {
-  "use_ollama": true,
+  "ai_provider": "ollama",
+  "kobold_url": "http://localhost:5001",
   "ollama_url": "http://127.0.0.1:11434",
-  "ollama_model": null,
+  "ollama_model": "gemma3:4b",
   "tau_backend_url": "https://your-tau-backend-url.com/api",
   "tau_api_key": "YOUR_TAU_API_KEY_HERE",
   "tau_timeout": 30,
   "tau_endpoint": "/chat"
-} 
+}

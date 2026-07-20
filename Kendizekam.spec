@@ -30,8 +30,6 @@ a = Analysis(
         'requests',
         'speech_recognition',
         'pygame',
-        'PyQt5.QtWebEngineWidgets',
-        'PyQt5.QtWebChannel',
         'sys'
     ],
     hookspath=[],

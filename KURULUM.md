@@ -1,74 +1,40 @@
-# TAU Modern Arayüz Kurulum Talimatları
+# TAU Kurulum Talimatları
+
+TAU tamamen native bir PyQt5 masaüstü uygulamasıdır — tarayıcı veya web view bileşeni **kullanmaz**.
 
 ## Gerekli Paketler
 
-Modern web arayüzünü kullanabilmek için aşağıdaki paketlerin kurulu olması gerekiyor:
-
-### 1. PyQt5 WebEngine Kurulumu
-
 ```bash
-pip install PyQtWebEngine
+pip install -r requirements.txt
 ```
 
-veya
+Bu, çekirdek bağımlılıkları (PyQt5, rapidfuzz, requests) ve isteğe bağlı sesli
+komut paketlerini (gTTS, pygame, SpeechRecognition) kurar. Sesli komut
+paketleri kurulu olmasa da uygulama sorunsuz çalışır; sadece mikrofon
+butonu "kurulu değil" mesajı gösterir.
 
-```bash
-pip install PyQt5-WebEngine
-```
-
-### 2. Alternatif: PyQt6 WebEngine (Daha Modern)
-
-```bash
-pip install PyQt6-WebEngine
-```
-
-## Kurulum Sonrası
-
-1. Paketleri kurduktan sonra `main.py` dosyasını çalıştırın
-2. "1" seçeneğini seçerek modern web arayüzünü kullanın
-3. Eğer WebEngine kurulu değilse, otomatik olarak klasik arayüze geçecektir
-
-## Özellikler
-
-### Modern Web Arayüzü:
-- ✅ WhatsApp benzeri modern tasarım
-- ✅ Responsive ve animasyonlu arayüz
-- ✅ Sidebar navigasyon
-- ✅ Memory yönetimi
-- ✅ Hatırlatma sistemi
-- ✅ İstatistikler paneli
-- ✅ Sesli komut desteği
-- ✅ Online/Offline mod geçişi
-- ✅ Koyu/açık tema desteği
-
-### Klasik PyQt5 Arayüzü:
-- ✅ Mevcut tüm özellikler korunmuş
-- ✅ Tab-based navigasyon
-- ✅ Daha hızlı başlatma
-
-## Sorun Giderme
-
-### WebEngine Kurulum Sorunu:
-```bash
-# Windows için
-pip install PyQt5-WebEngine
-
-# Linux için
-sudo apt-get install python3-pyqt5.qtwebengine
-
-# macOS için
-brew install pyqt5-webengine
-```
-
-### Alternatif Çözüm:
-WebEngine kurulumu başarısız olursa, klasik arayüzü kullanmaya devam edebilirsiniz.
-
-## Test Etme
-
-Kurulum sonrası test etmek için:
+## Çalıştırma
 
 ```bash
 python main.py
 ```
 
-Seçenek 1'i seçin ve modern arayüzün açıldığını kontrol edin.
+Windows'ta kolay başlatma için `start_tau.bat` dosyasına da çift tıklayabilirsiniz
+(paketleri otomatik kurup uygulamayı başlatır).
+
+## AI Sağlayıcısı Seçimi
+
+`config.json` içindeki `ai_provider` alanı hangi AI motorunun kullanılacağını belirler:
+
+- `"kobold"` — Yerel KoboldCPP (varsayılan adres: `http://localhost:5001`, `kobold_url` ile değiştirilebilir)
+- `"ollama"` — Yerel Ollama (varsayılan adres: `http://127.0.0.1:11434`, `ollama_url`/`ollama_model` ile değiştirilebilir)
+- `"tau_backend"` — Kendi barındırdığınız TAU Backend API'si (`tau_backend_url`, `tau_api_key`)
+
+Seçilen sağlayıcı çalışmıyorsa (bağlantı hatası vb.) TAU otomatik olarak
+veritabanındaki en yakın eşleşen cevaba döner.
+
+## Sorun Giderme
+
+- **PyQt5 kurulum sorunu (Windows):** `pip install PyQt5`
+- **Sesli komut çalışmıyor:** `pip install SpeechRecognition pygame` ve mikrofon izinlerini kontrol edin.
+- **AI cevap vermiyor:** `config.json`'daki `ai_provider` alanının çalışan bir sunucuyu (Kobold/Ollama) işaret ettiğinden emin olun.
