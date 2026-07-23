@@ -18,10 +18,10 @@ class MoodViewWidget(QWidget):
         title_box.setSpacing(4)
         
         head = QLabel("🎭 Duygu Durumu & Ruh Hali Analizi")
-        head.setStyleSheet("color: #ffd873; font-size: 20px; font-weight: 800;")
+        head.setStyleSheet("color: #ff4d58; font-size: 20px; font-weight: 800;")
         
         sub = QLabel("Son sohbetlerinize dayalı duygu durumu dağılımı ve analiz raporu")
-        sub.setStyleSheet("color: #9aa0a6; font-size: 12px;")
+        sub.setStyleSheet("color: #a68c90; font-size: 12px;")
 
         title_box.addWidget(head)
         title_box.addWidget(sub)
@@ -45,8 +45,8 @@ class MoodViewWidget(QWidget):
         dist_box = QFrame()
         dist_box.setStyleSheet("""
             QFrame {
-                background: rgba(20, 23, 33, 0.85);
-                border: 1px solid rgba(242, 181, 68, 0.2);
+                background: rgba(22, 6, 10, 0.92);
+                border: 1px solid rgba(255, 26, 38, 0.3);
                 border-radius: 12px;
                 padding: 12px;
             }
@@ -55,7 +55,7 @@ class MoodViewWidget(QWidget):
         dist_layout.setSpacing(10)
 
         dist_title = QLabel("Duygu Durum Dağılım Oranları")
-        dist_title.setStyleSheet("color: #ffd873; font-size: 14px; font-weight: 700;")
+        dist_title.setStyleSheet("color: #ff4d58; font-size: 14px; font-weight: 700;")
         dist_layout.addWidget(dist_title)
 
         # Positive Progress
@@ -88,8 +88,8 @@ class MoodViewWidget(QWidget):
         frame = QFrame()
         frame.setStyleSheet(f"""
             QFrame {{
-                background: rgba(20, 23, 33, 0.85);
-                border: 1px solid rgba(242, 181, 68, 0.2);
+                background: rgba(22, 6, 10, 0.92);
+                border: 1px solid rgba(255, 26, 38, 0.3);
                 border-radius: 12px;
                 padding: 14px;
             }}
@@ -101,7 +101,7 @@ class MoodViewWidget(QWidget):
         e_lbl.setStyleSheet("font-size: 28px;")
         
         t_lbl = QLabel(title)
-        t_lbl.setStyleSheet("color: #9aa0a6; font-size: 12px; font-weight: 600;")
+        t_lbl.setStyleSheet("color: #a68c90; font-size: 12px; font-weight: 600;")
         
         v_lbl = QLabel(percent)
         v_lbl.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: 800;")
@@ -134,7 +134,7 @@ class MoodViewWidget(QWidget):
 
         pct_lbl = QLabel("%0")
         pct_lbl.setFixedWidth(40)
-        pct_lbl.setStyleSheet("color: #9aa0a6; font-size: 11px; font-weight: 600;")
+        pct_lbl.setStyleSheet("color: #a68c90; font-size: 11px; font-weight: 600;")
 
         row.addWidget(lbl)
         row.addWidget(pbar, 1)
@@ -171,5 +171,5 @@ class MoodViewWidget(QWidget):
 
             for item in logs:
                 lbl = QLabel(f"• {item}")
-                lbl.setStyleSheet("color: #9aa0a6; font-size: 12px;")
+                lbl.setStyleSheet("color: #a68c90; font-size: 12px;")
                 self.log_layout.insertWidget(self.log_layout.count()-1, lbl)

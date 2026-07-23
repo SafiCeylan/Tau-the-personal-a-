@@ -22,10 +22,10 @@ class SettingsViewWidget(QWidget):
         title_box.setSpacing(4)
         
         head = QLabel("⚙️ Sistem & AI Yapılandırması")
-        head.setStyleSheet("color: #ffd873; font-size: 20px; font-weight: 800;")
+        head.setStyleSheet("color: #ff4d58; font-size: 20px; font-weight: 800;")
         
         sub = QLabel("Model sağlayıcısını, yerel sunucu adreslerini ve sistem tercihlerini yönetin")
-        sub.setStyleSheet("color: #9aa0a6; font-size: 12px;")
+        sub.setStyleSheet("color: #a68c90; font-size: 12px;")
 
         title_box.addWidget(head)
         title_box.addWidget(sub)
@@ -35,8 +35,8 @@ class SettingsViewWidget(QWidget):
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
-                background: rgba(20, 23, 33, 0.85);
-                border: 1px solid rgba(242, 181, 68, 0.2);
+                background: rgba(22, 6, 10, 0.92);
+                border: 1px solid rgba(255, 26, 38, 0.3);
                 border-radius: 12px;
                 padding: 16px;
             }

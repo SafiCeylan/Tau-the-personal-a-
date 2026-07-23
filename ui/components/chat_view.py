@@ -101,11 +101,12 @@ class ChatBubble(QFrame):
             layout.addStretch()
 
     def _render_text(self, text: str):
-        """Metni işleyip yüksekliği yeniden hesaplar."""
+        """Metni işleyip yüksekliği yeniden hesaplar.
+        NOT: Üst sınır YOK — uzun cevaplar kesilmez; dış scroll alanı kaydırır."""
         self.content_browser.setHtml(self.format_markdown(text))
         self.content_browser.document().adjustSize()
         doc_height = int(self.content_browser.document().size().height()) + 15
-        self.content_browser.setFixedHeight(max(30, min(doc_height, 600)))
+        self.content_browser.setFixedHeight(max(30, doc_height))
 
     def update_text(self, text: str):
         """Streaming için: balon içeriğini canlı günceller."""

@@ -19,13 +19,13 @@ class ReminderItemCard(QFrame):
     def init_ui(self):
         self.setStyleSheet("""
             QFrame {
-                background: rgba(20, 23, 33, 0.85);
-                border: 1px solid rgba(242, 181, 68, 0.2);
+                background: rgba(22, 6, 10, 0.92);
+                border: 1px solid rgba(255, 26, 38, 0.3);
                 border-radius: 10px;
                 padding: 4px;
             }
             QFrame:hover {
-                border-color: rgba(242, 181, 68, 0.45);
+                border-color: rgba(255, 26, 38, 0.6);
             }
         """)
         layout = QHBoxLayout(self)
@@ -48,7 +48,7 @@ class ReminderItemCard(QFrame):
             txt_lbl.setStyleSheet("color: #f0f2f5; font-size: 13px; font-weight: 600;")
 
         time_lbl = QLabel(f"⏰ {self.time_str}")
-        time_lbl.setStyleSheet("color: #ffd873; font-size: 11px;")
+        time_lbl.setStyleSheet("color: #ff4d58; font-size: 11px;")
 
         content_box.addWidget(txt_lbl)
         content_box.addWidget(time_lbl)
@@ -95,10 +95,10 @@ class RemindersViewWidget(QWidget):
         title_box.setSpacing(4)
         
         head = QLabel("⏰ Hatırlatıcı Paneli")
-        head.setStyleSheet("color: #ffd873; font-size: 20px; font-weight: 800;")
+        head.setStyleSheet("color: #ff4d58; font-size: 20px; font-weight: 800;")
         
         sub = QLabel("Doğal dille yazılan hatırlatmaları algılar ve zamanı geldiğinde sizi uyarır")
-        sub.setStyleSheet("color: #9aa0a6; font-size: 12px;")
+        sub.setStyleSheet("color: #a68c90; font-size: 12px;")
 
         title_box.addWidget(head)
         title_box.addWidget(sub)
@@ -114,7 +114,7 @@ class RemindersViewWidget(QWidget):
         add_btn.setCursor(Qt.PointingHandCursor)
         add_btn.setStyleSheet("""
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #c9821f, stop:1 #f2b544);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #99000f, stop:1 #ff1a26);
                 color: #08090d;
                 border: none;
                 border-radius: 8px;
@@ -122,7 +122,7 @@ class RemindersViewWidget(QWidget):
                 font-weight: 700;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #d48d28, stop:1 #ffd873);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #b80012, stop:1 #ff4d58);
             }
         """)
         add_btn.clicked.connect(self._on_add_clicked)
