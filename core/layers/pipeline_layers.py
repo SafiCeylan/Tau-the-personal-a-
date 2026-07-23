@@ -25,6 +25,7 @@ from features.scheduler import zamanlama_komutu_algila
 from features.auto_memory import hafiza_ogren
 from features.file_finder import dosya_arama_niyeti, dosya_bul_ve_islet
 from features.clipboard_tools import pano_komutu
+from features.screenshot_tool import ekran_goruntusu_al
 
 
 # =========================================================================
@@ -89,6 +90,9 @@ class IntentAnalyzerLayer:
             # "indirilenlerdeki son pdf'i aç" — SYSTEM_CONTROL'dan ÖNCE ("aç" çakışır)
             ctx.intent = "FILE_SEARCH"
             ctx.confidence = 0.90
+        elif 'ekran görüntüsü' in msg or 'ekranın fotoğrafı' in msg or 'screenshot' in msg:
+            ctx.intent = "SCREENSHOT"
+            ctx.confidence = 0.95
         elif re.search(r'\bpano', msg):
             ctx.intent = "CLIPBOARD"
             ctx.confidence = 0.95
@@ -385,6 +389,15 @@ class ExecutionEngineLayer:
         if ctx.intent == "MORNING_BRIEFING":
             ctx.execution_success = True
             ctx.execution_result = sabah_brifingi_olustur(db_cursor)
+            return ctx
+
+        # 0.35 📸 Ekran görüntüsü (Telegram'dan gelirse foto olarak da yollanır)
+        if ctx.intent == "SCREENSHOT":
+            yol, mesaj = ekran_goruntusu_al()
+            ctx.execution_success = yol is not None
+            ctx.execution_result = mesaj
+            if yol:
+                ctx.entities['screenshot_path'] = yol
             return ctx
 
         # 0.4 📋 Pano sihirbazı

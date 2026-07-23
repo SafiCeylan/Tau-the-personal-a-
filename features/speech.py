@@ -199,6 +199,28 @@ def text_to_speech(text, lang='tr'):
     except Exception as e:
         print(f"TTS Genel Hatası: {e}")
 
+def ogg_sesi_yaziya_cevir(ogg_path: str):
+    """
+    Telegram sesli mesajını (OGG/Opus) yazıya çevirir.
+    soundfile (libsndfile) ile PCM'e çözülür → Google STT (tr-TR).
+    Dönen değer: metin veya None.
+    """
+    try:
+        import soundfile as sf
+        data, rate = sf.read(ogg_path, dtype='int16')
+        if getattr(data, 'ndim', 1) > 1:
+            data = data[:, 0]
+        audio = sr.AudioData(data.tobytes(), rate, 2)
+        r = sr.Recognizer()
+        text = r.recognize_google(audio, language='tr-TR')
+        return (text or '').strip() or None
+    except sr.UnknownValueError:
+        return None
+    except Exception as e:
+        print(f"[TAU STT] Sesli mesaj çözülemedi: {e}")
+        return None
+
+
 def dinle_ve_yaziya_cevir(device_index=None):
     """Mikrofondan sesi dinler ve yazıya çevirir (Online - Google).
     device_index: PortAudio aygıt indeksi (None/-1 = sistem varsayılanı)."""

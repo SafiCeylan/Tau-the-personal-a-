@@ -407,9 +407,8 @@ class TelegramWorkerThread(QThread):
             return
 
         msg = up.get('message') or {}
-        text = (msg.get('text') or '').strip()
         chat_id = (msg.get('chat') or {}).get('id')
-        if not text or chat_id is None:
+        if chat_id is None:
             return
 
         allowed = self._allowed_chat()
@@ -422,6 +421,22 @@ class TelegramWorkerThread(QThread):
             )
             return
 
+        # 🎙️ Sesli mesaj → STT → komut
+        if msg.get('voice'):
+            self._handle_voice_message(tg, token, chat_id, msg['voice'])
+            return
+
+        # 📥 Dosya / fotoğraf → İndirilenler'e kaydet
+        if msg.get('document') or msg.get('photo'):
+            self._handle_incoming_file(tg, token, chat_id, msg)
+            return
+
+        text = (msg.get('text') or '').strip()
+        if not text:
+            return
+        self._handle_text_command(tg, token, chat_id, text)
+
+    def _handle_text_command(self, tg, token, chat_id, text):
         if text in ('/start', '/help', '/yardim'):
             tg.send_message(
                 token, chat_id,
@@ -430,6 +445,9 @@ class TelegramWorkerThread(QThread):
                 "• `sabah brifingi` — hava + döviz + hatırlatmalar\n"
                 "• `yarın 14:00 toplantıyı hatırlat`\n"
                 "• `annem'e whatsapp'tan mesaj gönder: naber`\n"
+                "• `ekran görüntüsü al` — PC ekranı fotoğraf olarak gelir 📸\n"
+                "• 🎙️ **Sesli mesaj** at — yazıya çevirip komut olarak işlerim\n"
+                "• 📎 **Dosya/fotoğraf** gönder — PC'nin İndirilenler'ine kaydederim\n"
                 "• `hava durumu nedir` / herhangi bir soru (LLM)\n\n"
                 "Riskli komutlar ✅/❌ butonlarıyla onayınızı bekler."
             )
@@ -461,6 +479,12 @@ class TelegramWorkerThread(QThread):
             return None
 
         if engine_ctx.execution_result and engine_ctx.execution_success:
+            # 📸 Ekran görüntüsü istendiyse fotoğrafı da gönder
+            ss_yol = (engine_ctx.entities or {}).get('screenshot_path')
+            if ss_yol:
+                if tg.send_photo(token, chat_id, ss_yol, caption="🖥️ ULTRON — PC ekranı"):
+                    self.activity_signal.emit(text, "(ekran görüntüsü Telegram'a gönderildi)")
+                    return None  # foto zaten gitti, ayrıca metin gerekmez
             return engine_ctx.execution_result
 
         # LLM'e düş
@@ -473,6 +497,74 @@ class TelegramWorkerThread(QThread):
             return ans or "Yanıt alınamadı."
         except Exception as e:
             return f"⚠️ AI Hatası: {e}"
+
+    def _handle_voice_message(self, tg, token, chat_id, voice):
+        """🎙️ Telegram sesli mesajı: indir → OGG/Opus çöz → Google STT → komut olarak işle."""
+        import tempfile
+        from features.speech import ogg_sesi_yaziya_cevir
+
+        fp = tg.get_file_path(token, voice.get('file_id', ''))
+        if not fp:
+            tg.send_message(token, chat_id, "⚠️ Sesli mesaj alınamadı.")
+            return
+
+        ogg = os.path.join(tempfile.gettempdir(), f"ultron_voice_{voice.get('file_unique_id', 'x')}.ogg")
+        try:
+            if not tg.download_file(token, fp, ogg):
+                tg.send_message(token, chat_id, "⚠️ Sesli mesaj indirilemedi.")
+                return
+            text = ogg_sesi_yaziya_cevir(ogg)
+        finally:
+            try:
+                os.remove(ogg)
+            except Exception:
+                pass
+
+        if not text:
+            tg.send_message(token, chat_id, "🎙️ Sesli mesajı anlayamadım — tekrar dener misin?")
+            return
+
+        tg.send_message(token, chat_id, f"🎙️ Algılanan: \"{text}\"")
+        self._handle_text_command(tg, token, chat_id, text)
+
+    def _handle_incoming_file(self, tg, token, chat_id, msg):
+        """📥 Telefondan gelen dosya/fotoğrafı PC'nin İndirilenler klasörüne kaydeder."""
+        from features.file_finder import _gercek_yol
+
+        doc = msg.get('document')
+        if doc:
+            file_id = doc.get('file_id', '')
+            ad = doc.get('file_name') or f"ultron_dosya_{int(time.time())}"
+        else:
+            fotolar = msg.get('photo') or []
+            if not fotolar:
+                return
+            file_id = fotolar[-1].get('file_id', '')   # en yüksek çözünürlük
+            ad = f"ultron_foto_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+
+        fp = tg.get_file_path(token, file_id)
+        if not fp:
+            tg.send_message(token, chat_id,
+                            "⚠️ Dosya alınamadı (bot API sınırı 20MB — daha büyük olabilir).")
+            return
+
+        klasor = _gercek_yol('Downloads') or os.path.expanduser('~')
+        hedef = os.path.join(klasor, ad)
+        sayac = 1
+        govde, uzanti = os.path.splitext(hedef)
+        while os.path.exists(hedef):   # aynı isim varsa üzerine yazma
+            hedef = f"{govde}_{sayac}{uzanti}"
+            sayac += 1
+
+        if tg.download_file(token, fp, hedef):
+            boyut_mb = os.path.getsize(hedef) / (1024 * 1024)
+            son_ad = os.path.basename(hedef)
+            tg.send_message(token, chat_id,
+                            f"📥 **İndirilenler'e kaydedildi:** `{son_ad}` ({boyut_mb:.1f} MB)")
+            self.activity_signal.emit(f"(Telefondan dosya: {son_ad})",
+                                      f"📥 İndirilenler'e kaydedildi ({boyut_mb:.1f} MB)")
+        else:
+            tg.send_message(token, chat_id, "⚠️ Dosya indirilemedi.")
 
     def _handle_callback(self, tg, token, cq):
         chat_id = ((cq.get('message') or {}).get('chat') or {}).get('id')
@@ -1053,6 +1145,10 @@ class TauMainWindow(QMainWindow):
 
         # 4. Engine doğrudan sonuç ürettiyse (sistem komutu, web araması, hatırlatma vb.)
         if engine_ctx.execution_result and engine_ctx.execution_success:
+            # 📸 "ekran görüntüsü al ve telegrama gönder" → foto telefona da gitsin
+            ss_yol = (engine_ctx.entities or {}).get('screenshot_path')
+            if ss_yol and 'telegram' in text.lower():
+                self._telegram_foto_gonder(ss_yol)
             self._post_assistant(engine_ctx.execution_result, user_prompt=text)
             self._set_ai_state("idle")
             self.refresh_all_data()
@@ -1375,6 +1471,17 @@ class TauMainWindow(QMainWindow):
         # Telefondan konuşulurken masaüstünün sesli okuması gereksiz
         self._post_assistant(reply, user_prompt=f"[Telegram] {user_text}", speak=False)
         self.refresh_all_data()
+
+    def _telegram_foto_gonder(self, foto_yolu: str, caption: str = "🖥️ ULTRON — PC ekranı"):
+        """Fotoğrafı telefona iter (yapılandırılmışsa, arka planda)."""
+        token = (self.controller.config.get('telegram_token') or '').strip()
+        chat_id = str(self.controller.config.get('telegram_chat_id') or '').strip()
+        if not token or not chat_id:
+            return
+        from features import telegram_bridge as tg
+        worker = FuncWorkerThread(tg.send_photo, token, chat_id, foto_yolu, caption)
+        self._track_worker(worker)
+        worker.start()
 
     def _telegram_bildir(self, mesaj: str):
         """Hatırlatma vb. bildirimleri telefona iter (yapılandırılmışsa, arka planda)."""
