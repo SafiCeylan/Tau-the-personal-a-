@@ -64,10 +64,30 @@ CREATE TABLE IF NOT EXISTS hatirlatmalar (
     durum TEXT DEFAULT 'bekliyor'
 );
 
+-- Özel Otonom Rutinler / Modlar Tablosu
+CREATE TABLE IF NOT EXISTS custom_routines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    trigger_keyword TEXT NOT NULL UNIQUE,
+    description TEXT,
+    actions_json TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Ruh Hali Geçmişi Tablosu
 CREATE TABLE IF NOT EXISTS ruh_hali_gecmisi (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ruh_hali TEXT NOT NULL,
     mesaj TEXT,
     tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Zamanlanmış Görevler (her gün belirtilen saatte otomatik çalışır)
+CREATE TABLE IF NOT EXISTS zamanli_gorevler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    saat TEXT NOT NULL,            -- 'HH:MM'
+    komut TEXT NOT NULL,           -- engine'den geçirilecek komut
+    son_calisma TEXT,              -- 'YYYY-MM-DD' (aynı gün iki kez çalışmasın)
+    aktif INTEGER DEFAULT 1,
+    olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ); 

@@ -235,8 +235,8 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT ad FROM kategoriler")
-                return [row['ad'] for row in cursor.fetchall()]
+                cursor.execute("SELECT kategori_adi FROM kategoriler")
+                return [row['kategori_adi'] for row in cursor.fetchall()]
         except sqlite3.Error as e:
             self.logger.error(f"Kategoriler alınırken hata oluştu: {e}")
             raise
@@ -245,7 +245,7 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("INSERT INTO kategoriler (ad) VALUES (?)", (kategori,))
+                cursor.execute("INSERT INTO kategoriler (kategori_adi) VALUES (?)", (kategori,))
                 conn.commit()
         except sqlite3.Error as e:
             self.logger.error(f"Kategori eklenirken hata oluştu: {e}")

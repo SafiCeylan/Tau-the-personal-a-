@@ -1,8 +1,23 @@
 PyQt5>=5.15.0
 rapidfuzz>=2.0.0
 requests>=2.25.0
+psutil>=5.9.0
+pyperclip>=1.8.0
 
-# Sesli komut (opsiyonel — kurulu değilse mikrofon özelliği devre dışı kalır, uygulama yine çalışır)
+# Windows toast bildirimleri (hatırlatmalar için — yoksa sesli uyarıya düşülür)
+winotify>=1.1.0
+
+# UI Automation — Interaction Engine Level 2 (yoksa Level 4 klavye fallback'ine düşülür)
+pywinauto>=0.6.8
+
+# Sesli komut & sesli yanıt (opsiyonel — kurulu değilse ses özellikleri devre dışı kalır)
 gtts>=2.3.0
 pygame>=2.1.0
 SpeechRecognition>=3.10.0
+PyAudio>=0.2.13
+pyttsx3>=2.90
+edge-tts>=7.0.0
+
+# "Hey Ultron" wake word (lokal tanıma — models/vosk-tr klasörüne Türkçe model gerekir)
+vosk>=0.3.45
+sounddevice>=0.4.6

@@ -25,18 +25,25 @@ def get_tau_config():
     except Exception as e:
         raise RuntimeError(f"config.json okunamadı veya eksik: {e}")
 
-def tau_backend_soru_sor(soru, ek_bilgiler=None, user_id=None):
+def tau_backend_soru_sor(soru, ek_bilgiler=None, user_id=None,
+                         backend_url=None, api_key=None, timeout=30, endpoint='/chat'):
     """
     TAU Backend API'ye soru sorar ve cevabı döner.
     :param soru: Kullanıcıdan gelen soru (string)
     :param ek_bilgiler: (isteğe bağlı) Ek bilgi/metin (string veya None)
     :param user_id: (isteğe bağlı) Kullanıcı ID (string veya None)
+    :param backend_url/api_key/timeout/endpoint: (isteğe bağlı) Doğrudan bağlantı
+        bilgileri; verilmezse config.json'dan okunur.
     :return: API'den dönen cevap (string) veya hata mesajı
     """
-    try:
-        backend_url, api_key, timeout, endpoint = get_tau_config()
-    except Exception as e:
-        return f"TAU Backend yapılandırma hatası: {e}"
+    if not backend_url:
+        try:
+            backend_url, api_key, timeout, endpoint = get_tau_config()
+        except Exception as e:
+            return f"TAU Backend yapılandırma hatası: {e}"
+
+    if backend_url == "https://your-tau-backend-url.com/api":
+        return "⚠️ TAU Backend URL henüz yapılandırılmamış. Ayarlar sayfasından gerçek adresi girin."
     
     # Backend URL'in sonunda / varsa kaldır
     backend_url = backend_url.rstrip('/')

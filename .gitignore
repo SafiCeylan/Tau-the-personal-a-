@@ -22,6 +22,13 @@ __pycache__/
 venv/
 
 # Project specific
+# config.json API anahtarları içerir (Gemini/TAU) — repoya asla gönderme.
+# Yeni kurulumda config.example.json'u config.json olarak kopyala.
+config.json
+user_data.json
+app_cache.json
+capability_cache.json
+models/
 bilgiler.db
 ffplay.exe
 output.mp3

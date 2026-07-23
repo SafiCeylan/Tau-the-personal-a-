@@ -1,45 +1,67 @@
 """
-TAU — tek ve resmi masaüstü arayüzü.
+TAU — Masaüstü Arayüzü (Refactored & Modernized)
 
-Tamamen native PyQt5 widget'ları ile inşa edilmiştir (QWebEngine / tarayıcı
-bileşeni YOK). Görsel çekirdek ui/ai_core_widget.py içindeki QPainter tabanlı
-AICoreWidget ile çizilir. Bu dosya; koyu/altın temalı pencereyi, sayfaları
-(sohbet, hatırlatmalar, ruh hali, hafıza, istatistikler) ve gerçek backend'e
-(database, features/*) bağlanan AssistantController'ı içerir.
-
-Ağ gerektiren AI çağrıları (Kobold/Ollama/TAU Backend) ve mikrofon dinleme,
-arayüz donmasın diye ayrı QThread'lerde çalıştırılır.
+Bileşen tabanlı (component-based) mimarı:
+- ui/styles/theme.py (Glassmorphic dark/amber styling)
+- ui/components/sidebar.py (Yan navigasyon)
+- ui/components/chat_view.py (Sohbet & AI Core visualizer)
+- ui/components/memory_view.py (Hafıza kartları & yönetimi)
+- ui/components/reminders_view.py (Hatırlatıcı kartları)
+- ui/components/mood_view.py (Duygu analizi paneli)
+- ui/components/settings_view.py (Sistem & model yapılandırıcı)
 """
 
 import os
 import sys
 import json
+import time
 from datetime import datetime, timedelta
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen, QBrush
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QFrame, QLabel, QLineEdit, QPushButton,
-    QVBoxLayout, QHBoxLayout, QScrollArea, QStackedWidget, QTextBrowser,
-    QSizePolicy, QButtonGroup, QSpacerItem,
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QStackedWidget, QMessageBox, QFrame, QLabel, QSystemTrayIcon, QMenu
 )
 
 from database.db_manager import DatabaseManager
 from features.reminders import hatirlatma_algila, hatirlatma_kaydet
-from features.mood import ruh_hali_analiz, ruh_hali_kaydet
-from features.reporting import analiz_raporu_olustur
-from features.qa import cevapla_guven_skoru_ile
-from features.actions.system_control import sistem_komutu_algila
+from features.actions.system_control import sistem_komutu_algila, sistem_sesi_getir, sistem_sesi_kontrol
+from features import scheduler as zamanlayici
 from features.kobold import kobold_generate
-from features.ollama import ollama_generate
+from features.ollama import ollama_generate, ollama_chat_stream
 from features.tau_backend import tau_backend_soru_sor
+from features.gemini import gemini_generate
 
-from ui.ai_core_widget import AICoreWidget
+from core.engine import UltronCoreEngine
+
+from ui.styles.theme import MAIN_STYLESHEET
+from ui.components.sidebar import SidebarWidget
+from ui.components.chat_view import ChatViewWidget
+from ui.components.memory_view import MemoryViewWidget
+from ui.components.reminders_view import RemindersViewWidget
+from ui.components.mood_view import MoodViewWidget
+from ui.components.settings_view import SettingsViewWidget
+from ui.components.ultron_focus_view import UltronFocusViewWidget
+from ui.components.modes_view import ModesViewWidget
+from ui.components.stats_view import StatsViewWidget
 
 try:
-    from features.speech import dinle_ve_yaziya_cevir
+    from features.speech import dinle_ve_yaziya_cevir, seslendir, konusmayi_durdur
     SPEECH_AVAILABLE = True
 except ImportError:
     SPEECH_AVAILABLE = False
+
+    def seslendir(*a, **k):
+        pass
+
+    def konusmayi_durdur():
+        pass
+
+# Vosk wake word modeli (yoksa wake word sessizce devre dışı kalır)
+WAKE_MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'vosk-tr'
+)
 
 UI_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(os.path.dirname(UI_DIR), 'config.json')
@@ -47,23 +69,49 @@ CONFIG_PATH = os.path.join(os.path.dirname(UI_DIR), 'config.json')
 PROVIDER_LABELS = {
     'kobold': 'KoboldCPP (Yerel)',
     'ollama': 'Ollama (Yerel)',
+    'gemini': 'Google Gemini (API)',
     'tau_backend': 'TAU Backend',
 }
 
-AI_ERROR_PREFIXES = ("Hata", "Bağlantı Hatası", "Ollama hatası", "KoboldCPP", "❌", "🔌", "⏱️", "⚠️")
+# Bekleyen güvenlik onayı SADECE bu mesajlarla (tam eşleşme) onaylanabilir.
+# Substring eşleşmesi ("tamam kanka başka şey soracağım" gibi) kabul edilmez.
+CONFIRM_PHRASES = {"onaylıyorum", "onayla", "evet", "evet onaylıyorum", "çalıştır", "tamam"}
 
-MOOD_EMOJI = {"pozitif": "😊", "negatif": "😔", "nötr": "😐"}
+# Onay kartı bu süre içinde yanıtlanmazsa bekleyen komut otomatik iptal edilir (ms)
+CONFIRMATION_TIMEOUT_MS = 60_000
 
+
+def build_ultron_icon() -> QIcon:
+    """Ultron kırmızı çekirdek simgesini QPainter ile çizer (dosya bağımlılığı yok)."""
+    pm = QPixmap(64, 64)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    # Dış halka
+    p.setPen(QPen(QColor('#ff1a26'), 5))
+    p.setBrush(QBrush(QColor(18, 4, 6)))
+    p.drawEllipse(5, 5, 54, 54)
+    # İç çekirdek
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(QColor('#ff1a26')))
+    p.drawEllipse(22, 22, 20, 20)
+    # Parlak merkez
+    p.setBrush(QBrush(QColor('#ffffff')))
+    p.drawEllipse(29, 29, 6, 6)
+    p.end()
+    return QIcon(pm)
 
 def load_config():
     """config.json'u okur; eksik/bozuksa güvenli varsayılanlarla devam eder."""
     defaults = {
-        'ai_provider': 'kobold',
+        'ai_provider': 'ollama',
         'kobold_url': 'http://localhost:5001',
         'ollama_url': 'http://127.0.0.1:11434',
         'ollama_model': 'gemma3:4b',
         'tau_backend_url': None,
         'tau_api_key': None,
+        'gemini_api_key': None,
+        'gemini_model': 'gemini-1.5-flash',
     }
     try:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -76,151 +124,421 @@ def load_config():
     return defaults
 
 
-# =========================================================
-# Tema (koyu + altın/amber)
-# =========================================================
-
-STYLE_SHEET = """
-QMainWindow, #centralWidget { background-color: #06070a; }
-
-#sidebar {
-    background-color: rgba(10, 11, 16, 235);
-    border-right: 1px solid rgba(242, 181, 68, 35);
-}
-#brandTitle { color: #ffd873; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
-#brandSub { color: #6b6558; font-size: 11px; }
-#brandMark {
-    background-color: rgba(242, 181, 68, 40);
-    border: 2px solid #f2b544;
-    border-radius: 17px;
-}
-
-QPushButton#navButton {
-    text-align: left;
-    padding: 10px 14px;
-    border: none;
-    border-radius: 9px;
-    color: #a79f8e;
-    background: transparent;
-    font-size: 13px;
-}
-QPushButton#navButton:hover { background-color: rgba(242, 181, 68, 18); color: #f3ecdd; }
-QPushButton#navButton:checked { background-color: rgba(242, 181, 68, 32); color: #ffd873; font-weight: 600; }
-
-#providerBadge {
-    background-color: rgba(28, 30, 40, 140);
-    border: 1px solid rgba(242, 181, 68, 35);
-    border-radius: 9px;
-}
-#providerLabel, #connLabel { color: #a79f8e; font-size: 11px; }
-
-#topbar { border-bottom: 1px solid rgba(242, 181, 68, 35); }
-#viewTitle { color: #a79f8e; font-size: 14px; font-weight: 600; letter-spacing: 2px; }
-
-QFrame[card="true"] {
-    background-color: rgba(18, 20, 28, 160);
-    border: 1px solid rgba(242, 181, 68, 35);
-    border-radius: 14px;
-}
-QFrame[card="true"] QLabel { background: transparent; border: none; }
-
-QFrame[bubble="assistant"] {
-    background-color: rgba(18, 20, 28, 170);
-    border: 1px solid rgba(242, 181, 68, 30);
-    border-radius: 14px;
-}
-QFrame[bubble="user"] {
-    background-color: rgba(201, 130, 31, 55);
-    border: 1px solid rgba(242, 181, 68, 70);
-    border-radius: 14px;
-}
-QFrame[bubble] QLabel { background: transparent; border: none; color: #f3ecdd; font-size: 13.5px; }
-QLabel[metaChip="true"] { color: #6b6558; font-size: 10.5px; }
-
-QPushButton[teach="true"] {
-    color: #f2b544; background: transparent;
-    border: 1px solid rgba(242, 181, 68, 40); border-radius: 10px;
-    padding: 1px 9px; font-size: 10.5px;
-}
-QPushButton[teach="true"]:hover { background-color: rgba(242, 181, 68, 20); }
-QPushButton[teach="done"] { color: #6ee7a8; border-color: rgba(110,231,168,80); }
-
-#inputBar {
-    background-color: rgba(18, 20, 28, 170);
-    border: 1px solid rgba(242, 181, 68, 35);
-    border-radius: 22px;
-}
-QLineEdit#chatInput {
-    background: transparent; border: none; color: #f3ecdd; font-size: 14px; padding: 6px;
-}
-QLineEdit {
-    background-color: rgba(18, 20, 28, 160);
-    border: 1px solid rgba(242, 181, 68, 35);
-    border-radius: 9px; color: #f3ecdd; padding: 10px 12px; font-size: 13px;
-}
-QLineEdit:focus { border: 1px solid rgba(242, 181, 68, 110); }
-
-QPushButton#roundBtn {
-    background-color: rgba(28, 30, 40, 180);
-    border: 1px solid rgba(242, 181, 68, 35);
-    border-radius: 19px; color: #f2b544; font-size: 15px;
-}
-QPushButton#roundBtn:hover { background-color: rgba(242, 181, 68, 25); }
-QPushButton#sendBtn { background-color: #f2b544; color: #17110a; border: none; font-weight: 700; }
-QPushButton#sendBtn:hover { background-color: #ffd873; }
-QPushButton#micBtn[listening="true"] { background-color: #e2685f; color: white; }
-
-QPushButton#pillBtn {
-    background-color: #f2b544; color: #17110a; font-weight: 600;
-    border: none; border-radius: 9px; padding: 0 18px; font-size: 13px;
-}
-QPushButton#pillBtn:hover { background-color: #ffd873; }
-
-QLabel#statValue { color: #ffd873; font-size: 25px; font-weight: 700; }
-QLabel#statLabel { color: #6b6558; font-size: 11px; }
-
-QLabel#emptyState { color: #6b6558; font-size: 12.5px; padding: 30px; }
-
-QFrame[track="true"] { background-color: rgba(255,255,255,10); border-radius: 5px; }
-QFrame[fill="pozitif"] { background-color: #d9b25a; border-radius: 5px; }
-QFrame[fill="negatif"] { background-color: #e2685f; border-radius: 5px; }
-QFrame[fill="nötr"] { background-color: #7c8aa0; border-radius: 5px; }
-
-QLabel[pill="bekliyor"] { color: #f2b544; border: 1px solid rgba(242,181,68,70); border-radius: 9px; padding: 2px 9px; font-size: 10.5px; }
-QLabel[pill="tamamlandi"] { color: #6b6558; border: 1px solid rgba(242,181,68,25); border-radius: 9px; padding: 2px 9px; font-size: 10.5px; }
-
-QLabel[catTag="true"] {
-    color: #f2b544; background-color: rgba(242, 181, 68, 20);
-    border: 1px solid rgba(242,181,68,35); border-radius: 9px; padding: 1px 8px; font-size: 10px;
-}
-
-QPushButton[deleteBtn="true"] { background: transparent; border: none; color: #6b6558; font-size: 16px; }
-QPushButton[deleteBtn="true"]:hover { color: #e2685f; }
-
-QLabel[dot="neutral"] { color: #7c8aa0; }
-QLabel[dot="on"] { color: #6ee7a8; }
-QLabel[dot="off"] { color: #e2685f; }
-QLabel[dot="busy"] { color: #f2b544; }
-
-QTextBrowser#reportView {
-    background-color: rgba(18, 20, 28, 160);
-    border: 1px solid rgba(242, 181, 68, 35);
-    border-radius: 14px; color: #f3ecdd; padding: 6px; font-size: 13px;
-}
-
-QScrollArea { background: transparent; border: none; }
-QScrollArea > QWidget > QWidget { background: transparent; }
-QScrollBar:vertical { background: transparent; width: 8px; }
-QScrollBar::handle:vertical { background-color: rgba(242,181,68,60); border-radius: 4px; min-height: 24px; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-
-QLabel { color: #f3ecdd; }
-"""
+def save_config(cfg):
+    try:
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[TAU] config.json yazılamadı: {e}")
+        return False
 
 
-# =========================================================
-# Backend mantığı (web köprüsü yok — doğrudan Python nesneleri)
-# =========================================================
+def llm_uret(provider, prompt, config, context=None):
+    """Seçili sağlayıcıdan yanıt üretir → (cevap, güncel_bağlam).
+    Hem masaüstü AIWorkerThread hem Telegram köprüsü bunu kullanır."""
+    if provider == 'ollama':
+        return ollama_generate(
+            prompt,
+            ollama_url=config.get('ollama_url', 'http://127.0.0.1:11434'),
+            model=config.get('ollama_model', 'gemma3:4b'),
+            context=context,
+        )
+    if provider == 'gemini':
+        return gemini_generate(
+            prompt,
+            api_key=config.get('gemini_api_key'),
+            model=config.get('gemini_model', 'gemini-1.5-flash'),
+            context=context,
+        )
+    if provider == 'kobold':
+        return kobold_generate(
+            prompt,
+            kobold_url=config.get('kobold_url', 'http://localhost:5001'),
+            context=context,
+        )
+    if provider == 'tau_backend':
+        ans = tau_backend_soru_sor(
+            prompt,
+            backend_url=config.get('tau_backend_url'),
+            api_key=config.get('tau_api_key'),
+            timeout=config.get('tau_timeout', 30),
+            endpoint=config.get('tau_endpoint', '/chat'),
+        )
+        return ans, context
+    return f"Bilinmeyen AI sağlayıcı: '{provider}'", context
+
+
+class AIWorkerThread(QThread):
+    finished_signal = pyqtSignal(str, object)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, provider, prompt, config, context=None):
+        super().__init__()
+        self.provider = provider
+        self.prompt = prompt
+        self.config = config
+        self.context = context
+
+    def run(self):
+        try:
+            ans, ctx = llm_uret(self.provider, self.prompt, self.config, self.context)
+            self.finished_signal.emit(ans or "Yanıt alınamadı.", ctx)
+        except Exception as e:
+            self.error_signal.emit(f"AI Hatası: {str(e)}")
+
+
+class StreamWorkerThread(QThread):
+    """Ollama /api/chat streaming: her token geldiğinde sinyal atar."""
+    token_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, prompt, config):
+        super().__init__()
+        self.prompt = prompt
+        self.config = config
+
+    def run(self):
+        try:
+            full = ollama_chat_stream(
+                self.prompt,
+                ollama_url=self.config.get('ollama_url', 'http://127.0.0.1:11434'),
+                model=self.config.get('ollama_model', 'gemma3:4b'),
+                on_token=lambda t: self.token_signal.emit(t),
+            )
+            self.finished_signal.emit(full or "Yanıt alınamadı.")
+        except Exception as e:
+            self.error_signal.emit(f"AI Hatası: {str(e)}")
+
+
+class EngineWorkerThread(QThread):
+    """Ultron Core Engine'i UI thread'ini dondurmadan arka planda çalıştırır.
+
+    Web araması, uygulama tarama (os.walk) ve YouTube isteği gibi yavaş işlemler
+    engine içinde olduğundan bu thread olmadan pencere saniyelerce donuyordu.
+    """
+    finished_signal = pyqtSignal(str, object)  # (orijinal metin, UltronContext)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, engine, text, recent_context=None):
+        super().__init__()
+        self.engine = engine
+        self.text = text
+        self.recent_context = recent_context
+
+    def run(self):
+        try:
+            ctx = self.engine.process(self.text, recent_context=self.recent_context)
+            self.finished_signal.emit(self.text, ctx)
+        except Exception as e:
+            self.error_signal.emit(f"Engine Hatası: {str(e)}")
+
+
+class WakeWordThread(QThread):
+    """
+    🎙️ "Hey Ultron" — Vosk ile TAMAMEN LOKAL wake word dinleyicisi.
+    Ses hiçbir sunucuya gitmez; tanıma gramerle sadece 'ultron' kelimesine
+    kilitlenir (az CPU, az yanlış tetikleme). Uyanınca sinyal atar; asıl komut
+    mevcut Google STT akışıyla alınır.
+    """
+    wake_detected = pyqtSignal()
+    status_signal = pyqtSignal(str)
+
+    def __init__(self, model_path: str, device_index=None):
+        super().__init__()
+        self.model_path = model_path
+        self.device_index = device_index if device_index not in (None, -1) else None
+        self._stop = False
+        self.paused = False   # TTS konuşurken / komut dinlenirken kendini duymasın
+
+    def stop(self):
+        self._stop = True
+
+    def run(self):
+        try:
+            self._run_loop()
+        except Exception as e:
+            print(f"[WakeWord] Dinleyici durdu: {e}")
+            self.status_signal.emit(f"⚠️ Wake word dinleyicisi durdu: {e}")
+
+    def _run_loop(self):
+        import queue
+        try:
+            import vosk
+            import sounddevice as sd
+        except ImportError as e:
+            self.status_signal.emit(f"⚠️ Wake word için eksik paket: {e}")
+            return
+
+        if not os.path.isdir(self.model_path):
+            self.status_signal.emit(
+                "ℹ️ Wake word modeli bulunamadı (models/vosk-tr) — özellik devre dışı.")
+            return
+
+        vosk.SetLogLevel(-1)
+        model = vosk.Model(self.model_path)
+        # Gramer kilidi: tanıyıcı SADECE bu kelimeleri arar → hızlı + isabetli.
+        # NOT: 'ultron' TR sözlüğünde yok; fonetik komşusu 'ultra' kullanılır —
+        # kullanıcı "hey ultron" dediğinde model "hey ultra" duyar, biz onu yakalarız.
+        rec = vosk.KaldiRecognizer(model, 16000, json.dumps(
+            ["hey ultra", "ultra", "[unk]"], ensure_ascii=False))
+
+        q = queue.Queue()
+
+        def _cb(indata, frames, t, status):
+            q.put(bytes(indata))
+
+        # Mikrofonu aç — seçili aygıt nazlanırsa (BT kulaklık modu vb.)
+        # sistem varsayılanına düş; ikisi de olmazsa düzgün mesajla çık
+        stream = None
+        kullanilan_dev = None
+        for dev in dict.fromkeys([self.device_index, None]):
+            try:
+                stream = sd.RawInputStream(samplerate=16000, blocksize=8000,
+                                           dtype='int16', channels=1,
+                                           callback=_cb, device=dev)
+                kullanilan_dev = dev
+                break
+            except Exception as e:
+                print(f"[WakeWord] Mikrofon {dev} açılamadı: {e}")
+
+        if stream is None:
+            self.status_signal.emit(
+                "⚠️ Wake word: hiçbir mikrofon açılamadı — Ayarlar'dan farklı bir mikrofon "
+                "seçip 'Test Et' ile doğrulayın.")
+            return
+
+        mik_adi = "sistem varsayılanı"
+        if kullanilan_dev is not None:
+            try:
+                mik_adi = sd.query_devices(kullanilan_dev)['name']
+            except Exception:
+                pass
+        if kullanilan_dev is None and self.device_index is not None:
+            self.status_signal.emit(
+                "⚠️ Seçili mikrofon açılamadı (bluetooth modu olabilir) — "
+                "sistem varsayılanına geçildi.")
+        self.status_signal.emit(f"🎙️ 'Hey Ultron' dinleyicisi aktif (lokal) — mikrofon: {mik_adi}")
+
+        with stream:
+            while not self._stop:
+                try:
+                    data = q.get(timeout=1)
+                except queue.Empty:
+                    continue
+                if self.paused:
+                    continue  # sesi tüket ama işleme (kendi TTS'ini duymasın)
+                if rec.AcceptWaveform(data):
+                    text = json.loads(rec.Result()).get('text', '')
+                    if 'ultra' in text:
+                        self.wake_detected.emit()
+                        rec.Reset()
+
+
+class TelegramWorkerThread(QThread):
+    """
+    📱 Telegram köprüsü: long-polling ile botu dinler, mesajları ULTRON
+    engine'inden geçirir, cevabı Telegram'a döner.
+
+    Güvenlik: sadece config'teki telegram_chat_id komut verebilir; riskli
+    komutlar masaüstündeki gibi onay ister (inline ✅/❌ butonları, 60 sn).
+    """
+    activity_signal = pyqtSignal(str, str)   # (gelen_mesaj, verilen_cevap)
+    status_signal = pyqtSignal(str)
+
+    def __init__(self, controller):
+        super().__init__()
+        self.controller = controller
+        self._stop = False
+        self.ai_context = {}
+        self.pending = {}  # chat_id -> (komut, son_gecerlilik_zamani)
+
+    def stop(self):
+        self._stop = True
+
+    # ------------------------------------------------------------------
+    def run(self):
+        # PyQt5'te thread içindeki yakalanmamış hata TÜM uygulamayı kapatır —
+        # köprüde ne olursa olsun uygulama ayakta kalmalı.
+        try:
+            self._run_loop()
+        except Exception as e:
+            print(f"[Telegram] Köprü çöktü (uygulama etkilenmedi): {e}")
+            self.status_signal.emit(f"⚠️ Telegram köprüsü durdu: {e}")
+
+    def _run_loop(self):
+        from features import telegram_bridge as tg
+        token = (self.controller.config.get('telegram_token') or '').strip()
+        if not token:
+            return
+
+        bot_adi = tg.bot_bilgisi(token)
+        if bot_adi:
+            self.status_signal.emit(f"📱 Telegram köprüsü aktif: @{bot_adi}")
+        else:
+            self.status_signal.emit("⚠️ Telegram token doğrulanamadı — köprü kapalı.")
+            return
+
+        offset = None
+        while not self._stop:
+            updates = tg.get_updates(token, offset, timeout=20)
+            if updates is None:
+                # Ağ hatası — kısa bekleyip tekrar dene
+                for _ in range(10):
+                    if self._stop:
+                        return
+                    time.sleep(0.5)
+                continue
+            for up in updates:
+                offset = up.get('update_id', 0) + 1
+                try:
+                    self._handle_update(tg, token, up)
+                except Exception as e:
+                    print(f"[Telegram] Güncelleme işlenemedi: {e}")
+
+    # ------------------------------------------------------------------
+    def _allowed_chat(self):
+        return str(self.controller.config.get('telegram_chat_id') or '').strip()
+
+    def _handle_update(self, tg, token, up):
+        if 'callback_query' in up:
+            self._handle_callback(tg, token, up['callback_query'])
+            return
+
+        msg = up.get('message') or {}
+        text = (msg.get('text') or '').strip()
+        chat_id = (msg.get('chat') or {}).get('id')
+        if not text or chat_id is None:
+            return
+
+        allowed = self._allowed_chat()
+        if not allowed or str(chat_id) != allowed:
+            tg.send_message(
+                token, chat_id,
+                "⛔ **Yetkisiz erişim.** Bu bot ULTRON'un sahibine kilitlidir.\n\n"
+                f"Bot sizinse: ULTRON masaüstü → Çekirdek Ayarları → 'Telegram Chat ID' "
+                f"alanına şunu girin: `{chat_id}`"
+            )
+            return
+
+        if text in ('/start', '/help', '/yardim'):
+            tg.send_message(
+                token, chat_id,
+                "🔴 **ULTRON NEURAL CORE — Telegram Köprüsü**\n\n"
+                "Masaüstündeki her komut buradan da çalışır:\n"
+                "• `sabah brifingi` — hava + döviz + hatırlatmalar\n"
+                "• `yarın 14:00 toplantıyı hatırlat`\n"
+                "• `annem'e whatsapp'tan mesaj gönder: naber`\n"
+                "• `hava durumu nedir` / herhangi bir soru (LLM)\n\n"
+                "Riskli komutlar ✅/❌ butonlarıyla onayınızı bekler."
+            )
+            return
+
+        # Bekleyen onay varken başka mesaj gelirse güvenlik gereği iptal et
+        if chat_id in self.pending:
+            self.pending.pop(chat_id, None)
+            tg.send_message(token, chat_id,
+                            "🛡️ Bekleyen onay, yeni bir komut girildiği için iptal edildi.")
+
+        reply = self._process_command(tg, token, chat_id, text)
+        if reply:
+            tg.send_message(token, chat_id, reply)
+            self.activity_signal.emit(text, reply)
+
+    def _process_command(self, tg, token, chat_id, text):
+        """Engine → (onay | doğrudan sonuç | LLM) akışı. None dönerse onay bekleniyor."""
+        engine_ctx = self.controller.engine.process(text)
+
+        if engine_ctx.security_level == "FORBIDDEN":
+            return engine_ctx.security_message
+
+        if engine_ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM"):
+            self.pending[chat_id] = (text, time.time() + 60)
+            tg.send_message(token, chat_id, engine_ctx.security_message,
+                            reply_markup=tg.onay_butonlari())
+            self.activity_signal.emit(text, "(onay bekleniyor — Telegram)")
+            return None
+
+        if engine_ctx.execution_result and engine_ctx.execution_success:
+            return engine_ctx.execution_result
+
+        # LLM'e düş
+        provider = self.controller.provider
+        prompt = engine_ctx.enriched_prompt or text
+        try:
+            ans, new_ctx = llm_uret(provider, prompt, self.controller.config,
+                                    self.ai_context.get(provider))
+            self.ai_context[provider] = new_ctx
+            return ans or "Yanıt alınamadı."
+        except Exception as e:
+            return f"⚠️ AI Hatası: {e}"
+
+    def _handle_callback(self, tg, token, cq):
+        chat_id = ((cq.get('message') or {}).get('chat') or {}).get('id')
+        data = cq.get('data', '')
+        tg.answer_callback(token, cq.get('id', ''))
+        if chat_id is None:
+            return
+
+        allowed = self._allowed_chat()
+        if not allowed or str(chat_id) != allowed:
+            return
+
+        pending = self.pending.pop(chat_id, None)
+        if not pending or time.time() > pending[1]:
+            tg.send_message(token, chat_id, "⏱️ Onay süresi dolmuş — komut iptal edildi.")
+            return
+
+        cmd = pending[0]
+        if data != 'ultron_confirm':
+            tg.send_message(token, chat_id, "🛡️ **GÜVENLİK İPTALİ:** İşlem iptal edildi.")
+            self.activity_signal.emit(cmd, "(Telegram'dan iptal edildi)")
+            return
+
+        is_action, resp = sistem_komutu_algila(cmd)
+        final_msg = resp if (is_action and resp) else f"'{cmd}' komutu onaylandı ve yürütüldü."
+        tg.send_message(token, chat_id, f"✅ **ONAYLANDI:** {final_msg}")
+        self.activity_signal.emit(cmd, final_msg)
+
+
+class FuncWorkerThread(QThread):
+    """Bloklayan bir fonksiyonu arka planda çalıştırıp sonucunu sinyalle döner.
+    (Onaylanan komutların yürütülmesi için — WhatsApp UIA beklemesi 20+ sn sürebilir.)"""
+    finished_signal = pyqtSignal(object)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, func, *args, **kwargs):
+        super().__init__()
+        self._func = func
+        self._args = args
+        self._kwargs = kwargs
+
+    def run(self):
+        try:
+            self.finished_signal.emit(self._func(*self._args, **self._kwargs))
+        except Exception as e:
+            self.error_signal.emit(str(e))
+
+
+class ListenWorkerThread(QThread):
+    finished_signal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, device_index=None):
+        super().__init__()
+        self.device_index = device_index
+
+    def run(self):
+        if not SPEECH_AVAILABLE:
+            self.error_signal.emit("Sesli komut için gerekli kütüphaneler eksik.")
+            return
+        try:
+            text = dinle_ve_yaziya_cevir(device_index=self.device_index)
+            self.finished_signal.emit(text or "")
+        except Exception as e:
+            self.error_signal.emit(str(e))
+
 
 class AssistantController:
     def __init__(self, cursor, conn, db_manager, config):
@@ -228,53 +546,9 @@ class AssistantController:
         self.conn = conn
         self.db = db_manager
         self.config = config
-        self.provider = config.get('ai_provider', 'kobold')
+        self.provider = config.get('ai_provider', 'ollama')
         self.ai_context = {}
-
-    def provider_label(self):
-        return PROVIDER_LABELS.get(self.provider, self.provider)
-
-    def fast_path(self, soru):
-        """Ağ gerektirmeyen, anında cevaplanabilecek yolları dener.
-        Bulursa (cevap, guven, kaynak, html_mi) döner, yoksa None (AI gerekiyor demek)."""
-        is_action, action_response = sistem_komutu_algila(soru)
-        if is_action:
-            return f"⚙️ {action_response}", 100, "system", False
-
-        hatirlatma = hatirlatma_algila(soru)
-        if hatirlatma:
-            if hatirlatma['tip'] == 'hatirlatma':
-                if hatirlatma_kaydet(self.cursor, self.conn, hatirlatma):
-                    detay = hatirlatma.get('detay', '')
-                    return (
-                        f"✅ Hatırlatma kaydedildi! '{hatirlatma['metin']}' konusunda {detay} hatırlatacağım.",
-                        100, "system", False,
-                    )
-                return "❌ Hatırlatma kaydedilirken bir hata oluştu.", 0, "system", False
-
-            if hatirlatma['tip'] == 'gecmis_takip':
-                self.cursor.execute("""
-                    SELECT metin, durum FROM hatirlatmalar
-                    ORDER BY olusturma_tarihi DESC LIMIT 5
-                """)
-                rows = self.cursor.fetchall()
-                if rows:
-                    lines = [f"{i}. {metin} ({durum})" for i, (metin, durum) in enumerate(rows, 1)]
-                    return "📅 Geçmiş hatırlatmaların:\n" + "\n".join(lines), 100, "system", False
-                return "📅 Henüz hatırlatman yok.", 100, "system", False
-
-            if hatirlatma['tip'] == 'analiz_raporu':
-                return analiz_raporu_olustur(self.cursor), 100, "system", True
-
-        ruh_hali, _skor = ruh_hali_analiz(soru)
-        if ruh_hali != 'belirsiz':
-            ruh_hali_kaydet(self.cursor, self.conn, ruh_hali, soru)
-
-        cevap, skor = cevapla_guven_skoru_ile(self.cursor, soru)
-        if skor >= 70:
-            return cevap, skor, "db", False
-
-        return None
+        self.engine = UltronCoreEngine(db_manager=db_manager, cursor=cursor, conn=conn)
 
     def log(self, soru, cevap):
         try:
@@ -282,886 +556,964 @@ class AssistantController:
         except Exception as e:
             print(f"[TAU] Sohbet loglanamadı: {e}")
 
-    def teach(self, soru, cevap, kategori="Genel"):
-        try:
-            self.db.add_question_answer(soru, cevap, kategori or "Genel")
-            return True
-        except Exception as e:
-            print(f"[TAU] teach hata: {e}")
-            return False
-
     def get_reminders(self):
         self.cursor.execute("""
-            SELECT metin, hedef_tarih, olusturma_tarihi, durum FROM hatirlatmalar
+            SELECT id, metin, hedef_tarih, durum FROM hatirlatmalar
             ORDER BY olusturma_tarihi DESC LIMIT 50
         """)
         return [
-            {"metin": m, "hedef_tarih": h, "olusturma_tarihi": o, "durum": d}
-            for m, h, o, d in self.cursor.fetchall()
+            {"id": row[0], "text": row[1], "time": row[2], "completed": row[3] == "tamamlandi"}
+            for row in self.cursor.fetchall()
         ]
 
     def add_reminder(self, text):
-        text = (text or "").strip()
-        if not text:
-            return False, "Boş hatırlatma eklenemez."
         parsed = hatirlatma_algila(text)
         if not parsed or parsed.get('tip') != 'hatirlatma':
-            return False, "Bir zaman ifadesi anlayamadım (ör. 'yarın', '10 dakika sonra')."
-        ok = hatirlatma_kaydet(self.cursor, self.conn, parsed)
-        return ok, ("Eklendi" if ok else "Kaydedilemedi")
+            # Hatırlatma ekranından "yarın 14:00 toplantı" gibi anahtar kelimesiz
+            # girilirse "hatırlat" ekleyerek tekrar dene
+            parsed = hatirlatma_algila(text + " hatırlat")
+        if not parsed or parsed.get('tip') != 'hatirlatma':
+            return False
+        return hatirlatma_kaydet(self.cursor, self.conn, parsed)
 
-    def get_mood_history(self):
+    def toggle_reminder(self, rem_id, completed):
+        yeni_durum = "tamamlandi" if completed else "bekliyor"
+        self.cursor.execute("UPDATE hatirlatmalar SET durum = ? WHERE id = ?", (yeni_durum, rem_id))
+        self.conn.commit()
+
+    def delete_reminder(self, rem_id):
+        self.cursor.execute("DELETE FROM hatirlatmalar WHERE id = ?", (rem_id,))
+        self.conn.commit()
+
+    def get_statistics(self):
+        """İstatistik sayfası için tüm metrikleri toplar."""
+        GUN_KISA = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+        c = self.cursor
+        stats = {}
+
+        c.execute("SELECT COUNT(*) FROM sohbet_gecmisi")
+        stats['toplam_konusma'] = c.fetchone()[0]
+
+        bugun = datetime.now().strftime('%Y-%m-%d')
+        c.execute("SELECT COUNT(*) FROM sohbet_gecmisi WHERE tarih LIKE ?", (bugun + '%',))
+        stats['bugun_mesaj'] = c.fetchone()[0]
+
+        c.execute("SELECT COUNT(*) FROM hatirlatmalar WHERE durum = 'bekliyor'")
+        stats['bekleyen_hatirlatma'] = c.fetchone()[0]
+
+        c.execute("SELECT COUNT(*) FROM memory")
+        stats['hafiza_kaydi'] = c.fetchone()[0]
+
+        c.execute("SELECT COUNT(*) FROM custom_routines")
+        stats['ozel_rutin'] = c.fetchone()[0]
+
+        try:
+            from features.actions.whatsapp_control import kisiler_yukle
+            from features.email_control import email_kisiler
+            stats['rehber_kisi'] = len(kisiler_yukle()) + len(email_kisiler())
+        except Exception:
+            stats['rehber_kisi'] = 0
+
+        # Son 7 gün aktivite (bugün dahil)
+        aktivite = []
+        for i in range(6, -1, -1):
+            gun = datetime.now() - timedelta(days=i)
+            c.execute("SELECT COUNT(*) FROM sohbet_gecmisi WHERE tarih LIKE ?",
+                      (gun.strftime('%Y-%m-%d') + '%',))
+            aktivite.append((GUN_KISA[gun.weekday()], c.fetchone()[0]))
+        stats['gunluk_aktivite'] = aktivite
+
+        stats['mood'] = self.get_mood_stats()
+        return stats
+
+    def get_chat_history(self, limit=15):
+        """Son konuşma çiftlerini (soru, cevap, tarih) kronolojik sırayla döner."""
+        self.cursor.execute("""
+            SELECT kullanici_girisi, sistem_cevabi, tarih FROM sohbet_gecmisi
+            ORDER BY id DESC LIMIT ?
+        """, (limit,))
+        return list(reversed(self.cursor.fetchall()))
+
+    def get_due_reminders(self):
+        """Zamanı gelmiş ve henüz bildirilmemiş hatırlatmaları döner."""
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.cursor.execute("""
+            SELECT id, metin, hedef_tarih FROM hatirlatmalar
+            WHERE durum = 'bekliyor' AND hedef_tarih IS NOT NULL AND hedef_tarih <= ?
+        """, (now_str,))
+        return self.cursor.fetchall()
+
+    def mark_reminder_notified(self, rem_id):
+        """Bildirimi yapılan hatırlatmayı tamamlandı olarak işaretler (tekrar tetiklenmesin)."""
+        self.cursor.execute("UPDATE hatirlatmalar SET durum = 'tamamlandi' WHERE id = ?", (rem_id,))
+        self.conn.commit()
+
+    def get_mood_stats(self):
         bir_hafta_once = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
         self.cursor.execute("""
             SELECT ruh_hali, COUNT(*) FROM ruh_hali_gecmisi
             WHERE tarih >= ? GROUP BY ruh_hali
         """, (bir_hafta_once,))
         counts = {row[0]: row[1] for row in self.cursor.fetchall()}
+        total = sum(counts.values()) or 1
+        
+        pos = round((counts.get('pozitif', 0) / total) * 100, 1)
+        neu = round((counts.get('nötr', 0) / total) * 100, 1)
+        neg = round((counts.get('negatif', 0) / total) * 100, 1)
+        
+        return {'pozitif': pos, 'nötr': neu, 'negatif': neg}
 
+    def get_mood_logs(self):
         self.cursor.execute("""
-            SELECT ruh_hali, tarih FROM ruh_hali_gecmisi
-            ORDER BY tarih DESC LIMIT 1
+            SELECT ruh_hali, mesaj, tarih FROM ruh_hali_gecmisi
+            ORDER BY tarih DESC LIMIT 15
         """)
-        latest_row = self.cursor.fetchone()
-        latest = {"ruh_hali": latest_row[0], "tarih": latest_row[1]} if latest_row else None
-        return {"counts": counts, "latest": latest}
+        return [f"[{r[2][:16]}] ({r[0].upper()}) {r[1]}" for r in self.cursor.fetchall()]
 
-    def get_memory_list(self):
+    def get_memories(self):
         rows = self.db.list_memory()
-        return [{"key": k, "value": v, "category": c or "Genel"} for k, v, c in rows]
+        return [{"id": idx, "key": k, "value": v, "category": c or "Genel"} for idx, (k, v, c) in enumerate(rows)]
 
     def add_memory(self, key, value, category="Genel"):
-        key, value = (key or "").strip(), (value or "").strip()
-        if not key or not value:
-            return False
-        try:
-            self.db.add_memory(key, value, category or "Genel")
-            return True
-        except Exception as e:
-            print(f"[TAU] addMemory hata: {e}")
-            return False
+        self.db.add_memory(key, value, category)
 
     def delete_memory(self, key):
-        try:
-            self.db.delete_memory(key)
-            return True
-        except Exception as e:
-            print(f"[TAU] deleteMemory hata: {e}")
-            return False
-
-    def get_stats(self):
-        self.cursor.execute("SELECT COUNT(*) FROM bilgiler")
-        toplam_bilgi = self.cursor.fetchone()[0]
-        self.cursor.execute("SELECT COUNT(*) FROM sohbet_gecmisi")
-        toplam_sohbet = self.cursor.fetchone()[0]
-        self.cursor.execute("SELECT COUNT(*) FROM hatirlatmalar WHERE durum='bekliyor'")
-        aktif_hatirlatma = self.cursor.fetchone()[0]
-        rapor = analiz_raporu_olustur(self.cursor)
-        return {
-            "toplamBilgi": toplam_bilgi, "toplamSohbet": toplam_sohbet,
-            "aktifHatirlatma": aktif_hatirlatma, "reportText": rapor,
-        }
-
-
-# =========================================================
-# Arka plan işçileri (ağ / mikrofon çağrıları UI'ı kilitlemesin)
-# =========================================================
-
-class AIWorker(QThread):
-    finished_ok = pyqtSignal(str, str, str, object)  # soru, cevap, provider, yeni_context
-
-    def __init__(self, provider, config, soru, context):
-        super().__init__()
-        self.provider = provider
-        self.config = config
-        self.soru = soru
-        self.context = context
-
-    def run(self):
-        try:
-            if self.provider == 'ollama':
-                cevap, ctx = ollama_generate(
-                    self.soru, ollama_url=self.config.get('ollama_url', 'http://127.0.0.1:11434'),
-                    model=self.config.get('ollama_model') or 'gemma3:4b', context=self.context)
-            elif self.provider == 'tau_backend':
-                cevap, ctx = tau_backend_soru_sor(self.soru), None
-            else:
-                cevap, ctx = kobold_generate(
-                    self.soru, kobold_url=self.config.get('kobold_url', 'http://localhost:5001'),
-                    context=self.context)
-        except Exception as e:
-            cevap, ctx = f"❌ AI çağrısı sırasında beklenmeyen hata: {e}", None
-        self.finished_ok.emit(self.soru, cevap or "", self.provider, ctx)
-
-
-class VoiceWorker(QThread):
-    result_ready = pyqtSignal(str)
-    error = pyqtSignal(str)
-
-    def run(self):
-        try:
-            text = dinle_ve_yaziya_cevir()
-        except Exception as e:
-            self.error.emit(f"Mikrofon hatası: {e}")
-            return
-        if text:
-            self.result_ready.emit(text)
-        else:
-            self.error.emit("Ses algılanamadı, tekrar dener misin?")
-
-
-# =========================================================
-# Küçük yeniden kullanılabilir widget'lar
-# =========================================================
-
-def make_dot(state="neutral"):
-    dot = QLabel("●")
-    dot.setProperty("dot", state)
-    return dot
-
-
-class MessageBubble(QFrame):
-    def __init__(self, text, role, source=None, confidence=None, is_html=False,
-                 question=None, controller=None, parent=None):
-        super().__init__(parent)
-        self.setProperty("bubble", role)
-        self.setMaximumWidth(480)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(6)
-
-        label = QLabel()
-        label.setWordWrap(True)
-        label.setTextFormat(Qt.RichText if is_html else Qt.PlainText)
-        label.setText(text)
-        layout.addWidget(label)
-
-        if role == "assistant":
-            meta_row = QHBoxLayout()
-            meta_row.setSpacing(8)
-            chip_text = {"db": "💾 Hafıza", "ai": "🧠 Yapay Zeka", "system": "⚙️ Sistem"}.get(source, "🧠")
-            if confidence is not None:
-                chip_text += f" · %{confidence}"
-            chip = QLabel(chip_text)
-            chip.setProperty("metaChip", True)
-            meta_row.addWidget(chip)
-
-            if source != "system" and question and controller:
-                teach_btn = QPushButton("Bunu öğret")
-                teach_btn.setProperty("teach", "true")
-                teach_btn.setCursor(Qt.PointingHandCursor)
-
-                def on_teach():
-                    ok = controller.teach(question, text)
-                    if ok:
-                        teach_btn.setText("✓ Öğrenildi")
-                        teach_btn.setProperty("teach", "done")
-                        teach_btn.setEnabled(False)
-                        teach_btn.style().unpolish(teach_btn)
-                        teach_btn.style().polish(teach_btn)
-
-                teach_btn.clicked.connect(on_teach)
-                meta_row.addWidget(teach_btn)
-
-            meta_row.addStretch(1)
-            layout.addLayout(meta_row)
-
-
-def wrap_row(widget, align_right):
-    row = QHBoxLayout()
-    row.setContentsMargins(0, 0, 0, 0)
-    if align_right:
-        row.addStretch(1)
-        row.addWidget(widget)
-    else:
-        row.addWidget(widget)
-        row.addStretch(1)
-    container = QWidget()
-    container.setLayout(row)
-    return container
-
-
-def make_card():
-    card = QFrame()
-    card.setProperty("card", "true")
-    return card
-
-
-class ScrollList(QScrollArea):
-    """Dikey, kaydırılabilir kart listesi için ortak iskelet."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._inner = QWidget()
-        self._layout = QVBoxLayout(self._inner)
-        self._layout.setSpacing(10)
-        self._layout.addStretch(1)
-        self.setWidget(self._inner)
-
-    def clear(self):
-        while self._layout.count() > 1:
-            item = self._layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-    def add_widget(self, widget):
-        self._layout.insertWidget(self._layout.count() - 1, widget)
-
-    def set_empty(self, message):
-        self.clear()
-        empty = QLabel(message)
-        empty.setObjectName("emptyState")
-        empty.setAlignment(Qt.AlignCenter)
-        empty.setWordWrap(True)
-        self.add_widget(empty)
-
-
-def format_date(value):
-    if not value:
-        return ""
-    try:
-        dt = datetime.strptime(value[:19], "%Y-%m-%d %H:%M:%S")
-        return dt.strftime("%d.%m.%Y %H:%M")
-    except Exception:
-        return value
-
-
-# =========================================================
-# Sayfalar
-# =========================================================
-
-class ChatPage(QWidget):
-    def __init__(self, controller: AssistantController, core: AICoreWidget, status_cb, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-        self.core = core
-        self.status_cb = status_cb  # sağlayıcı durum noktasını günceller
-        self._worker = None
-        self._speaking_timer = QTimer(self)
-        self._speaking_timer.setSingleShot(True)
-        self._speaking_timer.timeout.connect(lambda: self.core.set_state("idle"))
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 6, 30, 20)
-        layout.setSpacing(10)
-
-        self.scroll = ScrollList()
-        layout.addWidget(self.scroll, 1)
-
-        input_bar = QFrame()
-        input_bar.setObjectName("inputBar")
-        bar_layout = QHBoxLayout(input_bar)
-        bar_layout.setContentsMargins(6, 6, 6, 6)
-        bar_layout.setSpacing(8)
-
-        self.mic_btn = QPushButton("🎤")
-        self.mic_btn.setObjectName("micBtn")
-        self.mic_btn.setProperty("listening", "false")
-        self.mic_btn.setFixedSize(38, 38)
-        self.mic_btn.setCursor(Qt.PointingHandCursor)
-        self.mic_btn.clicked.connect(self._start_listening)
-        bar_layout.addWidget(self.mic_btn)
-
-        self.input = QLineEdit()
-        self.input.setObjectName("chatInput")
-        self.input.setPlaceholderText("TAU'ya bir şey sor...")
-        self.input.returnPressed.connect(self._send)
-        bar_layout.addWidget(self.input, 1)
-
-        send_btn = QPushButton("➤")
-        send_btn.setObjectName("sendBtn")
-        send_btn.setFixedSize(38, 38)
-        send_btn.setCursor(Qt.PointingHandCursor)
-        send_btn.clicked.connect(self._send)
-        bar_layout.addWidget(send_btn)
-
-        layout.addWidget(input_bar)
-
-        self._append_assistant("Merhaba! Ben TAU, kişisel asistanınız. Size nasıl yardımcı olabilirim? 😊",
-                                source="system")
-
-    # ---------------- gönderme akışı ----------------
-
-    def _send(self):
-        text = self.input.text().strip()
-        if not text:
-            return
-        self.input.clear()
-        self._append_user(text)
-        self.core.set_state("thinking")
-
-        fast = self.controller.fast_path(text)
-        if fast is not None:
-            cevap, confidence, source, is_html = fast
-            self.controller.log(text, cevap)
-            self._show_answer(text, cevap, confidence, source, is_html)
-            return
-
-        self._worker = AIWorker(self.controller.provider, self.controller.config, text,
-                                 self.controller.ai_context.get(self.controller.provider))
-        self._worker.finished_ok.connect(self._on_ai_finished)
-        self._worker.start()
-
-    def _on_ai_finished(self, soru, cevap, provider, yeni_context):
-        if yeni_context:
-            self.controller.ai_context[provider] = yeni_context
-
-        if any(cevap.startswith(p) for p in AI_ERROR_PREFIXES):
-            db_cevap, skor = cevapla_guven_skoru_ile(self.controller.cursor, soru)
-            self.status_cb(False)
-            if skor > 30:
-                self.controller.log(soru, db_cevap)
-                self._show_answer(soru, db_cevap, skor, "db", False)
-            else:
-                self.controller.log(soru, cevap)
-                self._show_answer(soru, cevap, 0, "ai", False)
-            return
-
-        self.status_cb(True)
-        self.controller.log(soru, cevap)
-        self._show_answer(soru, cevap, 85, "ai", False)
-
-    def _show_answer(self, question, answer, confidence, source, is_html):
-        self.core.set_state("speaking")
-        self._append_assistant(answer, source=source, confidence=confidence,
-                                is_html=is_html, question=question)
-        self._speaking_timer.start(1500)
-
-    # ---------------- sesli komut ----------------
-
-    def _start_listening(self):
-        if not SPEECH_AVAILABLE:
-            self._append_assistant("Sesli komut için 'SpeechRecognition' ve 'pygame' paketleri kurulu değil.",
-                                    source="system")
-            return
-        self.mic_btn.setProperty("listening", "true")
-        self.mic_btn.style().unpolish(self.mic_btn)
-        self.mic_btn.style().polish(self.mic_btn)
-        self.core.set_state("listening")
-
-        self._voice_worker = VoiceWorker()
-        self._voice_worker.result_ready.connect(self._on_voice_result)
-        self._voice_worker.error.connect(self._on_voice_error)
-        self._voice_worker.start()
-
-    def _reset_mic(self):
-        self.mic_btn.setProperty("listening", "false")
-        self.mic_btn.style().unpolish(self.mic_btn)
-        self.mic_btn.style().polish(self.mic_btn)
-        self.core.set_state("idle")
-
-    def _on_voice_result(self, text):
-        self._reset_mic()
-        self.input.setText(text)
-        self._send()
-
-    def _on_voice_error(self, message):
-        self._reset_mic()
-        self._append_assistant(message, source="system")
-
-    # ---------------- mesaj ekleme ----------------
-
-    def _append_user(self, text):
-        bubble = MessageBubble(text, "user")
-        self.scroll.add_widget(wrap_row(bubble, align_right=True))
-        self._scroll_to_bottom()
-
-    def _append_assistant(self, text, source="ai", confidence=None, is_html=False, question=None):
-        bubble = MessageBubble(text, "assistant", source=source, confidence=confidence,
-                                is_html=is_html, question=question, controller=self.controller)
-        self.scroll.add_widget(wrap_row(bubble, align_right=False))
-        self._scroll_to_bottom()
-
-    def _scroll_to_bottom(self):
-        QTimer.singleShot(10, lambda: self.scroll.verticalScrollBar().setValue(
-            self.scroll.verticalScrollBar().maximum()))
-
-
-class RemindersPage(QWidget):
-    def __init__(self, controller: AssistantController, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 4, 30, 20)
-        layout.setSpacing(12)
-
-        header = QLabel("Hatırlatmalar")
-        header.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(header)
-        hint = QLabel("Doğal dille yaz: \"yarın toplantı\" veya \"10 dakika sonra su iç\"")
-        hint.setStyleSheet("color: #6b6558; font-size: 12px;")
-        layout.addWidget(hint)
-
-        form = QHBoxLayout()
-        self.input = QLineEdit()
-        self.input.setPlaceholderText("Yeni hatırlatma...")
-        self.input.returnPressed.connect(self._add)
-        form.addWidget(self.input, 1)
-        add_btn = QPushButton("Ekle")
-        add_btn.setObjectName("pillBtn")
-        add_btn.setCursor(Qt.PointingHandCursor)
-        add_btn.clicked.connect(self._add)
-        form.addWidget(add_btn)
-        layout.addLayout(form)
-
-        self.list = ScrollList()
-        layout.addWidget(self.list, 1)
-
-    def _add(self):
-        text = self.input.text().strip()
-        if not text:
-            return
-        ok, message = self.controller.add_reminder(text)
-        if ok:
-            self.input.clear()
-            self.refresh()
-        else:
-            self.input.setPlaceholderText(message)
-
-    def refresh(self):
-        items = self.controller.get_reminders()
-        self.list.clear()
-        if not items:
-            self.list.set_empty("Henüz hatırlatman yok. Yukarıdan ekleyebilirsin.")
-            return
-        for r in items:
-            card = make_card()
-            row = QHBoxLayout(card)
-            row.setContentsMargins(14, 12, 14, 12)
-
-            text_col = QVBoxLayout()
-            text_lbl = QLabel(r["metin"])
-            text_lbl.setStyleSheet("font-size: 13.5px;")
-            date_lbl = QLabel(format_date(r["hedef_tarih"]))
-            date_lbl.setStyleSheet("color: #6b6558; font-size: 11px;")
-            text_col.addWidget(text_lbl)
-            text_col.addWidget(date_lbl)
-            row.addLayout(text_col, 1)
-
-            pill = QLabel("Tamamlandı" if r["durum"] == "tamamlandi" else "Bekliyor")
-            pill.setProperty("pill", r["durum"])
-            row.addWidget(pill)
-
-            self.list.add_widget(card)
-
-
-class MoodPage(QWidget):
-    def __init__(self, controller: AssistantController, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 4, 30, 20)
-        layout.setSpacing(14)
-
-        header = QLabel("Ruh Hali")
-        header.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(header)
-        hint = QLabel("Son 7 günün duygu durum dağılımı")
-        hint.setStyleSheet("color: #6b6558; font-size: 12px;")
-        layout.addWidget(hint)
-
-        self.current_holder = QVBoxLayout()
-        layout.addLayout(self.current_holder)
-
-        self.chart_holder = QVBoxLayout()
-        self.chart_holder.setSpacing(12)
-        layout.addLayout(self.chart_holder)
-        layout.addStretch(1)
-
-    def _clear_layout(self, lay):
-        while lay.count():
-            item = lay.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-    def refresh(self):
-        data = self.controller.get_mood_history()
-        counts = data["counts"]
-        latest = data["latest"]
-
-        self._clear_layout(self.current_holder)
-        card = make_card()
-        row = QHBoxLayout(card)
-        row.setContentsMargins(16, 14, 16, 14)
-        if latest:
-            emoji = QLabel(MOOD_EMOJI.get(latest["ruh_hali"], "😐"))
-            emoji.setStyleSheet("font-size: 26px;")
-            row.addWidget(emoji)
-            text_col = QVBoxLayout()
-            text_col.addWidget(QLabel("Son algılanan ruh halin"))
-            value = QLabel(latest["ruh_hali"].capitalize())
-            value.setStyleSheet("color: #ffd873; font-size: 15px; font-weight: 600;")
-            text_col.addWidget(value)
-            row.addLayout(text_col)
-            row.addStretch(1)
-            self.current_holder.addWidget(card)
-        else:
-            empty = QLabel("Henüz ruh hali verisi yok.")
-            empty.setObjectName("emptyState")
-            self.current_holder.addWidget(empty)
-
-        self._clear_layout(self.chart_holder)
-        max_count = max([1] + list(counts.values()))
-        for key in ["pozitif", "negatif", "nötr"]:
-            count = counts.get(key, 0)
-            row_w = QWidget()
-            row_l = QHBoxLayout(row_w)
-            row_l.setContentsMargins(0, 0, 0, 0)
-
-            label = QLabel(f"{MOOD_EMOJI[key]} {key.capitalize()}")
-            label.setFixedWidth(90)
-            row_l.addWidget(label)
-
-            track = QFrame()
-            track.setProperty("track", "true")
-            track.setFixedHeight(10)
-            track.setMinimumWidth(160)
-            fill = QFrame(track)
-            fill.setProperty("fill", key)
-            ratio = count / max_count if max_count else 0
-            fill.setGeometry(0, 0, max(2, int(220 * ratio)), 10)
-            track.setFixedWidth(220)
-            row_l.addWidget(track)
-
-            count_lbl = QLabel(str(count))
-            count_lbl.setFixedWidth(24)
-            count_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            row_l.addWidget(count_lbl)
-            row_l.addStretch(1)
-
-            self.chart_holder.addWidget(row_w)
-
-
-class MemoryPage(QWidget):
-    def __init__(self, controller: AssistantController, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 4, 30, 20)
-        layout.setSpacing(12)
-
-        header = QLabel("Hafıza")
-        header.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(header)
-        hint = QLabel("TAU'nun aklında tuttuğu bilgiler")
-        hint.setStyleSheet("color: #6b6558; font-size: 12px;")
-        layout.addWidget(hint)
-
-        form = QHBoxLayout()
-        self.key_input = QLineEdit()
-        self.key_input.setPlaceholderText("Anahtar (ör. doğum günüm)")
-        self.value_input = QLineEdit()
-        self.value_input.setPlaceholderText("Değer (ör. 5 Mayıs)")
-        self.value_input.returnPressed.connect(self._add)
-        form.addWidget(self.key_input, 1)
-        form.addWidget(self.value_input, 1)
-        add_btn = QPushButton("Kaydet")
-        add_btn.setObjectName("pillBtn")
-        add_btn.setCursor(Qt.PointingHandCursor)
-        add_btn.clicked.connect(self._add)
-        form.addWidget(add_btn)
-        layout.addLayout(form)
-
-        self.list = ScrollList()
-        layout.addWidget(self.list, 1)
-
-    def _add(self):
-        key, value = self.key_input.text().strip(), self.value_input.text().strip()
-        if not key or not value:
-            return
-        if self.controller.add_memory(key, value, "Genel"):
-            self.key_input.clear()
-            self.value_input.clear()
-            self.refresh()
-
-    def refresh(self):
-        items = self.controller.get_memory_list()
-        self.list.clear()
-        if not items:
-            self.list.set_empty("Henüz kayıtlı hafıza yok.")
-            return
-        for m in items:
-            card = make_card()
-            row = QHBoxLayout(card)
-            row.setContentsMargins(14, 12, 14, 12)
-
-            text_col = QVBoxLayout()
-            key_lbl = QLabel(m["key"])
-            key_lbl.setStyleSheet("color: #ffd873; font-weight: 600; font-size: 13.5px;")
-            value_lbl = QLabel(m["value"])
-            value_lbl.setStyleSheet("color: #a79f8e; font-size: 12.5px;")
-            value_lbl.setWordWrap(True)
-            cat_lbl = QLabel(m["category"])
-            cat_lbl.setProperty("catTag", "true")
-            text_col.addWidget(key_lbl)
-            text_col.addWidget(value_lbl)
-            cat_row = QHBoxLayout()
-            cat_row.addWidget(cat_lbl)
-            cat_row.addStretch(1)
-            text_col.addLayout(cat_row)
-            row.addLayout(text_col, 1)
-
-            del_btn = QPushButton("×")
-            del_btn.setProperty("deleteBtn", "true")
-            del_btn.setCursor(Qt.PointingHandCursor)
-            del_btn.clicked.connect(lambda _, k=m["key"]: self._delete(k))
-            row.addWidget(del_btn, 0, Qt.AlignTop)
-
-            self.list.add_widget(card)
-
-    def _delete(self, key):
-        if self.controller.delete_memory(key):
-            self.refresh()
-
-
-class StatsPage(QWidget):
-    def __init__(self, controller: AssistantController, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 4, 30, 20)
-        layout.setSpacing(14)
-
-        header = QLabel("İstatistikler")
-        header.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(header)
-        hint = QLabel("Genel kullanım özeti")
-        hint.setStyleSheet("color: #6b6558; font-size: 12px;")
-        layout.addWidget(hint)
-
-        self.grid = QHBoxLayout()
-        self.grid.setSpacing(14)
-        layout.addLayout(self.grid)
-
-        self.report = QTextBrowser()
-        self.report.setObjectName("reportView")
-        layout.addWidget(self.report, 1)
-
-    def _clear_layout(self, lay):
-        while lay.count():
-            item = lay.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-    def refresh(self):
-        data = self.controller.get_stats()
-        self._clear_layout(self.grid)
-        cards = [
-            ("Öğrenilen Bilgi", data["toplamBilgi"]),
-            ("Toplam Sohbet", data["toplamSohbet"]),
-            ("Aktif Hatırlatma", data["aktifHatirlatma"]),
-        ]
-        for label, value in cards:
-            card = make_card()
-            col = QVBoxLayout(card)
-            col.setContentsMargins(16, 14, 16, 14)
-            value_lbl = QLabel(str(value))
-            value_lbl.setObjectName("statValue")
-            label_lbl = QLabel(label)
-            label_lbl.setObjectName("statLabel")
-            col.addWidget(value_lbl)
-            col.addWidget(label_lbl)
-            self.grid.addWidget(card)
-
-        self.report.setHtml(data["reportText"])
-
-
-# =========================================================
-# Ana pencere
-# =========================================================
-
-NAV_ITEMS = [
-    ("chat", "💬", "Sohbet"),
-    ("reminders", "⏰", "Hatırlatmalar"),
-    ("mood", "🙂", "Ruh Hali"),
-    ("memory", "🧠", "Hafıza"),
-    ("stats", "📊", "İstatistikler"),
-]
+        self.db.delete_memory(key)
 
 
 class TauMainWindow(QMainWindow):
     def __init__(self, cursor, conn, db_manager, config):
         super().__init__()
-        self.setWindowTitle("TAU — Kişisel Asistan")
-        self.resize(1400, 900)
-        self.setMinimumSize(980, 640)
-        self.setStyleSheet(STYLE_SHEET)
-
+        self.setWindowTitle("ULTRON NEURAL AI CORE")
+        self.resize(1100, 750)
+        self.setMinimumSize(850, 600)
+        
+        self.setStyleSheet(MAIN_STYLESHEET)
+        
+        self.db = db_manager
+        self.db_manager = db_manager
         self.controller = AssistantController(cursor, conn, db_manager, config)
+        self.ai_worker = None
+        self.listen_worker = None
+        self.engine_worker = None
+        # Çalışan thread'lere referans tutulmazsa GC "Destroyed while running" crash'i üretir
+        self._active_workers = []
 
+        # Çok turlu sohbet geçmişi ve bekleyen güvenlik onayı — lazy hasattr yerine baştan tanımlı
+        self.recent_chat_history = []
+        self.pending_confirmation_cmd = None
+
+        # Onay kartı zaman aşımı: süresi dolan bekleyen komut otomatik iptal edilir
+        self.pending_confirmation_timer = QTimer(self)
+        self.pending_confirmation_timer.setSingleShot(True)
+        self.pending_confirmation_timer.timeout.connect(self._expire_pending_confirmation)
+
+        # 🎯 Odak modu (pomodoro) durumu
+        self._focus_qtimer = None
+        self._focus_end_time = None
+        self._focus_prev_volume = None
+        self._focus_minutes = 0
+
+        # Streaming durumu
+        self._stream_bubble = None
+        self._stream_parts = []
+        self._stream_dirty = False
+        self._stream_timer = None
+
+        self.init_ui()
+        self.refresh_all_data()
+
+        # 🔴 System Tray: pencere kapansa da Ultron arka planda yaşar
+        self._tray_notice_shown = False
+        self._quitting = False
+        self.app_icon = build_ultron_icon()
+        self.setWindowIcon(self.app_icon)
+        self._init_tray()
+
+        # ⏰ Otonom döngü: 30 saniyede bir hatırlatmalar + zamanlanmış görevler
+        try:
+            if zamanlayici.varsayilanlari_kur(self.controller.cursor, self.controller.conn):
+                print("[TAU] Varsayılan zamanlanmış görevler kuruldu (08:00 brifing, 22:00 rapor)")
+        except Exception as e:
+            print(f"[TAU] Zamanlanmış görev tablosu hazırlanamadı: {e}")
+
+        self.reminder_timer = QTimer(self)
+        self.reminder_timer.timeout.connect(self._autonomous_tick)
+        self.reminder_timer.start(30_000)
+        QTimer.singleShot(3_000, self._autonomous_tick)
+
+        # 📱 Telegram köprüsü (token yapılandırılmışsa)
+        self.telegram_worker = None
+        self._start_telegram_bridge()
+
+        # 🎙️ "Hey Ultron" wake word (ayarlardan açıksa ve model kuruluysa)
+        self.wake_worker = None
+        self._start_wake_word()
+
+    def init_ui(self):
         central = QWidget()
         central.setObjectName("centralWidget")
-        root = QHBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
         self.setCentralWidget(central)
 
-        root.addWidget(self._build_sidebar())
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        main_col = QVBoxLayout()
-        main_col.setContentsMargins(0, 0, 0, 0)
-        main_col.setSpacing(0)
-        main_col.addWidget(self._build_topbar())
+        # 1. Sidebar Component
+        self.sidebar = SidebarWidget()
+        self.sidebar.page_changed.connect(self.switch_page)
+        self.sidebar.new_chat_requested.connect(self.start_new_chat)
 
-        self.core = AICoreWidget()
-        main_col.addWidget(self.core)
+        provider_name = PROVIDER_LABELS.get(self.controller.provider, self.controller.provider)
+        model_name = self.controller.config.get('ollama_model', '') if self.controller.provider == 'ollama' else ''
+        self.sidebar.update_provider_status(provider_name, model_name)
 
+        main_layout.addWidget(self.sidebar)
+
+        # 2. Main Pages Container (QStackedWidget)
         self.pages = QStackedWidget()
-        self.chat_page = ChatPage(self.controller, self.core, self._set_provider_status)
-        self.reminders_page = RemindersPage(self.controller)
-        self.mood_page = MoodPage(self.controller)
-        self.memory_page = MemoryPage(self.controller)
-        self.stats_page = StatsPage(self.controller)
-        for key, page in [("chat", self.chat_page), ("reminders", self.reminders_page),
-                           ("mood", self.mood_page), ("memory", self.memory_page),
-                           ("stats", self.stats_page)]:
-            self.pages.addWidget(page)
-        main_col.addWidget(self.pages, 1)
 
-        main_wrap = QWidget()
-        main_wrap.setLayout(main_col)
-        root.addWidget(main_wrap, 1)
+        # Page 0: Chat
+        self.chat_view = ChatViewWidget()
+        self.chat_view.message_sent.connect(self.on_user_send_message)
+        self.chat_view.mic_clicked.connect(self.on_mic_clicked)
+        self.pages.addWidget(self.chat_view)
 
-        self._select_nav("chat")
-        self.provider_label.setText(self.controller.provider_label())
-        self.conn_label.setText(f"Hazır · {self.controller.provider_label()}")
-        self.provider_dot.setProperty("dot", "on")
-        self._repolish(self.provider_dot)
+        # Page 1: Reminders
+        self.reminders_view = RemindersViewWidget()
+        self.reminders_view.add_reminder_signal.connect(self.on_add_reminder)
+        self.reminders_view.toggle_complete_signal.connect(self.on_toggle_reminder)
+        self.reminders_view.delete_reminder_signal.connect(self.on_delete_reminder)
+        self.pages.addWidget(self.reminders_view)
 
-    # ---------------- inşa yardımcıları ----------------
+        # Page 2: Memory
+        self.memory_view = MemoryViewWidget()
+        self.memory_view.add_memory_signal.connect(self.on_add_memory)
+        self.memory_view.delete_memory_signal.connect(self.on_delete_memory)
+        self.pages.addWidget(self.memory_view)
 
-    def _build_sidebar(self):
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(230)
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # Page 3: Mood
+        self.mood_view = MoodViewWidget()
+        self.pages.addWidget(self.mood_view)
 
-        brand = QWidget()
-        brand_l = QHBoxLayout(brand)
-        brand_l.setContentsMargins(20, 20, 20, 18)
-        mark = QLabel()
-        mark.setObjectName("brandMark")
-        mark.setFixedSize(34, 34)
-        brand_l.addWidget(mark)
-        text_col = QVBoxLayout()
-        title = QLabel("TAU")
-        title.setObjectName("brandTitle")
-        sub = QLabel("Kişisel Asistan")
-        sub.setObjectName("brandSub")
-        text_col.addWidget(title)
-        text_col.addWidget(sub)
-        brand_l.addLayout(text_col)
-        brand_l.addStretch(1)
-        layout.addWidget(brand)
+        # Page 4: Analytics — gerçek istatistik paneli
+        self.stats_view = StatsViewWidget()
+        self.pages.addWidget(self.stats_view)
 
-        nav_holder = QWidget()
-        nav_l = QVBoxLayout(nav_holder)
-        nav_l.setContentsMargins(12, 10, 12, 10)
-        nav_l.setSpacing(3)
+        # Page 5: Settings
+        self.settings_view = SettingsViewWidget(self.controller.config)
+        self.settings_view.config_saved.connect(self.on_save_config)
+        self.pages.addWidget(self.settings_view)
 
-        self.nav_group = QButtonGroup(self)
-        self.nav_group.setExclusive(True)
-        self.nav_buttons = {}
-        for key, icon, label in NAV_ITEMS:
-            btn = QPushButton(f"  {icon}   {label}")
-            btn.setObjectName("navButton")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda _, k=key: self._select_nav(k))
-            nav_l.addWidget(btn)
-            self.nav_group.addButton(btn)
-            self.nav_buttons[key] = btn
-        nav_l.addStretch(1)
-        layout.addWidget(nav_holder, 1)
+        # Page 6: Ultron Focus Mode (Full Screen Holographic Mode)
+        self.ultron_focus_view = UltronFocusViewWidget()
+        self.ultron_focus_view.message_sent.connect(self.on_user_send_message)
+        self.ultron_focus_view.switch_mode_requested.connect(lambda: self.switch_page(0))
+        self.pages.addWidget(self.ultron_focus_view)
 
-        footer = QFrame()
-        footer.setObjectName("providerBadge")
-        footer_l = QHBoxLayout(footer)
-        footer_l.setContentsMargins(12, 9, 12, 9)
-        self.provider_dot = make_dot("neutral")
-        self.provider_label = QLabel("Bağlanıyor...")
-        self.provider_label.setObjectName("providerLabel")
-        footer_l.addWidget(self.provider_dot)
-        footer_l.addWidget(self.provider_label, 1)
-        footer_wrap = QVBoxLayout()
-        footer_wrap.setContentsMargins(16, 12, 16, 18)
-        footer_wrap.addWidget(footer)
-        layout.addLayout(footer_wrap)
+        # Page 7: Dynamic Mode & Routine Manager
+        self.modes_view = ModesViewWidget(self.db)
+        self.pages.addWidget(self.modes_view)
 
-        return sidebar
+        main_layout.addWidget(self.pages, 1)
 
-    def _build_topbar(self):
-        topbar = QFrame()
-        topbar.setObjectName("topbar")
-        layout = QHBoxLayout(topbar)
-        layout.setContentsMargins(30, 16, 30, 16)
+        # 💾 Önceki oturumların sohbet geçmişini yükle (kalıcılık)
+        now_str = datetime.now().strftime("%H:%M")
+        try:
+            history = self.controller.get_chat_history(limit=15)
+        except Exception as e:
+            print(f"[TAU] Sohbet geçmişi yüklenemedi: {e}")
+            history = []
+        for soru, cevap, tarih in history:
+            ts = (tarih or "")[11:16]  # 'YYYY-MM-DD HH:MM:SS' → 'HH:MM'
+            self.chat_view.add_message("user", soru, ts)
+            self.chat_view.add_message("assistant", cevap, ts)
+        if history:
+            self.chat_view.add_message(
+                "assistant",
+                "— ⚡ **YENİ OTURUM** — (yukarısı önceki oturumların geçmişidir)",
+                now_str
+            )
 
-        self.view_title = QLabel("SOHBET")
-        self.view_title.setObjectName("viewTitle")
-        layout.addWidget(self.view_title)
-        layout.addStretch(1)
+        # Initial Welcome Message in Chat & Focus View
+        welcome = "Ben **ULTRON Nöral Çekirdeği**. Sistem protokolleri aktif. Nasıl bir komut vermek istersiniz?"
+        self.chat_view.add_message("assistant", welcome, now_str)
+        self.ultron_focus_view.add_message("assistant", welcome)
 
-        self.conn_dot = make_dot("on")
-        self.conn_label = QLabel("Hazır")
-        self.conn_label.setObjectName("connLabel")
-        layout.addWidget(self.conn_dot)
-        layout.addWidget(self.conn_label)
-
-        return topbar
-
-    # ---------------- navigasyon ----------------
-
-    def _select_nav(self, key):
-        titles = {"chat": "Sohbet", "reminders": "Hatırlatmalar", "mood": "Ruh Hali",
-                  "memory": "Hafıza", "stats": "İstatistikler"}
-        index = {"chat": 0, "reminders": 1, "mood": 2, "memory": 3, "stats": 4}[key]
+    def switch_page(self, index: int):
+        if index == 6:
+            self.sidebar.hide()
+        else:
+            self.sidebar.show()
         self.pages.setCurrentIndex(index)
-        self.view_title.setText(titles[key].upper())
-        for k, btn in self.nav_buttons.items():
-            btn.setChecked(k == key)
+        self.refresh_all_data()
 
-        if key == "reminders":
-            self.reminders_page.refresh()
-        elif key == "mood":
-            self.mood_page.refresh()
-        elif key == "memory":
-            self.memory_page.refresh()
-        elif key == "stats":
-            self.stats_page.refresh()
+    def start_new_chat(self):
+        self.pages.setCurrentIndex(0)
+        self.controller.ai_context = {}
+        self.recent_chat_history = []
+        self.pending_confirmation_cmd = None
+        self.pending_confirmation_timer.stop()
+        now_str = datetime.now().strftime("%H:%M")
+        self.chat_view.add_message("assistant", "⚡ Yeni Ultron sohbet oturumu başlatıldı.", now_str)
 
-    def _set_provider_status(self, healthy):
-        self.provider_dot.setProperty("dot", "on" if healthy else "off")
-        self._repolish(self.provider_dot)
+    def refresh_all_data(self):
+        # Reminders
+        rems = self.controller.get_reminders()
+        self.reminders_view.set_reminders(rems)
 
-    @staticmethod
-    def _repolish(widget):
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
+        # Memories
+        mems = self.controller.get_memories()
+        self.memory_view.set_memories(mems)
 
+        # Mood
+        m_stats = self.controller.get_mood_stats()
+        m_logs = self.controller.get_mood_logs()
+        self.mood_view.update_stats(m_stats, m_logs)
 
-def main():
-    db_manager = DatabaseManager('bilgiler.db')
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-    config = load_config()
+        # İstatistikler
+        try:
+            self.stats_view.update_stats(self.controller.get_statistics())
+        except Exception as e:
+            print(f"[TAU] İstatistikler güncellenemedi: {e}")
 
-    app = QApplication(sys.argv)
-    window = TauMainWindow(cursor, conn, db_manager, config)
-    window.show()
-    sys.exit(app.exec_())
+    # ------------------------------------------------------------------
+    # Yardımcılar
+    # ------------------------------------------------------------------
+    def _post_assistant(self, text: str, user_prompt: str = None, speak: bool = True):
+        """Asistan mesajını her iki görünüme basar ve geçmişe ekler.
+        user_prompt verilirse alışveriş kalıcı sohbet geçmişine (SQLite) de yazılır.
+        speak=True ve TTS açıksa cevap sesli okunur."""
+        now_str = datetime.now().strftime("%H:%M")
+        self.chat_view.add_message("assistant", text, now_str)
+        self.ultron_focus_view.add_message("assistant", text)
+        self.recent_chat_history.append({"role": "assistant", "text": text})
+        self._trim_history()
+        if user_prompt is not None:
+            self.controller.log(user_prompt, text)
+        if speak:
+            self._speak(text)
 
+    def _speak(self, text: str):
+        """TTS açıksa cevabı arka planda seslendirir (UI bloklamaz).
+        Konuşma sırasında wake word duraklatılır — Ultron kendi sesindeki
+        'Ultron' kelimesiyle kendini uyandırmasın."""
+        if not SPEECH_AVAILABLE or not self.controller.config.get('tts_enabled'):
+            return
+        engine = self.controller.config.get('tts_engine', 'gtts')
 
-if __name__ == "__main__":
-    main()
+        def _do_speak():
+            if self.wake_worker is not None:
+                self.wake_worker.paused = True
+            try:
+                seslendir(text, engine=engine)
+            finally:
+                if self.wake_worker is not None:
+                    self.wake_worker.paused = False
+
+        worker = FuncWorkerThread(_do_speak)
+        self._track_worker(worker)
+        worker.start()
+
+    def _trim_history(self):
+        """Sohbet geçmişi tamponunun sınırsız büyümesini engeller."""
+        if len(self.recent_chat_history) > 20:
+            self.recent_chat_history = self.recent_chat_history[-20:]
+
+    def _set_ai_state(self, state: str):
+        self.chat_view.set_ai_state(state)
+        self.ultron_focus_view.set_ai_state(state)
+
+    def _track_worker(self, worker):
+        """Thread nesnesine referans tutar; bitince listeden düşer (GC crash koruması)."""
+        self._active_workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._untrack_worker(w))
+
+    def _untrack_worker(self, worker):
+        try:
+            self._active_workers.remove(worker)
+        except ValueError:
+            pass
+
+    # ------------------------------------------------------------------
+    # Güvenlik Onayı
+    # ------------------------------------------------------------------
+    def _execute_pending_confirmation(self):
+        cmd_to_run = self.pending_confirmation_cmd
+        self.pending_confirmation_cmd = None
+        self.pending_confirmation_timer.stop()
+        if not cmd_to_run:
+            return
+
+        # Yürütme worker thread'de: WhatsApp gönderimi gibi işlemler UIA beklemesi
+        # nedeniyle uzun sürebilir — UI donmamalı.
+        self._set_ai_state("thinking")
+
+        def _on_done(result):
+            is_action, resp = result if isinstance(result, tuple) else (False, None)
+            final_msg = resp if (is_action and resp) else f"'{cmd_to_run}' komutu onaylandı ve yürütüldü."
+            self._post_assistant(f"✅ **ONAYLANDI:** {final_msg}", user_prompt=cmd_to_run)
+            self._set_ai_state("idle")
+
+        def _on_err(err):
+            self._post_assistant(f"⚠️ Onaylanan komut yürütülürken hata: {err}")
+            self._set_ai_state("idle")
+
+        worker = FuncWorkerThread(sistem_komutu_algila, cmd_to_run)
+        worker.finished_signal.connect(_on_done)
+        worker.error_signal.connect(_on_err)
+        self._track_worker(worker)
+        worker.start()
+
+    def _cancel_pending_confirmation(self, reason_msg: str):
+        self.pending_confirmation_cmd = None
+        self.pending_confirmation_timer.stop()
+        self._post_assistant(reason_msg)
+        self._set_ai_state("idle")
+
+    def _expire_pending_confirmation(self):
+        if self.pending_confirmation_cmd:
+            self._cancel_pending_confirmation(
+                "⏱️ **GÜVENLİK ZAMAN AŞIMI:** Onay 60 saniye içinde verilmediği için bekleyen işlem iptal edildi."
+            )
+
+    # ------------------------------------------------------------------
+    # Mesaj Akışı
+    # ------------------------------------------------------------------
+    def on_user_send_message(self, text: str):
+        now_str = datetime.now().strftime("%H:%M")
+        self.chat_view.add_message("user", text, now_str)
+        self.ultron_focus_view.add_message("user", text)
+
+        # Hızlı susturma: TTS'i anında keser, pipeline'a girmez
+        if text.lower().strip().rstrip('.!') in ('sus', 'sustur', 'sus ultron', 'kes sesini', 'sessiz ol'):
+            konusmayi_durdur()
+            self._post_assistant("🤫 Sustum.", speak=False)
+            return
+
+        # 0. Bekleyen güvenlik onayı: SADECE tam eşleşme kabul edilir.
+        #    Başka bir mesaj gelirse bekleyen komut güvenlik gereği iptal edilir.
+        if self.pending_confirmation_cmd:
+            text_exact = text.lower().strip().rstrip(".!")
+            if text_exact in CONFIRM_PHRASES:
+                self._execute_pending_confirmation()
+                return
+            self._cancel_pending_confirmation(
+                "🛡️ **GÜVENLİK:** Bekleyen onay, yeni bir komut girildiği için iptal edildi."
+            )
+            # iptalden sonra yeni mesaj normal akışta işlenmeye devam eder
+
+        # 1. Çok turlu sohbet geçmişine ekle
+        self.recent_chat_history.append({"role": "user", "text": text})
+        self._trim_history()
+
+        self._set_ai_state("thinking")
+
+        # 2. Engine'i worker thread'de çalıştır (web araması / uygulama tarama UI'ı dondurmasın)
+        worker = EngineWorkerThread(self.controller.engine, text, list(self.recent_chat_history))
+        worker.finished_signal.connect(self._on_engine_result)
+        worker.error_signal.connect(self.on_ai_error)
+        self._track_worker(worker)
+        self.engine_worker = worker
+        worker.start()
+
+    def _on_engine_result(self, text: str, engine_ctx):
+        # 3. Güvenlik onayı / yasak komut kontrolü
+        if engine_ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM", "FORBIDDEN"):
+            if engine_ctx.security_level == "FORBIDDEN":
+                self._post_assistant(engine_ctx.security_message)
+                self._set_ai_state("idle")
+                return
+
+            self.pending_confirmation_cmd = text
+            self.pending_confirmation_timer.start(CONFIRMATION_TIMEOUT_MS)
+
+            def _on_confirm():
+                if self.pending_confirmation_cmd:
+                    self._execute_pending_confirmation()
+
+            def _on_cancel():
+                if self.pending_confirmation_cmd:
+                    self._cancel_pending_confirmation(
+                        "🛡️ **GÜVENLİK İPTALİ:** İşlem kullanıcı tarafından iptal edildi."
+                    )
+
+            self.chat_view.add_confirmation_card(engine_ctx.security_message, _on_confirm, _on_cancel)
+            self.ultron_focus_view.add_confirmation_card(engine_ctx.security_message, _on_confirm, _on_cancel)
+            self._set_ai_state("idle")
+            return
+
+        # 3.5 🎯 Odak modu istekleri (zamanlayıcı ana pencerede yaşar)
+        focus_action = (engine_ctx.entities or {}).get('focus_action')
+        if focus_action:
+            self._handle_focus_action(focus_action,
+                                      (engine_ctx.entities or {}).get('focus_minutes', 25),
+                                      text)
+            return
+
+        # 4. Engine doğrudan sonuç ürettiyse (sistem komutu, web araması, hatırlatma vb.)
+        if engine_ctx.execution_result and engine_ctx.execution_success:
+            self._post_assistant(engine_ctx.execution_result, user_prompt=text)
+            self._set_ai_state("idle")
+            self.refresh_all_data()
+            return
+
+        # 5. LLM'e düş: zenginleştirilmiş prompt + çok turlu bağlam
+        provider = self.controller.provider
+        enriched_prompt = engine_ctx.enriched_prompt or text
+
+        # Ollama → STREAMING: cevap kelime kelime akar
+        if provider == 'ollama':
+            self._start_streaming_reply(text, enriched_prompt)
+            return
+
+        ctx = self.controller.ai_context.get(provider)
+        worker = AIWorkerThread(provider, enriched_prompt, self.controller.config, context=ctx)
+        worker.finished_signal.connect(lambda ans, updated_ctx: self.on_ai_response(text, ans, updated_ctx))
+        worker.error_signal.connect(self.on_ai_error)
+        self._track_worker(worker)
+        self.ai_worker = worker
+        worker.start()
+
+    # ------------------------------------------------------------------
+    # Streaming (Ollama)
+    # ------------------------------------------------------------------
+    def _start_streaming_reply(self, user_text: str, prompt: str):
+        self._set_ai_state("speaking")
+        now_str = datetime.now().strftime("%H:%M")
+        self._stream_bubble = self.chat_view.add_message("assistant", "▌", now_str)
+        self._stream_parts = []
+        self._stream_dirty = False
+
+        # Her token'da HTML render pahalı — 150ms'de bir topluca güncelle
+        self._stream_timer = QTimer(self)
+        self._stream_timer.timeout.connect(self._flush_stream)
+        self._stream_timer.start(150)
+
+        worker = StreamWorkerThread(prompt, self.controller.config)
+        worker.token_signal.connect(self._on_stream_token)
+        worker.finished_signal.connect(lambda full: self._on_stream_done(user_text, full))
+        worker.error_signal.connect(self._on_stream_error)
+        self._track_worker(worker)
+        self.ai_worker = worker
+        worker.start()
+
+    def _on_stream_token(self, token: str):
+        self._stream_parts.append(token)
+        self._stream_dirty = True
+
+    def _flush_stream(self):
+        if self._stream_dirty and self._stream_bubble is not None:
+            self._stream_dirty = False
+            self._stream_bubble.update_text(''.join(self._stream_parts) + " ▌")
+            self.chat_view.scroll_to_bottom()
+
+    def _on_stream_done(self, user_text: str, full: str):
+        self._stream_timer.stop()
+        if self._stream_bubble is not None:
+            self._stream_bubble.update_text(full)
+            self.chat_view.scroll_to_bottom()
+        self._stream_bubble = None
+
+        # Balonu zaten canlı bastık — _post_assistant'ın yeniden basmaması için
+        # geçmiş/log/TTS işlemlerini burada elle yapıyoruz
+        self.ultron_focus_view.add_message("assistant", full)
+        self.recent_chat_history.append({"role": "assistant", "text": full})
+        self._trim_history()
+        self.controller.log(user_text, full)
+        self._speak(full)
+
+        QTimer.singleShot(800, lambda: self._set_ai_state("idle"))
+        self.refresh_all_data()
+
+    def _on_stream_error(self, err: str):
+        self._stream_timer.stop()
+        if self._stream_bubble is not None:
+            self._stream_bubble.update_text(f"⚠️ {err}")
+        self._stream_bubble = None
+        self._set_ai_state("idle")
+
+    def on_ai_response(self, user_prompt: str, ai_answer: str, updated_context):
+        self._set_ai_state("speaking")
+
+        self.controller.ai_context[self.controller.provider] = updated_context
+        self._post_assistant(ai_answer, user_prompt=user_prompt)
+
+        QTimer.singleShot(1500, lambda: self._set_ai_state("idle"))
+        self.refresh_all_data()
+
+    # ------------------------------------------------------------------
+    # 🎯 Odak Modu (Pomodoro)
+    # ------------------------------------------------------------------
+    def _handle_focus_action(self, action: str, minutes: int, user_text: str):
+        if action == 'cancel':
+            if self._focus_qtimer is not None:
+                self._focus_qtimer.stop()
+                self._focus_qtimer = None
+                self._focus_restore_volume()
+                self._post_assistant("🎯 Odak modu iptal edildi — ses eski seviyesine döndü.",
+                                     user_prompt=user_text)
+            else:
+                self._post_assistant("ℹ️ Aktif bir odak modu yok.", user_prompt=user_text)
+            self._set_ai_state("idle")
+            return
+
+        if action == 'status':
+            if self._focus_qtimer is not None and self._focus_end_time:
+                kalan = max(0, int((self._focus_end_time - datetime.now()).total_seconds() // 60))
+                self._post_assistant(f"🎯 Odak modu aktif — **{kalan} dakika** kaldı. Devam! 💪",
+                                     user_prompt=user_text)
+            else:
+                self._post_assistant("ℹ️ Aktif bir odak modu yok. Başlatmak için: `25 dakika odaklan`",
+                                     user_prompt=user_text)
+            self._set_ai_state("idle")
+            return
+
+        # start
+        minutes = max(1, min(180, int(minutes)))
+        if self._focus_qtimer is not None:
+            self._focus_qtimer.stop()
+
+        try:
+            self._focus_prev_volume = sistem_sesi_getir()
+            sistem_sesi_kontrol("set", 20)
+            ses_notu = f"🔉 Ses %{self._focus_prev_volume} → %20'ye alındı."
+        except Exception:
+            self._focus_prev_volume = None
+            ses_notu = ""
+
+        self._focus_minutes = minutes
+        self._focus_end_time = datetime.now() + timedelta(minutes=minutes)
+        self._focus_qtimer = QTimer(self)
+        self._focus_qtimer.setSingleShot(True)
+        self._focus_qtimer.timeout.connect(self._focus_finished)
+        self._focus_qtimer.start(minutes * 60_000)
+
+        self._post_assistant(
+            f"🎯 **ODAK MODU BAŞLADI — {minutes} dakika**\n{ses_notu}\n"
+            f"Süre dolunca haber vereceğim. (İptal: `odaklanmayı iptal et` · Durum: `odak durumu`)",
+            user_prompt=user_text)
+        self._set_ai_state("idle")
+
+    def _focus_restore_volume(self):
+        if self._focus_prev_volume is not None:
+            try:
+                sistem_sesi_kontrol("set", self._focus_prev_volume)
+            except Exception:
+                pass
+            self._focus_prev_volume = None
+        self._focus_end_time = None
+
+    def _focus_finished(self):
+        self._focus_qtimer = None
+        dakika = self._focus_minutes
+        self._focus_restore_volume()
+        msg = (f"🎯 **ODAK SÜRESİ TAMAMLANDI!** {dakika} dakika kesintisiz odaklandın 💪\n"
+               f"🔊 Ses eski seviyesine döndü. Kısa bir mola hak ettin.")
+        self._post_assistant(msg)
+        self._show_system_notification("ULTRON Odak Modu", f"{dakika} dakika tamamlandı! Mola zamanı.")
+        self._telegram_bildir(msg)
+
+    # ------------------------------------------------------------------
+    # Otonom Döngü: Hatırlatmalar + Zamanlanmış Görevler
+    # ------------------------------------------------------------------
+    def _autonomous_tick(self):
+        self.check_due_reminders()
+        self.check_scheduled_tasks()
+
+    def check_scheduled_tasks(self):
+        """Saati gelen zamanlanmış görevleri (sabah brifingi, akşam raporu vb.) çalıştırır."""
+        try:
+            due = zamanlayici.zamani_gelenler(self.controller.cursor)
+        except Exception as e:
+            print(f"[TAU] Zamanlanmış görev kontrolü hatası: {e}")
+            return
+
+        for gorev_id, saat, komut in due:
+            # ÖNCE işaretle — worker sürerken timer tekrar tetiklemesin
+            try:
+                zamanlayici.calisti_isaretle(self.controller.cursor, self.controller.conn, gorev_id)
+            except Exception:
+                continue
+            self._run_scheduled_task(saat, komut)
+
+    def _run_scheduled_task(self, saat: str, komut: str):
+        """Görevi worker'da engine'den geçirir; sonucu masaüstüne + Telegram'a basar."""
+        def _do():
+            ctx = self.controller.engine.process(komut)
+            if ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM", "FORBIDDEN"):
+                return f"⏭️ Zamanlanmış görev \"{komut}\" onay gerektirdiği için atlandı (güvenlik)."
+            if ctx.execution_success and ctx.execution_result:
+                return ctx.execution_result
+            return f"ℹ️ Zamanlanmış görev \"{komut}\" sonuç üretmedi."
+
+        def _on_done(result):
+            msg = f"⏰ **ZAMANLANMIŞ GÖREV ({saat})**\n\n{result}"
+            self._post_assistant(msg, user_prompt=f"[Zamanlanmış {saat}] {komut}")
+            self._telegram_bildir(msg)
+            self.refresh_all_data()
+
+        worker = FuncWorkerThread(_do)
+        worker.finished_signal.connect(_on_done)
+        worker.error_signal.connect(lambda e: print(f"[TAU] Zamanlanmış görev hatası: {e}"))
+        self._track_worker(worker)
+        worker.start()
+
+    def check_due_reminders(self):
+        """Zamanı gelen hatırlatmaları bildirir ve tamamlandı işaretler."""
+        try:
+            due = self.controller.get_due_reminders()
+        except Exception as e:
+            print(f"[TAU] Hatırlatma kontrolü hatası: {e}")
+            return
+
+        if not due:
+            return
+
+        for rem_id, metin, _hedef in due:
+            try:
+                self.controller.mark_reminder_notified(rem_id)
+            except Exception as e:
+                print(f"[TAU] Hatırlatma güncellenemedi: {e}")
+                continue
+            self._post_assistant(f"⏰ **HATIRLATMA ZAMANI GELDİ:** {metin}")
+            self._show_system_notification("ULTRON Hatırlatma", metin)
+            self._telegram_bildir(f"⏰ **HATIRLATMA:** {metin}")
+
+        self.refresh_all_data()
+
+    def _show_system_notification(self, title: str, body: str):
+        """Windows toast bildirimi dener; winotify yoksa tray balonuna, o da yoksa sese düşer."""
+        try:
+            from winotify import Notification
+            toast = Notification(app_id="ULTRON Neural Core", title=title, msg=body)
+            toast.show()
+            return
+        except Exception:
+            pass
+        if getattr(self, 'tray', None) and self.tray.isVisible():
+            self.tray.showMessage(title, body, QSystemTrayIcon.Information, 6000)
+        else:
+            QApplication.beep()
+
+    # ------------------------------------------------------------------
+    # Wake Word ("Hey Ultron")
+    # ------------------------------------------------------------------
+    def _start_wake_word(self):
+        """Ayarlarda açıksa ve model kuruluysa dinleyiciyi (yeniden) başlatır."""
+        if self.wake_worker is not None:
+            self.wake_worker.stop()
+            self.wake_worker = None
+
+        if not self.controller.config.get('wake_enabled'):
+            return
+        if not SPEECH_AVAILABLE:
+            return
+
+        worker = WakeWordThread(WAKE_MODEL_PATH,
+                                device_index=self.controller.config.get('mic_device_index', -1))
+        worker.wake_detected.connect(self._on_wake_detected)
+        worker.status_signal.connect(lambda s: self._post_assistant(s, speak=False))
+        self._track_worker(worker)
+        self.wake_worker = worker
+        worker.start()
+
+    def _on_wake_detected(self):
+        """'Hey Ultron' duyuldu → uyarı sesi + komut dinlemeye geç."""
+        QApplication.beep()
+        konusmayi_durdur()  # konuşuyorsa sussun, kullanıcı bir şey diyecek
+        self.chat_view.set_ai_state("listening")
+        self.ultron_focus_view.set_ai_state("listening")
+
+        # Komut dinlenirken wake dinleyicisi duraksın (aynı anda iki niyet olmasın)
+        if self.wake_worker is not None:
+            self.wake_worker.paused = True
+
+        self.listen_worker = ListenWorkerThread(
+            device_index=self.controller.config.get('mic_device_index', -1))
+        self.listen_worker.finished_signal.connect(self._on_wake_command)
+        self.listen_worker.error_signal.connect(self._on_wake_command_error)
+        self._track_worker(self.listen_worker)
+        self.listen_worker.start()
+
+    def _on_wake_command(self, text: str):
+        if self.wake_worker is not None:
+            self.wake_worker.paused = False
+        self._set_ai_state("idle")
+        if text:
+            self.on_user_send_message(text)
+
+    def _on_wake_command_error(self, err: str):
+        if self.wake_worker is not None:
+            self.wake_worker.paused = False
+        self._set_ai_state("idle")
+
+    # ------------------------------------------------------------------
+    # Telegram Köprüsü
+    # ------------------------------------------------------------------
+    def _start_telegram_bridge(self):
+        """Token varsa köprüyü (yeniden) başlatır."""
+        if self.telegram_worker is not None:
+            self.telegram_worker.stop()
+            self.telegram_worker = None
+
+        token = (self.controller.config.get('telegram_token') or '').strip()
+        if not token:
+            return
+
+        worker = TelegramWorkerThread(self.controller)
+        worker.activity_signal.connect(self._on_telegram_activity)
+        worker.status_signal.connect(lambda s: self._post_assistant(s, speak=False))
+        self._track_worker(worker)
+        self.telegram_worker = worker
+        worker.start()
+
+    def _on_telegram_activity(self, user_text: str, reply: str):
+        """Telegram trafiğini masaüstü sohbetine yansıtır ve kalıcı loglar."""
+        now_str = datetime.now().strftime("%H:%M")
+        self.chat_view.add_message("user", f"📱 [Telegram] {user_text}", now_str)
+        # Telefondan konuşulurken masaüstünün sesli okuması gereksiz
+        self._post_assistant(reply, user_prompt=f"[Telegram] {user_text}", speak=False)
+        self.refresh_all_data()
+
+    def _telegram_bildir(self, mesaj: str):
+        """Hatırlatma vb. bildirimleri telefona iter (yapılandırılmışsa, arka planda)."""
+        token = (self.controller.config.get('telegram_token') or '').strip()
+        chat_id = str(self.controller.config.get('telegram_chat_id') or '').strip()
+        if not token or not chat_id:
+            return
+        from features import telegram_bridge as tg
+        worker = FuncWorkerThread(tg.send_message, token, chat_id, mesaj)
+        self._track_worker(worker)
+        worker.start()
+
+    # ------------------------------------------------------------------
+    # System Tray
+    # ------------------------------------------------------------------
+    def _init_tray(self):
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray = None
+            return
+
+        self.tray = QSystemTrayIcon(self.app_icon, self)
+        self.tray.setToolTip("ULTRON Neural Core — arka planda aktif")
+
+        menu = QMenu()
+        act_show = menu.addAction("🔴 Ultron'u Göster")
+        act_show.triggered.connect(self._restore_from_tray)
+        act_new = menu.addAction("⚡ Yeni Oturum")
+        act_new.triggered.connect(lambda: (self._restore_from_tray(), self.start_new_chat()))
+        menu.addSeparator()
+        act_quit = menu.addAction("⛔ Tamamen Kapat")
+        act_quit.triggered.connect(self._quit_app)
+        self.tray.setContextMenu(menu)
+
+        self.tray.activated.connect(self._on_tray_activated)
+        self.tray.show()
+
+    def _on_tray_activated(self, reason):
+        # Tek tık veya çift tık → pencereyi geri getir
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self._restore_from_tray()
+
+    def _restore_from_tray(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_app(self):
+        """Tepsi menüsünden gerçek çıkış."""
+        self._quitting = True
+        if self.telegram_worker is not None:
+            self.telegram_worker.stop()
+        if self.wake_worker is not None:
+            self.wake_worker.stop()
+        konusmayi_durdur()
+        if self.tray:
+            self.tray.hide()
+        QApplication.quit()
+
+    def closeEvent(self, event):
+        """Pencere kapatılınca uygulamayı öldürme — tepsiye küçült (hatırlatmalar yaşasın)."""
+        if self._quitting or not getattr(self, 'tray', None) or not self.tray.isVisible():
+            event.accept()
+            return
+
+        event.ignore()
+        self.hide()
+        if not self._tray_notice_shown:
+            self._tray_notice_shown = True
+            self.tray.showMessage(
+                "ULTRON arka planda çalışıyor",
+                "Hatırlatmalar aktif kalacak. Pencereyi geri açmak için tepsi simgesine tıklayın, "
+                "tamamen kapatmak için sağ tık → Tamamen Kapat.",
+                QSystemTrayIcon.Information, 6000
+            )
+
+    def on_ai_error(self, err_msg: str):
+        self.chat_view.set_ai_state("idle")
+        self.ultron_focus_view.set_ai_state("idle")
+
+        err_text = f"⚠️ {err_msg}"
+        self.chat_view.add_message("assistant", err_text, datetime.now().strftime("%H:%M"))
+        self.ultron_focus_view.add_message("assistant", err_text)
+
+    def on_mic_clicked(self):
+        if not SPEECH_AVAILABLE:
+            QMessageBox.warning(self, "Sesli Komut", "Sesli komut için SpeechRecognition / PyAudio paketi yüklü değil.")
+            return
+
+        self.chat_view.set_ai_state("listening")
+        self.listen_worker = ListenWorkerThread(
+            device_index=self.controller.config.get('mic_device_index', -1))
+        self.listen_worker.finished_signal.connect(self.on_voice_input)
+        self.listen_worker.error_signal.connect(self.on_ai_error)
+        self._track_worker(self.listen_worker)
+        self.listen_worker.start()
+
+    def on_voice_input(self, text: str):
+        self.chat_view.set_ai_state("idle")
+        if text:
+            self.on_user_send_message(text)
+
+    # Reminders Handlers
+    def on_add_reminder(self, text: str):
+        if self.controller.add_reminder(text):
+            QMessageBox.information(self, "Başarılı", "Hatırlatma kaydedildi!")
+            self.refresh_all_data()
+        else:
+            QMessageBox.warning(self, "Uyarı", "Hatırlatma kaydedilemedi. Geçerli bir zaman belirtin (ör. 'yarın 14:00').")
+
+    def on_toggle_reminder(self, rem_id: int, completed: bool):
+        self.controller.toggle_reminder(rem_id, completed)
+        self.refresh_all_data()
+
+    def on_delete_reminder(self, rem_id: int):
+        self.controller.delete_reminder(rem_id)
+        self.refresh_all_data()
+
+    # Memory Handlers
+    def on_add_memory(self, key: str, value: str, category: str):
+        self.controller.add_memory(key, value, category)
+        self.refresh_all_data()
+
+    def on_delete_memory(self, item_id: int):
+        mems = self.controller.get_memories()
+        if 0 <= item_id < len(mems):
+            key = mems[item_id]['key']
+            self.controller.delete_memory(key)
+            self.refresh_all_data()
+
+    # Config Handler
+    def on_save_config(self, new_cfg: dict):
+        if save_config(new_cfg):
+            self.controller.config = new_cfg
+            self.controller.provider = new_cfg.get('ai_provider', 'ollama')
+            
+            provider_name = PROVIDER_LABELS.get(self.controller.provider, self.controller.provider)
+            model_name = new_cfg.get('ollama_model', '') if self.controller.provider == 'ollama' else ''
+            self.sidebar.update_provider_status(provider_name, model_name)
+
+            # Telegram / wake word ayarları değişmiş olabilir — yeniden başlat
+            self._start_telegram_bridge()
+            self._start_wake_word()

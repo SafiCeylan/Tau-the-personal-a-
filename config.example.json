@@ -1,0 +1,20 @@
+{
+  "ai_provider": "ollama",
+  "kobold_url": "http://localhost:5001",
+  "ollama_url": "http://127.0.0.1:11434",
+  "ollama_model": "qwen2.5:3b",
+  "tau_backend_url": "https://your-tau-backend-url.com/api",
+  "tau_api_key": "YOUR_TAU_API_KEY_HERE",
+  "tau_timeout": 30,
+  "tau_endpoint": "/chat",
+  "gemini_api_key": "YOUR_GEMINI_API_KEY",
+  "gemini_model": "gemini-1.5-flash",
+  "smtp_user": "",
+  "smtp_pass": "",
+  "telegram_token": "",
+  "telegram_chat_id": "",
+  "tts_enabled": false,
+  "tts_engine": "edge",
+  "wake_enabled": false,
+  "mic_device_index": -1
+}

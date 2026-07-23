@@ -4,6 +4,46 @@ try:
 except ImportError:
     requests = None
 
+
+def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
+                       model='gemma3:4b', on_token=None):
+    """
+    Modern /api/chat endpoint'i ile STREAMING üretim.
+    Her gelen parça için on_token(delta) çağrılır; tam metin döner.
+
+    Not: Çok turlu bağlam enriched_prompt içinde taşınır (PromptGenerator'ın
+    [GEÇMİŞ SOHBET BAĞLAMI] bloğu) — burada ayrıca messages geçmişi tutulmaz,
+    böylece aynı geçmişin iki kanaldan gitmesi (token israfı) önlenir.
+    """
+    if requests is None:
+        raise RuntimeError("'requests' kütüphanesi eksik.")
+
+    url = f"{ollama_url.rstrip('/')}/api/chat"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True,
+    }
+
+    parcalar = []
+    with requests.post(url, json=payload, stream=True, timeout=(10, 300)) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except Exception:
+                continue
+            delta = (data.get('message') or {}).get('content', '')
+            if delta:
+                parcalar.append(delta)
+                if on_token:
+                    on_token(delta)
+            if data.get('done'):
+                break
+    return ''.join(parcalar)
+
 def ollama_generate(prompt, ollama_url='http://127.0.0.1:11434', model='gemma3:4b', context=None):
     """
     Ollama API'sine istek gönderir ve cevabı döner.

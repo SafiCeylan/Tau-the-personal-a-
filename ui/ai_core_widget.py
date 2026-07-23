@@ -1,37 +1,36 @@
 """
-AICoreWidget — TAU'nun altın/amber holografik "AI çekirdeği".
-
-Tamamen native QPainter ile çizilir (web view / tarayıcı bileşeni YOK).
-Merkezde içi boş parlak bir "göz/portal" halkası, etrafında dönen ince
-enerji halkaları, pusula gibi yayılan ışın çizgileri, devre-kartı benzeri
-ince hatlar ve dışa doğru süzülen kıvılcım parçacıkları içerir.
-
-Durum (idle / listening / thinking / speaking) nabız hızını, halka dönüş
-hızını ve parçacık yoğunluğunu değiştirir.
+ULTRON Ultimate Holographic AI Core Canvas — V4.0 Next-Gen Visualizer
+Features:
+- Matrix Hex Stream Data Rain (0x7F, 0x4A, NEURAL_SYNC)
+- Expanding Shockwave Pulse Rings
+- 32-Bar Radiating Audio Spectrum Visualizer with White Hot Peaks
+- Multi-Layer 3D-Tilted Gear Reticles & Radar Tars
+- State-aware reactivity (idle, listening, thinking, speaking)
 """
 
 import math
 import random
-
 from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF
 from PyQt5.QtGui import (
-    QPainter, QColor, QRadialGradient, QPen, QPainterPath, QBrush
+    QPainter, QColor, QRadialGradient, QLinearGradient, QPen, QPainterPath, QBrush, QFont
 )
 from PyQt5.QtWidgets import QWidget, QSizePolicy
 
-GOLD_HOT = QColor("#fff3d6")
-GOLD_BRIGHT = QColor("#ffd873")
-GOLD = QColor("#f2b544")
-GOLD_DEEP = QColor("#c9821f")
+# Ultron Palette
+RED_HOT = QColor("#ffffff")
+RED_BRIGHT = QColor("#ff4d58")
+RED_CRIMSON = QColor("#ff1a26")
+RED_DEEP = QColor("#99000f")
+RED_DARK = QColor("#2b0004")
 
 STATE_CONFIG = {
-    "idle":      dict(pulse_period=4.0, ring_speed=14, particle_rate=0.35, particle_speed=0.55, shimmer=1.0),
-    "listening": dict(pulse_period=1.7, ring_speed=32, particle_rate=1.1, particle_speed=0.85, shimmer=1.6),
-    "thinking":  dict(pulse_period=1.0, ring_speed=85, particle_rate=2.6, particle_speed=1.35, shimmer=2.4),
-    "speaking":  dict(pulse_period=0.55, ring_speed=40, particle_rate=1.8, particle_speed=1.05, shimmer=2.0),
+    "idle":      dict(pulse_period=3.0, ring_speed=24, particle_rate=0.7, particle_speed=0.8, shimmer=1.0, audio_wave=0.4),
+    "listening": dict(pulse_period=1.3, ring_speed=50, particle_rate=2.2, particle_speed=1.3, shimmer=2.0, audio_wave=0.9),
+    "thinking":  dict(pulse_period=0.65, ring_speed=120, particle_rate=4.5, particle_speed=2.0, shimmer=3.5, audio_wave=1.2),
+    "speaking":  dict(pulse_period=0.35, ring_speed=70, particle_rate=3.0, particle_speed=1.5, shimmer=2.8, audio_wave=1.6),
 }
 
-BASE_SIZE = 300.0  # tasarımın temel referans boyutu (px), her şey buna oranlanır
+BASE_SIZE = 360.0
 
 
 def _alpha(color: QColor, a: float) -> QColor:
@@ -43,260 +42,285 @@ def _alpha(color: QColor, a: float) -> QColor:
 class AICoreWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(200)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self._state = "idle"
         self._t = 0.0
-        self._rng = random.Random()
+        self._rng = random.Random(2026)
 
-        self._rays = self._build_rays()
-        self._traces = self._build_traces()
         self._particles = []
         self._spawn_acc = 0.0
-        self._bokeh = self._build_bokeh()
+        self._spectrum_levels = [0.2] * 32
+        
+        # Expanding Shockwave Rings
+        self._shockwaves = []
+        self._shock_timer = 0.0
+
+        # Matrix Hex Stream Glyphs
+        self._matrix_stream = [
+            {"x": self._rng.uniform(-160, 160), "y": self._rng.uniform(-160, 160), 
+             "val": f"0x{self._rng.randint(10, 99):X}", "spd": self._rng.uniform(15, 40), "alpha": self._rng.uniform(0.3, 0.8)}
+            for _ in range(25)
+        ]
 
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(33)  # ~30 fps
-
-    # ---------------- public API ----------------
+        self._timer.setInterval(16)  # 60 fps
+        self._timer.timeout.connect(self._on_tick)
+        self._timer.start()
 
     def set_state(self, state: str):
         if state in STATE_CONFIG and state != self._state:
             self._state = state
+            # Trigger immediate shockwave on state change
+            self._shockwaves.append({"r": 30.0, "alpha": 1.0, "spd": 160.0})
             self.update()
 
-    # ---------------- procedural generation ----------------
+    def state(self) -> str:
+        return self._state
 
-    def _build_rays(self):
-        rays = []
-        count = 36
-        for i in range(count):
-            angle = (i / count) * 2 * math.pi
-            major = (i % 4 == 0)
-            r_outer = (0.43 + self._rng.random() * 0.03) if major else (0.31 + self._rng.random() * 0.07)
-            rays.append(dict(
-                angle=angle, major=major, r_inner=0.21, r_outer=r_outer,
-                phase=self._rng.random() * 2 * math.pi,
-                width=1.7 if major else 0.8,
-                o_min=0.16 if major else 0.06, o_max=0.62 if major else 0.30,
-            ))
-        return rays
+    def _on_tick(self):
+        dt = 0.016
+        self._t += dt
+        cfg = STATE_CONFIG.get(self._state, STATE_CONFIG["idle"])
 
-    def _build_traces(self):
-        traces = []
-        for _ in range(7):
-            angle = self._rng.random() * 2 * math.pi
-            start_r = 0.32 + self._rng.random() * 0.03
-            x0 = math.cos(angle) * start_r
-            y0 = math.sin(angle) * start_r
-            seg1 = 0.06 + self._rng.random() * 0.06
-            x1 = x0 + math.cos(angle) * seg1
-            y1 = y0 + math.sin(angle) * seg1
-            seg2 = 0.05 + self._rng.random() * 0.05
-            dir_x = 1 if math.cos(angle) >= 0 else -1
-            dir_y = 1 if math.sin(angle) >= 0 else -1
-            if self._rng.random() > 0.5:
-                x2, y2 = x1 + dir_x * seg2, y1
-            else:
-                x2, y2 = x1, y1 + dir_y * seg2
-            traces.append(dict(points=[(x0, y0), (x1, y1), (x2, y2)], phase=self._rng.random() * 2 * math.pi))
-        return traces
+        # Update Audio Spectrum Waves
+        wave_mult = cfg["audio_wave"]
+        for i in range(32):
+            target = (0.25 + 0.75 * math.sin(self._t * 7.0 + i * 0.35) ** 2) * wave_mult
+            if self._state in ("thinking", "speaking"):
+                target += self._rng.uniform(-0.2, 0.3)
+            self._spectrum_levels[i] += (target - self._spectrum_levels[i]) * 0.18
 
-    def _build_bokeh(self):
-        dots = []
-        for _ in range(10):
-            dots.append(dict(
-                x=self._rng.uniform(-0.9, 0.9), y=self._rng.uniform(-0.9, 0.9),
-                r=self._rng.uniform(0.05, 0.16), phase=self._rng.random() * 2 * math.pi,
-                speed=self._rng.uniform(0.15, 0.4),
-                vx=self._rng.uniform(-0.01, 0.01), vy=self._rng.uniform(-0.01, 0.01),
-            ))
-        return dots
+        # Spawn Shockwave Rings periodically
+        self._shock_timer += dt
+        if self._shock_timer > (0.8 if self._state == "speaking" else 2.5):
+            self._shock_timer = 0.0
+            self._shockwaves.append({"r": 35.0, "alpha": 0.9, "spd": 140.0})
 
-    # ---------------- animation loop ----------------
+        # Update Shockwaves
+        alive_shocks = []
+        for sw in self._shockwaves:
+            sw["r"] += sw["spd"] * dt
+            sw["alpha"] -= 0.6 * dt
+            if sw["alpha"] > 0 and sw["r"] < 240:
+                alive_shocks.append(sw)
+        self._shockwaves = alive_shocks
 
-    def _tick(self):
-        cfg = STATE_CONFIG[self._state]
-        self._t += 0.033
+        # Update Matrix Stream Glyphs
+        for g in self._matrix_stream:
+            g["y"] += g["spd"] * dt
+            if g["y"] > 170:
+                g["y"] = -170
+                g["x"] = self._rng.uniform(-170, 170)
+                g["val"] = f"0x{self._rng.randint(10, 99):X}"
 
+        # Update & Spawn Quantum Embers
         self._spawn_acc += cfg["particle_rate"]
-        while self._spawn_acc >= 1:
-            self._spawn_particle()
-            self._spawn_acc -= 1
+        while self._spawn_acc >= 1.0:
+            self._spawn_acc -= 1.0
+            angle = self._rng.uniform(0.0, math.tau)
+            dist = self._rng.uniform(20.0, 100.0)
+            spd = self._rng.uniform(40.0, 110.0) * cfg["particle_speed"]
+            life = self._rng.uniform(0.7, 1.8)
+            sz = self._rng.uniform(1.5, 4.5)
+            self._particles.append({
+                "x": math.cos(angle) * dist,
+                "y": math.sin(angle) * dist,
+                "vx": math.cos(angle) * spd,
+                "vy": math.sin(angle) * spd,
+                "life": life,
+                "max_life": life,
+                "sz": sz,
+            })
 
-        alive = []
+        alive_pts = []
         for p in self._particles:
-            p["age"] += 1
-            p["dist"] += cfg["particle_speed"] * 0.012
-            if p["age"] < p["life"]:
-                alive.append(p)
-        self._particles = alive
-
-        for d in self._bokeh:
-            d["x"] += d["vx"] * 0.05
-            d["y"] += d["vy"] * 0.05
-            if d["x"] < -1: d["x"] = 1
-            if d["x"] > 1: d["x"] = -1
-            if d["y"] < -1: d["y"] = 1
-            if d["y"] > 1: d["y"] = -1
+            p["life"] -= dt
+            if p["life"] > 0:
+                p["x"] += p["vx"] * dt
+                p["y"] += p["vy"] * dt
+                alive_pts.append(p)
+        self._particles = alive_pts
 
         self.update()
 
-    def _spawn_particle(self):
-        angle = self._rng.random() * 2 * math.pi
-        self._particles.append(dict(angle=angle, dist=0.11, age=0, life=self._rng.randint(45, 75),
-                                     size=self._rng.uniform(1.1, 2.4)))
-
-    # ---------------- painting ----------------
-
     def paintEvent(self, event):
-        cfg = STATE_CONFIG[self._state]
-        side = min(self.width(), self.height() if self.height() > 0 else self.width())
-        scale = side / BASE_SIZE * 0.86
-        cx, cy = self.width() / 2.0, self.height() / 2.0
-
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.translate(cx, cy)
+        painter.setRenderHint(QPainter.Antialiasing, True)
 
-        self._paint_bokeh(painter, scale)
-        self._paint_ambient_glow(painter, scale, cfg)
-        self._paint_rays(painter, scale, cfg)
-        self._paint_traces(painter, scale)
-        self._paint_rings(painter, scale, cfg)
-        self._paint_sphere(painter, scale, cfg)
-        self._paint_eye(painter, scale, cfg)
-        self._paint_particles(painter, scale, cfg)
+        w = self.width()
+        h = self.height()
+        cx = w / 2.0
+        cy = h / 2.0
+
+        # Background pitch obsidian
+        painter.fillRect(self.rect(), QColor("#050204"))
+
+        scale = min(w, h) / BASE_SIZE
+        painter.translate(cx, cy)
+        painter.scale(scale, scale)
+
+        cfg = STATE_CONFIG.get(self._state, STATE_CONFIG["idle"])
+        pulse = 0.5 + 0.5 * math.sin(self._t * math.tau / cfg["pulse_period"])
+
+        # -------------------------------------------------------------
+        # 1. Fullscreen Holographic Grid & Scanlines
+        # -------------------------------------------------------------
+        painter.save()
+        pen_scan = QPen(_alpha(RED_CRIMSON, 0.10 + 0.05 * pulse), 1)
+        painter.setPen(pen_scan)
+        for y_line in range(-250, 250, 6):
+            painter.drawLine(QPointF(-320, y_line), QPointF(320, y_line))
+        painter.restore()
+
+        # -------------------------------------------------------------
+        # 2. Matrix Hex Data Stream Rain
+        # -------------------------------------------------------------
+        painter.save()
+        painter.setFont(QFont("Consolas", 7, QFont.Bold))
+        for g in self._matrix_stream:
+            painter.setPen(_alpha(RED_BRIGHT, g["alpha"] * 0.4))
+            painter.drawText(QPointF(g["x"], g["y"]), g["val"])
+        painter.restore()
+
+        # -------------------------------------------------------------
+        # 3. Radiating 32-Bar Audio Spectrum Visualizer
+        # -------------------------------------------------------------
+        painter.save()
+        for i in range(32):
+            angle = i * (math.tau / 32)
+            lvl = max(0.1, min(1.4, self._spectrum_levels[i]))
+            
+            r_inner = 125.0
+            r_outer = 125.0 + (40.0 * lvl)
+            
+            x1 = math.cos(angle) * r_inner
+            y1 = math.sin(angle) * r_inner
+            x2 = math.cos(angle) * r_outer
+            y2 = math.sin(angle) * r_outer
+            
+            bar_col = RED_HOT if lvl > 0.85 else (RED_BRIGHT if lvl > 0.4 else RED_CRIMSON)
+            painter.setPen(QPen(_alpha(bar_col, 0.8 + 0.2 * pulse), 2.5))
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        painter.restore()
+
+        # -------------------------------------------------------------
+        # 4. Expanding Shockwave Pulse Rings
+        # -------------------------------------------------------------
+        painter.save()
+        for sw in self._shockwaves:
+            pen_sw = QPen(_alpha(RED_BRIGHT, sw["alpha"] * 0.7), 2)
+            painter.setPen(pen_sw)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(QPointF(0, 0), sw["r"], sw["r"])
+        painter.restore()
+
+        # -------------------------------------------------------------
+        # 5. Atmosphere Radial Glow Shield
+        # -------------------------------------------------------------
+        outer_grad = QRadialGradient(0, 0, 180)
+        outer_grad.setColorAt(0.0, _alpha(RED_CRIMSON, 0.38 + 0.15 * pulse))
+        outer_grad.setColorAt(0.55, _alpha(RED_DEEP, 0.16 + 0.05 * pulse))
+        outer_grad.setColorAt(1.0, _alpha(RED_DARK, 0.0))
+        painter.setBrush(QBrush(outer_grad))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(QPointF(0, 0), 180, 180)
+
+        # -------------------------------------------------------------
+        # 6. Multi-Ring Gear & Radar HUD
+        # -------------------------------------------------------------
+        ring1_angle = self._t * cfg["ring_speed"]
+        ring2_angle = -self._t * (cfg["ring_speed"] * 1.4)
+        radar_angle = self._t * 130.0
+
+        # Ring 1: Gear Ring
+        painter.save()
+        painter.rotate(ring1_angle)
+        pen_gear = QPen(_alpha(RED_BRIGHT, 0.9), 1.5)
+        painter.setPen(pen_gear)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(QPointF(0, 0), 105, 105)
+        
+        for i in range(24):
+            a = i * (math.tau / 24)
+            x1 = math.cos(a) * 100
+            y1 = math.sin(a) * 100
+            x2 = math.cos(a) * 110
+            y2 = math.sin(a) * 110
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        painter.restore()
+
+        # Ring 2: Segment Arc Ring
+        painter.save()
+        painter.rotate(ring2_angle)
+        pen_arc = QPen(_alpha(RED_CRIMSON, 0.8), 2.5)
+        painter.setPen(pen_arc)
+        for i in range(4):
+            start_deg = i * 90 + (self._t * 18 % 360)
+            painter.drawArc(QRectF(-90, -90, 180, 180), int(start_deg * 16), int(60 * 16))
+        painter.restore()
+
+        # Radar Sweep Line
+        painter.save()
+        painter.rotate(radar_angle)
+        radar_grad = QLinearGradient(0, 0, 120, 0)
+        radar_grad.setColorAt(0.0, _alpha(RED_HOT, 0.9))
+        radar_grad.setColorAt(1.0, _alpha(RED_CRIMSON, 0.0))
+        painter.setPen(QPen(QBrush(radar_grad), 2))
+        painter.drawLine(QPointF(0, 0), QPointF(120, 0))
+        painter.restore()
+
+        # -------------------------------------------------------------
+        # 7. Ultron Molten Core Iris
+        # -------------------------------------------------------------
+        core_r = 48.0 + 7.0 * pulse
+        core_grad = QRadialGradient(0, 0, core_r)
+        core_grad.setColorAt(0.0, RED_HOT)
+        core_grad.setColorAt(0.25, RED_BRIGHT)
+        core_grad.setColorAt(0.65, RED_CRIMSON)
+        core_grad.setColorAt(1.0, _alpha(RED_DEEP, 0.35))
+        painter.setBrush(QBrush(core_grad))
+        painter.drawEllipse(QPointF(0, 0), core_r, core_r)
+
+        # Pupil Ring
+        painter.setPen(QPen(_alpha(RED_HOT, 0.95), 1.5))
+        painter.drawEllipse(QPointF(0, 0), 20 + 2 * pulse, 20 + 2 * pulse)
+
+        # -------------------------------------------------------------
+        # 8. Crosshairs & Telemetry Overlay
+        # -------------------------------------------------------------
+        pen_hud = QPen(_alpha(RED_BRIGHT, 0.7), 1)
+        painter.setPen(pen_hud)
+        painter.drawLine(QPointF(-160, 0), QPointF(-70, 0))
+        painter.drawLine(QPointF(70, 0), QPointF(160, 0))
+        painter.drawLine(QPointF(0, -160), QPointF(0, -70))
+        painter.drawLine(QPointF(0, 70), QPointF(0, 160))
+
+        # Corner Brackets
+        brk_sz = 14
+        for bx, by in [(-160, -135), (146, -135), (-160, 125), (146, 125)]:
+            painter.drawRect(QRectF(bx, by, brk_sz, brk_sz))
+
+        # Telemetry Text Labels
+        painter.setFont(QFont("Consolas", 8, QFont.Bold))
+        painter.setPen(_alpha(RED_BRIGHT, 0.9))
+        
+        painter.drawText(QPointF(-170, -143), f"[CORE: {int(98 + pulse*2)}%]")
+        painter.drawText(QPointF(100, -143), f"[STATE: {self._state.upper()}]")
+        painter.drawText(QPointF(-170, 150), "[FREQ: 432Hz]")
+        painter.drawText(QPointF(105, 150), f"[TEMP: {int(310 + pulse*5)}K]")
+
+        # -------------------------------------------------------------
+        # 9. Quantum Embers
+        # -------------------------------------------------------------
+        for p in self._particles:
+            ratio = p["life"] / p["max_life"]
+            alpha = math.sin(ratio * math.pi)
+            pt_col = _alpha(RED_BRIGHT if self._rng.random() > 0.3 else RED_HOT, alpha)
+            painter.setBrush(QBrush(pt_col))
+            painter.setPen(Qt.NoPen)
+            sz = p["sz"] * (0.6 + 0.4 * ratio)
+            painter.drawEllipse(QPointF(p["x"], p["y"]), sz, sz)
 
         painter.end()
-
-    def _paint_bokeh(self, p: QPainter, scale):
-        for d in self._bokeh:
-            alpha = 0.05 + 0.08 * (0.5 + 0.5 * math.sin(self._t * d["speed"] + d["phase"]))
-            r = d["r"] * BASE_SIZE * scale
-            x, y = d["x"] * BASE_SIZE * scale, d["y"] * BASE_SIZE * scale
-            grad = QRadialGradient(QPointF(x, y), r)
-            grad.setColorAt(0, _alpha(GOLD_BRIGHT, alpha))
-            grad.setColorAt(1, _alpha(GOLD_BRIGHT, 0))
-            p.setPen(Qt.NoPen)
-            p.setBrush(QBrush(grad))
-            p.drawEllipse(QPointF(x, y), r, r)
-
-    def _paint_ambient_glow(self, p: QPainter, scale, cfg):
-        pulse = 0.5 + 0.5 * math.sin(self._t * (2 * math.pi / cfg["pulse_period"]))
-        r = (95 + 18 * pulse) * scale
-        grad = QRadialGradient(QPointF(0, 0), r)
-        grad.setColorAt(0, _alpha(GOLD, 0.30 + 0.18 * pulse))
-        grad.setColorAt(0.6, _alpha(GOLD, 0.05))
-        grad.setColorAt(1, _alpha(GOLD, 0))
-        p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(grad))
-        p.drawEllipse(QPointF(0, 0), r, r)
-
-    def _paint_rays(self, p: QPainter, scale, cfg):
-        for ray in self._rays:
-            shimmer = 0.5 + 0.5 * math.sin(self._t * cfg["shimmer"] * 1.1 + ray["phase"])
-            alpha = ray["o_min"] + (ray["o_max"] - ray["o_min"]) * shimmer
-            r_in = ray["r_inner"] * BASE_SIZE * scale
-            r_out = ray["r_outer"] * BASE_SIZE * scale
-            x1, y1 = math.cos(ray["angle"]) * r_in, math.sin(ray["angle"]) * r_in
-            x2, y2 = math.cos(ray["angle"]) * r_out, math.sin(ray["angle"]) * r_out
-            pen = QPen(_alpha(GOLD, alpha), ray["width"] * scale)
-            pen.setCapStyle(Qt.RoundCap)
-            p.setPen(pen)
-            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-
-    def _paint_traces(self, p: QPainter, scale):
-        pen = QPen(_alpha(GOLD_DEEP, 0.38), 1.0)
-        p.setPen(pen)
-        for trace in self._traces:
-            path = QPainterPath()
-            pts = [(x * BASE_SIZE * scale, y * BASE_SIZE * scale) for x, y in trace["points"]]
-            path.moveTo(*pts[0])
-            for x, y in pts[1:]:
-                path.lineTo(x, y)
-            p.drawPath(path)
-
-            blink = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(self._t * 2.6 + trace["phase"]))
-            p.setPen(Qt.NoPen)
-            p.setBrush(_alpha(GOLD_BRIGHT, blink))
-            nx, ny = pts[-1]
-            p.drawEllipse(QPointF(nx, ny), 2.4 * scale, 2.4 * scale)
-            p.setPen(pen)
-
-    def _paint_rings(self, p: QPainter, scale, cfg):
-        angle_outer = (self._t * cfg["ring_speed"]) % 360
-        angle_mid = (-self._t * cfg["ring_speed"] * 0.6) % 360
-        self._draw_arc_ring(p, 0.35 * BASE_SIZE * scale, angle_outer, 2.4 * scale, GOLD, 0.55)
-        self._draw_arc_ring(p, 0.35 * BASE_SIZE * scale, angle_outer + 180, 2.4 * scale, GOLD, 0.55)
-        self._draw_arc_ring(p, 0.26 * BASE_SIZE * scale, angle_mid, 1.8 * scale, GOLD_BRIGHT, 0.5)
-        self._draw_arc_ring(p, 0.26 * BASE_SIZE * scale, angle_mid + 150, 1.8 * scale, GOLD_BRIGHT, 0.5)
-
-    def _draw_arc_ring(self, p: QPainter, radius, start_deg, width, color, alpha):
-        rect = QRectF(-radius, -radius, radius * 2, radius * 2)
-        pen = QPen(_alpha(color, alpha), width)
-        pen.setCapStyle(Qt.RoundCap)
-        p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
-        p.drawArc(rect, int(start_deg * 16), int(38 * 16))
-
-    def _paint_sphere(self, p: QPainter, scale, cfg):
-        pulse = 0.5 + 0.5 * math.sin(self._t * (2 * math.pi / cfg["pulse_period"]))
-        base_r = 0.20 * BASE_SIZE * scale
-        r = base_r * (1.0 + 0.09 * pulse)
-
-        # bloom (katmanlı, azalan opaklıkla)
-        for i, (mult, a) in enumerate([(1.9, 0.05), (1.5, 0.08), (1.15, 0.14)]):
-            p.setPen(Qt.NoPen)
-            p.setBrush(_alpha(GOLD, a))
-            p.drawEllipse(QPointF(0, 0), r * mult, r * mult)
-
-        grad = QRadialGradient(QPointF(-r * 0.18, -r * 0.24), r * 1.05)
-        grad.setColorAt(0.0, GOLD_HOT)
-        grad.setColorAt(0.25, GOLD_BRIGHT)
-        grad.setColorAt(0.55, GOLD)
-        grad.setColorAt(0.85, GOLD_DEEP)
-        grad.setColorAt(1.0, _alpha(GOLD_DEEP, 0))
-        p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(grad))
-        p.drawEllipse(QPointF(0, 0), r, r)
-
-    def _paint_eye(self, p: QPainter, scale, cfg):
-        fast_pulse = 0.5 + 0.5 * math.sin(self._t * (2 * math.pi / (cfg["pulse_period"] * 0.5)))
-        r = 0.095 * BASE_SIZE * scale
-
-        for mult, a in [(2.3, 0.06), (1.7, 0.10), (1.25, 0.16 + 0.1 * fast_pulse)]:
-            p.setPen(Qt.NoPen)
-            p.setBrush(_alpha(GOLD_BRIGHT, a))
-            p.drawEllipse(QPointF(0, 0), r * mult, r * mult)
-
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#050506"))
-        p.drawEllipse(QPointF(0, 0), r, r)
-
-        pen = QPen(_alpha(GOLD_BRIGHT, 0.85 + 0.15 * fast_pulse), 0.17 * BASE_SIZE * scale * 0.32)
-        p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
-        p.drawEllipse(QPointF(0, 0), r * 0.86, r * 0.86)
-
-    def _paint_particles(self, p: QPainter, scale, cfg):
-        p.setCompositionMode(QPainter.CompositionMode_Plus)
-        for particle in self._particles:
-            life_ratio = particle["age"] / particle["life"]
-            alpha = math.sin(life_ratio * math.pi) * 0.85
-            if alpha <= 0.01:
-                continue
-            dist = particle["dist"] * BASE_SIZE * scale
-            x = math.cos(particle["angle"]) * dist
-            y = math.sin(particle["angle"]) * dist
-            size = particle["size"] * scale
-            grad = QRadialGradient(QPointF(x, y), size * 2.2)
-            grad.setColorAt(0, _alpha(GOLD_HOT, alpha))
-            grad.setColorAt(1, _alpha(GOLD_BRIGHT, 0))
-            p.setPen(Qt.NoPen)
-            p.setBrush(QBrush(grad))
-            p.drawEllipse(QPointF(x, y), size * 2.2, size * 2.2)
-        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
