@@ -44,7 +44,14 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'notebook', 'IPython'],
+    excludes=[
+        'tkinter', 'matplotlib', 'notebook', 'IPython',
+        # Ortamdan sızan devasa gereksizler (1GB paketin sebebi)
+        'sklearn', 'scipy', 'pandas', 'networkx', 'joblib', 'sympy',
+        'torch', 'torchvision', 'cv2', 'numba', 'llvmlite',
+        'PIL.ImageQt', 'lxml', 'pytest',
+        # NOT: setuptools DIŞLANAMAZ — pygame'in pkg_resources hook'u jaraco'ya muhtaç
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
