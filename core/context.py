@@ -24,6 +24,11 @@ class UltronContext:
     confidence: float = 0.0
     intent_source: str = "regex"  # "regex" | "llm" — gözlemlenebilirlik için
 
+    # Context Manager (Faz 2) — eksik referanslar bağlamdan dolduruldu mu?
+    # Örn: ["'onu' → staj raporu.pdf"]. Kullanıcıya gösterilir; sessiz tahmin
+    # yapılmaz, yanlış dosyayı fark etmeden göndermesin.
+    baglam_notlari: List[str] = field(default_factory=list)
+
     # 4. Entity Extraction
     entities: Dict[str, Any] = field(default_factory=dict)
     # LLM niyet çözücünün çıkardığı kanonik parametreler (EntityExtraction bunları

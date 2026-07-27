@@ -13,6 +13,7 @@ from core.layers.pipeline_layers import (
 )
 from core.layers.routine_engine import RoutineEngine
 from core.layers.self_reflection import SelfReflectionEngine
+from core.context_manager import BAGLAM
 from core.plan_executor import PlanYurutucu
 from core.planner import BEKLIYOR, ONAY_BEKLIYOR, cok_adimli_olabilir, plan_uret
 
@@ -108,6 +109,11 @@ class UltronCoreEngine:
         # 2. Input Normalization (Fixes typos: chorome -> chrome)
         ctx = self.l2_norm.process(ctx)
 
+        # 2.4 CONTEXT MANAGER (Faz 2) — eksik referansları doldur.
+        #     Niyet analizinden ÖNCE olmalı: "onu anneme gönder" cümlesinde
+        #     dosya adı yoksa FILE_TRANSFER regex'i eşleşmez ve komut sohbete düşer.
+        ctx = self._baglami_uygula(ctx)
+
         # 2.5 Onay bekleyen bir plan varsa, bu mesaj onay/ret cevabı olabilir.
         #     Niyet analizinden ÖNCE bakılır: "evet" tek başına anlamsız bir
         #     cümledir, boru hattı onu sohbete yollar ve plan sonsuza kadar asılı kalır.
@@ -186,10 +192,87 @@ class UltronCoreEngine:
         # 13. Result Checker
         ctx = self.l13_checker.process(ctx)
 
+        # Bağlamdan doldurulan referansı kullanıcıya BİLDİR. Sessiz tahmin,
+        # yanlış dosyanın fark edilmeden gönderilmesi demektir.
+        if ctx.baglam_notlari and ctx.execution_result:
+            ctx.execution_result = (
+                f"_(bağlamdan: {', '.join(ctx.baglam_notlari)})_\n\n"
+                f"{ctx.execution_result}"
+            )
+
+        # Bağlamı güncelle — bir sonraki "onu gönder" bunu kullanacak
+        self._baglami_kaydet(ctx)
+
         # 14. Response Builder
         ctx = self.l14_response.process(ctx)
 
         return ctx
+
+    # =====================================================================
+    # CONTEXT MANAGER YARDIMCILARI (Faz 2)
+    # =====================================================================
+    def _baglami_uygula(self, ctx):
+        """Cümledeki eksik referansları bağlamdan doldurur."""
+        try:
+            cozulmus, notlar = BAGLAM.coz(ctx.normalized_input, ctx.kanal)
+        except Exception as e:
+            print(f"[Ultron Baglam] Referans çözülemedi: {e}")
+            return ctx
+        if notlar:
+            ctx.normalized_input = cozulmus
+            ctx.baglam_notlari = notlar
+        return ctx
+
+    def _baglami_kaydet(self, ctx):
+        """
+        Konuşmanın durumunu günceller.
+
+        Sadece BAŞARILI komutlar bağlamı değiştirir: başarısız bir komutun
+        konusu "en son konuşulan şey" sayılmamalı.
+        """
+        if not ctx.execution_success:
+            return
+        try:
+            alanlar = {'son_intent': ctx.intent}
+
+            # Son dosya: arama TEK sonuç verdiyse o dosyadır. Birden fazlaysa
+            # kullanıcı henüz seçmemiştir — tahmin etme.
+            if ctx.intent in ("FILE_SEARCH", "FILE_TRANSFER", "FILE_INDEX"):
+                from features import file_index
+                sonuclar = file_index.son_sonuclari_al(ctx.kanal)
+                if len(sonuclar) == 1:
+                    alanlar['son_dosya'] = sonuclar[0].get('ad') or sonuclar[0].get('yol')
+
+            if ctx.intent in ("WHATSAPP_MESSAGE", "EMAIL_MESSAGE"):
+                alici = self._aliciyi_coz(ctx)
+                if alici:
+                    alanlar['son_kisi'] = alici
+
+            if ctx.intent == "SYSTEM_CONTROL" and ctx.entities.get('app_name'):
+                alanlar['son_uygulama'] = ctx.entities['app_name']
+
+            BAGLAM.hatirla(ctx.kanal, **alanlar)
+        except Exception as e:
+            print(f"[Ultron Baglam] Bağlam kaydedilemedi: {e}")
+
+    @staticmethod
+    def _aliciyi_coz(ctx):
+        metin = ctx.normalized_input
+        try:
+            from features.actions.whatsapp_control import whatsapp_gonderim_ayristir
+            wa = whatsapp_gonderim_ayristir(metin)
+            if wa:
+                return wa[0]
+        except Exception:
+            pass
+        try:
+            from features.email_control import email_gonderim_ayristir
+            ep = email_gonderim_ayristir(metin)
+            if ep:
+                return ep[0]
+        except Exception:
+            pass
+        return None
 
     # =====================================================================
     # PLANNER YARDIMCILARI (Faz 1)
