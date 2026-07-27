@@ -225,7 +225,28 @@ class RaporTest(unittest.TestCase):
         rapor = kurtarma_raporu("bulunamadı", kurtarma)
         self.assertIn("bulunamadı", rapor)
         self.assertIn("gevşettim", rapor)
-        self.assertIn("?", rapor)          # kullanıcıya soru sorulmalı
+
+    def test_hicbir_sonuc_yoksa_tam_ad_istenir(self):
+        """Somut ve yapılabilir tek şey: dosyanın tam adı."""
+        from core.recovery import KurtarmaSonucu
+        kurtarma = KurtarmaSonucu(denendi=True, basarili=False, adimlar=["↳ denedim"])
+        self.assertIn("tam yaz", kurtarma_raporu("bulunamadı", kurtarma))
+
+    def test_sonuc_bulunduysa_cevaplanamaz_soru_sorulmaz(self):
+        """
+        CANLIDA YAKALANAN: kurtarma 9 dosya listeledikten sonra "Devam etmemi
+        ister misin?" diye soruyordu. Kullanıcı "devam et" yazdı — sistemde onu
+        karşılayan hiçbir şey yok, üstelik 9 sonuçtan hangisi olduğu da belirsiz.
+        Liste zaten kendi yönergesini taşıyor ("1'i bana gönder").
+        """
+        from core.recovery import KurtarmaSonucu
+        kurtarma = KurtarmaSonucu(denendi=True, basarili=False,
+                                  mesaj="Bulunan dosyalar: 1. staj.pdf",
+                                  adimlar=["↳ gevşettim ✅"])
+        rapor = kurtarma_raporu("bulunamadı", kurtarma)
+        self.assertIn("staj.pdf", rapor)
+        self.assertNotIn("Devam etmemi", rapor)
+        self.assertNotIn("tam yaz", rapor)
 
     def test_basarili_kurtarmada_soru_sorulmaz(self):
         from core.recovery import KurtarmaSonucu

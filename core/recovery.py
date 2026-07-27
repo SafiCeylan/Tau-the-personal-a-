@@ -290,12 +290,23 @@ def kurtar(arac_adi: str, parametreler: Dict[str, Any], sonuc,
 
 
 def kurtarma_raporu(asil_mesaj: str, kurtarma: KurtarmaSonucu) -> str:
-    """Kullanıcıya gösterilecek birleşik metin."""
+    """
+    Kullanıcıya gösterilecek birleşik metin.
+
+    ⚠️ CEVAPLANAMAYACAK SORU SORMA. Önceki sürüm her başarısızlıkta
+    "Devam etmemi ister misin?" diye soruyordu; kullanıcı "devam et" yazınca
+    sistemde onu karşılayan hiçbir şey yoktu (canlıda görüldü). Üstelik 9 sonuç
+    listelenmişken "devam" neyi kastediyor belli değil.
+
+    Kural: alternatif SONUÇ ÜRETTİYSE zaten kendi yönergesini taşır
+    ("1'i bana gönder") — üstüne soru ekleme. Hiçbir şey bulunamadıysa
+    kullanıcıdan somut ve yapılabilir tek şeyi iste: tam ad.
+    """
     parcalar = [asil_mesaj] if asil_mesaj else []
     if kurtarma.adimlar:
         parcalar.append("\n**Denediklerim:**\n" + "\n".join(kurtarma.adimlar))
     if kurtarma.mesaj:
         parcalar.append("\n" + kurtarma.mesaj)
-    if kurtarma.denendi and not kurtarma.basarili:
-        parcalar.append("\n❓ Devam etmemi ister misin, yoksa adını tam yazar mısın?")
+    elif kurtarma.denendi and not kurtarma.basarili:
+        parcalar.append("\n❓ Dosyanın adını tam yazar mısın?")
     return "\n".join(p for p in parcalar if p)
