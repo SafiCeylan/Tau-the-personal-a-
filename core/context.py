@@ -65,6 +65,11 @@ class UltronContext:
     # 12. Execution Engine
     execution_success: bool = False
     execution_result: Optional[str] = None
+    # Hangi araç hangi argümanlarla çalıştı — Recovery Engine (Faz 4) bunlarla
+    # alternatif üretir. `son_arac_sonucu` ham AracSonuc'tur (bellekte kalır).
+    son_arac: Optional[str] = None
+    son_arac_argumanlari: Dict[str, Any] = field(default_factory=dict)
+    son_arac_sonucu: Any = None
     
     # 13. Result Checker
     verification_passed: bool = True

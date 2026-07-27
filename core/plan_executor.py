@@ -126,8 +126,10 @@ class PlanYurutucu:
                 gorev.durum = BITTI
                 gorev.sonuc = arac_sonucu.mesaj
             else:
-                gorev.durum = BASARISIZ
-                gorev.sonuc = arac_sonucu.mesaj
+                # Başarısız adımda ALTERNATİF ÜRET (Faz 4). Kurtarma yalnızca
+                # güvenli araç çalıştırır — "gönderim başarısız, tekrar deneyeyim"
+                # aynı mesajı iki kez göndermek olurdu.
+                gorev.durum, gorev.sonuc = self._kurtarmayi_dene(gorev, arac_sonucu)
 
             durumlar[gorev.id] = gorev.durum
 
@@ -135,6 +137,26 @@ class PlanYurutucu:
             g.durum in (BITTI, ATLANDI) for g in plan.gorevler
         )
         return sonuc
+
+    # ---------------------------------------------------------------
+    def _kurtarmayi_dene(self, gorev: Gorev, arac_sonucu):
+        """Başarısız adım için alternatif üretir → (durum, mesaj)."""
+        from core.recovery import kurtar, kurtarma_raporu
+
+        try:
+            kurtarma = kurtar(
+                gorev.eylem, gorev.parametreler, arac_sonucu,
+                db_cursor=self.db_cursor, db_conn=self.db_conn, kanal=self.kanal,
+            )
+        except Exception as e:
+            print(f"[Ultron Plan] Kurtarma çöktü: {e}")
+            return BASARISIZ, arac_sonucu.mesaj
+
+        if not kurtarma.denendi:
+            return BASARISIZ, arac_sonucu.mesaj
+
+        rapor = kurtarma_raporu(arac_sonucu.mesaj, kurtarma)
+        return (BITTI if kurtarma.basarili else BASARISIZ), rapor
 
     # ---------------------------------------------------------------
     def _kosul_tutuyor(self, gorev: Gorev, durumlar: Dict[int, str]) -> bool:

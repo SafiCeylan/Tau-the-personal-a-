@@ -517,14 +517,21 @@ class ExecutionEngineLayer:
             ctx.execution_success = False
             return ctx
 
+        argumanlar = self._argumanlari_hazirla(ctx, arac, db_cursor, db_conn)
+        ctx.son_arac = arac.ad
+        # DB bağlantıları kurtarma tarafında yeniden verilir — bağlamda taşıma
+        ctx.son_arac_argumanlari = {k: v for k, v in argumanlar.items()
+                                    if k not in ('db_cursor', 'db_conn')}
         try:
-            sonuc = arac.calistir(**self._argumanlari_hazirla(ctx, arac, db_cursor, db_conn))
+            sonuc = arac.calistir(**argumanlar)
         except Exception as e:
             # Araç çökerse akış LLM'e düşer — eski zincirde de tek bir yeteneğin
             # hatası tüm boru hattını durdurmuyordu.
             print(f"[Ultron Araç] {arac.ad} çalışırken hata: {e}")
             ctx.execution_success = False
             return ctx
+
+        ctx.son_arac_sonucu = sonuc
 
         # Araç bağlama veri bıraktıysa (pano içeriği, ekran görüntüsü yolu, odak
         # modu ayarı) entities'e aktar — PromptGenerator ve UI bunları okur.

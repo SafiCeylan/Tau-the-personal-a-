@@ -46,6 +46,16 @@ class AracSonuc:
     # Bağlama yazılacak ek veri (örn. {"screenshot_path": "..."}) — Executor
     # bunu ctx.entities'e aktarır.
     veri: Dict[str, Any] = field(default_factory=dict)
+    # HEDEFE ULAŞILAMADI işareti (Faz 4). `basarili` ile karıştırma:
+    #
+    #   "dosya bulunamadı" mesajı BAŞARILI bir çıktıdır — araç düzgün çalıştı,
+    #   kullanıcıya doğru bilgiyi verdi. Bunu başarısız sayarsak arayüz mesajı
+    #   göstermeyi bırakır (ui/tau_window.py execution_success şartı arar) ve
+    #   cevabı LLM üretir → Ultron olmayan dosyayı bulmuş gibi anlatır.
+    #
+    #   Ama hedefe de ulaşılmamıştır. Recovery Engine alternatif üretmek için
+    #   bu alana bakar. Değer `core.recovery` sabitlerinden biridir.
+    hata_tipi: Optional[str] = None
 
     @classmethod
     def islenmedi(cls) -> "AracSonuc":
@@ -53,12 +63,14 @@ class AracSonuc:
         return cls(islendi=False, basarili=False)
 
     @classmethod
-    def ok(cls, mesaj: str, **veri) -> "AracSonuc":
-        return cls(islendi=True, basarili=True, mesaj=mesaj, veri=veri)
+    def ok(cls, mesaj: str, hata_tipi: Optional[str] = None, **veri) -> "AracSonuc":
+        return cls(islendi=True, basarili=True, mesaj=mesaj, veri=veri,
+                   hata_tipi=hata_tipi)
 
     @classmethod
-    def hata(cls, mesaj: str, **veri) -> "AracSonuc":
-        return cls(islendi=True, basarili=False, mesaj=mesaj, veri=veri)
+    def hata(cls, mesaj: str, hata_tipi: Optional[str] = None, **veri) -> "AracSonuc":
+        return cls(islendi=True, basarili=False, mesaj=mesaj, veri=veri,
+                   hata_tipi=hata_tipi)
 
 
 @dataclass

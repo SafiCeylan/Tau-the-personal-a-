@@ -171,6 +171,20 @@ class UltronCoreEngine:
 
         if not planlandi:
             ctx = self.l12_exec.process(ctx, db_cursor=cursor, db_conn=conn)
+            # 12.6 RECOVERY (Faz 4) — hedefe ulaşılamadıysa alternatif üret.
+            #
+            # İki tetikleyici var, ikisi de gerekli:
+            #   • hata_tipi işaretli → araç düzgün çalıştı ama aradığını bulamadı
+            #     ("dosya bulunamadı" başarılı bir çıktıdır, hedefe ulaşmaz)
+            #   • basarili=False + mesaj var → araç denedi ve hata verdi
+            #
+            # "Üstlenmedi" (execution_result boş) durumunda kurtarma YAPILMAZ:
+            # orada bir hata yok, komut zaten sohbete ait.
+            if ctx.son_arac and ctx.execution_result and (
+                getattr(ctx.son_arac_sonucu, 'hata_tipi', None)
+                or not ctx.execution_success
+            ):
+                ctx = self._kurtarmayi_dene(ctx, cursor, conn)
 
         # Self-Reflection Check (Auto-Correction & Self-Retry on failure)
         if not ctx.execution_success and ctx.intent == "FILE_OPERATION":
@@ -206,6 +220,32 @@ class UltronCoreEngine:
         # 14. Response Builder
         ctx = self.l14_response.process(ctx)
 
+        return ctx
+
+    # =====================================================================
+    # RECOVERY YARDIMCISI (Faz 4)
+    # =====================================================================
+    def _kurtarmayi_dene(self, ctx, cursor, conn):
+        """Tek adımlı komut başarısız olduğunda alternatif üretir."""
+        from core.recovery import kurtar, kurtarma_raporu
+
+        try:
+            kurtarma = kurtar(
+                ctx.son_arac, ctx.son_arac_argumanlari, ctx.son_arac_sonucu,
+                db_cursor=cursor, db_conn=conn, kanal=ctx.kanal,
+            )
+        except Exception as e:
+            print(f"[Ultron Kurtarma] {e}")
+            return ctx
+
+        if not kurtarma.denendi:
+            return ctx
+
+        ctx.execution_result = kurtarma_raporu(ctx.execution_result, kurtarma)
+        # ⚠️ AŞAĞI ÇEKME YOK. Araç zaten başarılıysa (örn. "bulunamadı" mesajı)
+        # kurtarma başarısız diye False yaparsak arayüz mesajı göstermeyi
+        # bırakır ve cevabı LLM üretir → Ultron olmayan dosyayı anlatır.
+        ctx.execution_success = kurtarma.basarili or ctx.execution_success
         return ctx
 
     # =====================================================================

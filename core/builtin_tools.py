@@ -21,6 +21,8 @@ planner'ın ürettiği kanonik parametrelerdir ve varsa metne TERCİH EDİLİR.
 import re
 
 from core.tools import AracSonuc, arac_kaydet, RISK_GUVENLI, RISK_ONAY
+from core.recovery import BULUNAMADI, bulunamadi_mi
+
 
 from features.actions.system_control import sistem_komutu_algila, medya_kontrol, medya_komutu_algila
 from features.actions.whatsapp_control import whatsapp_komutu_algila
@@ -31,6 +33,7 @@ from features.clipboard_tools import pano_komutu
 from features.email_control import email_komutu_algila
 from features.file_finder import dosya_bul_ve_islet
 from features.file_reader import dosya_oku_ve_analiz_et, dosya_okuma_niyeti_algila
+from features import file_index
 from features.file_send import dosya_komutu_isle, indeks_komutu_algila
 from features.qa import cevapla_guven_skoru_ile
 from features.quick_tools import (
@@ -42,6 +45,20 @@ from features.reporting import analiz_raporu_olustur
 from features.scheduler import zamanlama_komutu_algila
 from features.screenshot_tool import ekran_goruntusu_al
 from features.web_search import canli_web_ara
+
+
+def _dosya_sonucu(cevap: str) -> AracSonuc:
+    """
+    Dosya araçlarının ortak çıkışı.
+
+    "bulunamadı" mesajı BAŞARILI sayılır (arayüz mesajı göstersin, LLM devreye
+    girip uydurmasın) ama `hata_tipi` işaretlenir ki Recovery Engine alternatif
+    üretebilsin. İkisi farklı sorular: "araç düzgün çalıştı mı" ve
+    "hedefe ulaşıldı mı".
+    """
+    if bulunamadi_mi(cevap):
+        return AracSonuc.ok(cevap, hata_tipi=BULUNAMADI)
+    return AracSonuc.ok(cevap)
 
 
 # =========================================================================
@@ -80,7 +97,33 @@ def indeks_yonet(metin="", **_):
 )
 def dosya_gonder(metin="", kanal="desktop", plan=None, **_):
     islendi, cevap = dosya_komutu_isle(metin, kanal=kanal, plan=plan)
-    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+    return _dosya_sonucu(cevap) if islendi else AracSonuc.islenmedi()
+
+
+@arac_kaydet(
+    "indeks_ara",
+    "Dosya indeksinde arar ve eşleşenleri LİSTELER (göndermez, açmaz).",
+    {"sorgu": "aranacak dosya adı", "tur": "uzantı (.pdf gibi)"},
+)
+def indeks_ara(metin="", sorgu=None, tur=None, kanal="desktop", **_):
+    """
+    Salt-okunur indeks araması.
+
+    Neden ayrı araç: indeks araması `dosya_gonder` içinde gömülüydü ve o araç
+    RISK_ONAY olduğu için Recovery Engine onu çalıştıramıyordu (haklı olarak —
+    kurtarma dosya göndermemeli). `dosya_ara` ise klasör bazlı `file_finder`'a
+    gidiyor, indekse değil. Kurtarmanın "adı gevşetip tekrar ara" adımı bu
+    güvenli aracı kullanır.
+    """
+    hedef = sorgu or metin
+    sonuclar = file_index.ara(hedef or '', tur=tur, limit=10)
+    if not sonuclar:
+        return AracSonuc.ok(
+            f"🔍 `{hedef or tur}` için eşleşen dosya bulunamadı.",
+            hata_tipi=BULUNAMADI,
+        )
+    file_index.son_sonuclari_kaydet(kanal, sonuclar)
+    return AracSonuc.ok(file_index.sonuclari_bicimle(sonuclar, "Bulunan dosyalar"))
 
 
 @arac_kaydet(
@@ -94,7 +137,7 @@ def dosya_ac(metin="", sorgu=None, kanal="desktop", **_):
     # ham metin zaten "X dosyasını aç" biçimindedir.
     komut = f"{sorgu} dosyasını aç" if sorgu else metin
     islendi, cevap = dosya_komutu_isle(komut, kanal=kanal)
-    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+    return _dosya_sonucu(cevap) if islendi else AracSonuc.islenmedi()
 
 
 @arac_kaydet(
@@ -105,7 +148,7 @@ def dosya_ac(metin="", sorgu=None, kanal="desktop", **_):
 )
 def dosya_ara(metin="", sorgu=None, **_):
     islendi, cevap = dosya_bul_ve_islet(sorgu or metin)
-    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+    return _dosya_sonucu(cevap) if islendi else AracSonuc.islenmedi()
 
 
 @arac_kaydet(
