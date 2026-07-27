@@ -5,9 +5,7 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
 
 from database.db_manager import DatabaseManager
-
-# Uygulama hangi klasörden başlatılırsa başlatılsın DB her zaman proje kökünde kalsın
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+from core.paths import veri_yolu
 
 # Tek kopya kilidi: ikinci Ultron açılırsa yenisi kapanır, mevcut pencere öne gelir.
 # (İki kopya aynı anda Telegram botunu dinleyince "Conflict" hatası oluşuyordu.)
@@ -31,13 +29,18 @@ def main():
     # Tray modu: pencere kapansa da uygulama arka planda yaşamaya devam eder
     app.setQuitOnLastWindowClosed(False)
 
+    # Windows açılışında otomatik başlatma: pencere açılmasın, doğrudan tray'e insin.
+    # (Başlangıç klasöründeki kısayol "--tray" argümanıyla çalıştırır.)
+    sessiz_baslat = "--tray" in sys.argv
+
     # Önce tek-kopya kilidini kontrol et: ikinci kopya ise DB'yi hiç açmadan çık
     # (gereksiz bağlantı açıp kapatmayı ve olası dosya kilidi çakışmasını önler).
     if _zaten_calisiyor_mu():
         print("ULTRON zaten çalışıyor — mevcut pencere öne getirildi. Bu kopya kapanıyor.")
         sys.exit(0)
 
-    db_manager = DatabaseManager(os.path.join(BASE_DIR, 'bilgiler.db'))
+    # DB %APPDATA%\ULTRON altında — exe ile python sürümü aynı hafızayı paylaşır
+    db_manager = DatabaseManager(veri_yolu('bilgiler.db'))
     conn = db_manager.get_connection()
     cursor = conn.cursor()
 
@@ -63,9 +66,14 @@ def main():
     instance_server.newConnection.connect(window._restore_from_tray)
     window._instance_server = instance_server  # referans yaşasın
 
-    window.show()
-    window.raise_()
-    window.activateWindow()
+    if sessiz_baslat and getattr(window, 'tray', None):
+        # Tray ikonu pencereden bağımsız kurulur — pencereyi hiç göstermeden
+        # arka planda yaşamaya devam eder. (Tray yoksa normal açılışa düş.)
+        print("ULTRON tray modunda başlatıldı (--tray).")
+    else:
+        window.show()
+        window.raise_()
+        window.activateWindow()
 
     sys.exit(app.exec_())
 

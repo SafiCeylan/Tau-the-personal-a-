@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
     QStackedWidget, QMessageBox, QFrame, QLabel, QSystemTrayIcon, QMenu
 )
 
+from core.paths import veri_yolu
 from database.db_manager import DatabaseManager
 from features.reminders import hatirlatma_algila, hatirlatma_kaydet
 from features.actions.system_control import sistem_komutu_algila, sistem_sesi_getir, sistem_sesi_kontrol
@@ -63,13 +64,9 @@ WAKE_MODEL_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'vosk-tr'
 )
 
-UI_DIR = os.path.dirname(os.path.abspath(__file__))
-if getattr(sys, 'frozen', False):
-    # Paketlenmiş exe: config.json exe'nin YANINDA olsun (kullanıcı düzenleyebilsin,
-    # ayarlar oraya yazılsın). _internal içine gizlenmesin.
-    CONFIG_PATH = os.path.join(os.path.dirname(sys.executable), 'config.json')
-else:
-    CONFIG_PATH = os.path.join(os.path.dirname(UI_DIR), 'config.json')
+# config.json artık %APPDATA%\ULTRON altında — exe ve python sürümü aynı ayarı
+# okur, derleme de üstüne yazamaz. (Eski konumdan ilk açılışta göç eder.)
+CONFIG_PATH = veri_yolu('config.json')
 
 PROVIDER_LABELS = {
     'kobold': 'KoboldCPP (Yerel)',

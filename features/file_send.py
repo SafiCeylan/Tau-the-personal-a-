@@ -27,8 +27,9 @@ import time
 
 from features import file_index
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(_ROOT, 'config.json')
+from core.paths import veri_yolu
+
+CONFIG_PATH = veri_yolu('config.json')
 
 # Varsayılan kanal: masaüstünden verilen komutlar bu ada yazılır
 MASAUSTU_KANALI = 'desktop'

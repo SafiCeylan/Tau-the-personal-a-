@@ -15,8 +15,9 @@ from typing import Callable, Dict, List, Optional
 
 from core.interaction.base import InteractionResult, InteractionStrategy
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CAPABILITY_CACHE_PATH = os.path.join(_ROOT, 'capability_cache.json')
+from core.paths import veri_yolu
+
+CAPABILITY_CACHE_PATH = veri_yolu('capability_cache.json')
 
 
 class InteractionDecisionEngine:

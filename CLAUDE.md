@@ -13,8 +13,9 @@
 | **Yol** | `C:\Users\memoc\OneDrive\Desktop\Projeler\tau` |
 | **Geliştirici** | Mehmet Safi Ceylan (SafiCeylan / memoc) |
 | **Yığın** | Python + PyQt5 (QPainter, web view YOK) + SQLite + Ollama |
-| **Varsayılan model** | Ollama `qwen2.5:3b` (küçük model — halüsinasyona meyilli, prompt kuralları sıkı) |
-| **Çalıştırma** | `python main.py` · `start_tau.bat` · exe: `dist\ULTRON\ULTRON.exe` (masaüstündeki `ULTRON.lnk` buraya bakar) |
+| **Varsayılan model** | Ollama `qwen2.5:7b` (config.json'da aktif; `qwen2.5:3b` kurulu ama kullanılmıyor. Kod içi varsayılanlar hâlâ küçük modele göre yazılı — prompt kuralları gevşetilmemeli) |
+| **Çalıştırma** | `python main.py` · `start_tau.bat` · exe: **`C:\Users\memoc\UltronApp\ULTRON\ULTRON.exe`** (OneDrive DIŞINDA — masaüstü/Başlat menüsü/Başlangıç kısayolları buraya bakar) |
+| **Otomatik başlatma** | Başlangıç klasöründeki kısayol `--tray` argümanıyla çalışır → pencere açılmaz, doğrudan sistem tepsisine iner |
 | **Diğer dokümanlar** | `KOMUTLAR.md` (kullanıcı kopya kağıdı) · `KURULUM.md` · `README.md` |
 
 ---
@@ -137,7 +138,9 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 |------|-------|
 | **Testler** | Artık `tests/safety.py` zırhı var (27 Tem): OS'a dokunan son adım (subprocess, pycaw, keybd_event, psutil.kill, startfile, webbrowser) taklitle değiştirilir. **Yeni test modülü açarken `setUpModule`'de zırhı kurmayı unutma** — yoksa test gerçekten Chrome kapatır, ses değiştirir. |
 | **PyInstaller** | 23 Tem'de OneDrive içindeki `dist` kilitlenip PermissionError verdi → `--distpath C:\Users\memoc\UltronApp --workpath C:\Users\memoc\ultron_build_tmp` ile dışarı alınmıştı. 25 Tem'de tekrar proje içi `dist/`'e derlendi ve sorun çıkmadı. Kilit hatası alırsan yolu yine dışarı taşı. |
-| **dist boyutu** | `dist/` ~375 MB ve OneDrive klasörünün içinde — senkron trafiği yaratır. Git'te değil (`.gitignore`). |
+| **Uygulama yeri** | 27 Tem'de exe **OneDrive dışına** taşındı: `C:\Users\memoc\UltronApp\ULTRON` (~371 MB). Sebep: OneDrive "İsteğe Bağlı Dosyalar" exe'yi buluta çekerse açılışta otomatik başlatma kırılır. Derleme hâlâ proje içi `dist/`'e çıkar → **derledikten sonra yeni klasörü UltronApp'e taşımayı unutma**, yoksa kısayollar eski sürüme bakar. |
+| **exe verisi taşınması** | `pyinstaller --noconfirm` COLLECT'ten önce `dist/ULTRON`'u **komple siler** — exe'nin `_internal` içindeki `config.json`/`bilgiler.db`/`file_index.db` her derlemede yok olur. Taşıdıktan sonra proje kökünden yeniden kopyala (`config.json` exe'nin YANINA, DB'ler `_internal` içine). Kalıcı çözüm: veriyi `%APPDATA%\ULTRON`'a al — **henüz yapılmadı.** |
+| **dist boyutu** | Derleme çıktısı ~375 MB. `build/` (~71 MB) hâlâ OneDrive içinde. Git'te değil (`.gitignore`). |
 | **Dosya indeksi** | `file_index.db` (~47 MB, 134k dosya) telefondan erişilebilir. Sır taşıyan dosyalar (`GIZLI_ADLAR`/`GIZLI_UZANTILAR`/`GIZLI_KALIPLAR`) indekse HİÇ girmez — bu listeyi zayıflatma. Yeni kök klasör eklerken AppData/Program Files'ı asla ekleme. |
 | **Kanal ayrımı** | Dosya arama sonuçları `kanal` başına tutulur (`desktop` / Telegram chat_id). `engine.process(..., kanal=)` geçilmezse telefondaki "2'yi gönder" masaüstünde yapılmış aramanın dosyasını gönderir. |
 | **PyInstaller excludes** | sklearn/scipy/pandas/networkx ortamdan sızıp 1GB yapıyordu → excludes. Ama **setuptools DIŞLANAMAZ** (pygame pkg_resources → jaraco çöker). |
@@ -177,8 +180,12 @@ streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi
    parser kalıpları, zayıf-sinyal devretme (`dosya_niyeti_coz`), gizli dosya filtresi,
    kanal ayrımı, onay akışı. Zırh (`tests/safety.py`) burada da kurulmalı — gönderim
    gerçek mail/Telegram trafiği üretir.
-2. **exe eski kaldı** — dosya gönderimi exe'de yok, yeniden derlenmeli.
-3. **Push bekliyor** — `5c44597` yerelde.
+2. ~~**exe eski kaldı**~~ → 27 Tem'de yeniden derlendi (dosya gönderimi artık exe'de var).
+3. **Push bekliyor** — `5c44597` yerelde. `--tray` değişikliği de commit edilmedi.
+   **exe verisi ile python verisi ayrı** — masaüstünden `python main.py` ile konuştuğun
+   Ultron ile tepsideki exe **farklı `bilgiler.db`** kullanıyor (27 Tem'de bir kez
+   kopyalandı, bundan sonra ayrışacaklar). Tek kaynağa indirmek için veri yolu
+   `%APPDATA%\ULTRON`'a alınmalı.
 4. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
 5. `ui/tau_window.py` ~72 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
 
@@ -196,6 +203,7 @@ Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
 | 24–25 Tem | `llm_gateway` (LLM UI'dan söküldü — Telegram/görevler artık LLM cevabı alıyor), `llm_intent` (LLM niyet sınıflandırıcı), `memory_rag` (alakaya göre hafıza), `confirmed_executor` (onaylı WA/mail gönderilmiyordu — fix), `quick_tools` (hesap/saat/sayaç/not), `mood.py` yeniden yazıldı, engine'e canlı config, chat_view (girdi geçmişi, kod bloğu, hızlı öneriler, medya butonları) | ⚠️ **Commit edilmedi** |
 | 27 Tem | CLAUDE.md yazıldı · 24–25 Tem'in işi commit edildi (`43e0103`) · KOMUTLAR.md'ye 5 yeni bölüm · **`tests/safety.py` güvenlik zırhı** — testler artık Chrome kapatmıyor/ses değiştirmiyor, zırhı kilitleyen 3 test eklendi | ✅ 52 test yeşil (2.9 sn) |
+| 27 Tem (3) | **🖥️ Gerçek uygulama haline getirildi:** exe yeniden derlendi (dosya gönderimi dahil), `main.py`'ye `--tray` bayrağı (açılışta pencere değil tepsi), uygulama OneDrive dışına `C:\Users\memoc\UltronApp\ULTRON`'a taşındı, **3 kısayol** kuruldu (Masaüstü / Başlat menüsü / Başlangıç klasörü), veri dosyaları exe tarafına kopyalandı | ✅ Tepsi modunda çalıştığı doğrulandı (PID canlı, pencere açılmadı) |
 | 27 Tem (2) | **📎 Telefondan dosya bul & gönder:** `file_index.py` (134k dosya, 12 sn, alt klasörler dahil, sır filtresi), `file_send.py` (ayrıştırma + Telegram/mail/WhatsApp), `sendDocument`, mail eki (MIMEMultipart), WhatsApp'a pano CF_HDROP + odak korumalı Ctrl+V, `FILE_TRANSFER`/`FILE_INDEX` intent'leri, başkasına gönderimde onay kartı, kanal ayrımı (`ctx.kanal`), 6 saatlik otomatik indeks tazeleme | ✅ **Kullanıcı canlıda doğruladı — "hepsi mis gibi çalışıyor"** (WhatsApp pano yolu dahil). Testler sonraya. |
 
 ---

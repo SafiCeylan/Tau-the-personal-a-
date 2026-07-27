@@ -23,9 +23,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.header import Header
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-USER_DATA_PATH = os.path.join(_ROOT, 'user_data.json')
-CONFIG_PATH = os.path.join(_ROOT, 'config.json')
+from core.paths import veri_yolu
+
+USER_DATA_PATH = veri_yolu('user_data.json')
+CONFIG_PATH = veri_yolu('config.json')
 
 EMAIL_KEY = 'email_kisiler'
 VARSAYILAN_KONU = 'ULTRON Asistan Mesajı'

@@ -24,8 +24,9 @@ import sqlite3
 import time
 from datetime import datetime
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-INDEX_DB = os.path.join(_ROOT, 'file_index.db')
+from core.paths import veri_yolu
+
+INDEX_DB = veri_yolu('file_index.db')
 
 # Tarama sınırları — asistan dakikalarca meşgul olmasın
 MAX_DOSYA = 400_000

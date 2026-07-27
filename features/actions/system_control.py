@@ -12,10 +12,9 @@ import time
 from datetime import datetime
 
 # Bulunan uygulamaların cache'i — her seferinde yavaş disk taraması yapılmasın
-APP_CACHE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    'app_cache.json'
-)
+from core.paths import veri_yolu
+
+APP_CACHE_PATH = veri_yolu('app_cache.json')
 
 # Windows PyCaw Volume API Support
 try:

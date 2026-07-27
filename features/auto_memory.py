@@ -17,8 +17,9 @@ import json
 import os
 import re
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-USER_DATA_PATH = os.path.join(_ROOT, 'user_data.json')
+from core.paths import veri_yolu
+
+USER_DATA_PATH = veri_yolu('user_data.json')
 
 # (regex, anahtar_şablonu) — şablonda {1} = grup 1
 _KALIPLAR = [

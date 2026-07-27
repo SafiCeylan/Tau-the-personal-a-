@@ -26,8 +26,9 @@ import urllib.parse
 from core.interaction import InteractionResult, InteractionStrategy, InteractionDecisionEngine
 from core.interaction import level1_native, level2_uia, level4_input, verification
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-USER_DATA_PATH = os.path.join(_ROOT, 'user_data.json')
+from core.paths import veri_yolu
+
+USER_DATA_PATH = veri_yolu('user_data.json')
 
 KISILER_KEY = 'whatsapp_kisiler'
 WA_TITLE_RE = r'.*WhatsApp.*'
