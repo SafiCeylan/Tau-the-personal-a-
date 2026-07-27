@@ -9,6 +9,9 @@ import os
 from typing import Tuple, Dict, Any
 
 from core.context import UltronContext
+from core.tools import DEFTER
+# Araçların deftere yazılması için import ŞART — modül yan etkisiyle kaydolurlar.
+import core.builtin_tools  # noqa: F401
 from features.actions.system_control import (
     sistem_komutu_algila, sistem_durumu_raporu, sarki_otomatik_baslat,
     medya_kontrol, medya_komutu_algila,
@@ -480,264 +483,87 @@ class ExecutionEngineLayer:
             except Exception as e:
                 print(f"[Ultron AutoMemory] {e}")
 
-        # 0.2 ⏰ Zamanlama yönetimi
-        if ctx.intent == "SCHEDULE_TASK" and db_cursor and db_conn:
-            handled, resp = zamanlama_komutu_algila(ctx.normalized_input, db_cursor, db_conn)
-            if handled:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 0.25 📇 Dosya indeksi yönetimi
-        if ctx.intent == "FILE_INDEX":
-            handled, resp = indeks_komutu_algila(ctx.normalized_input)
-            if handled:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 0.26 📎 Dosya bul & gönder (indeks üzerinden — alt klasörler dahil).
-        #      Başkasına gönderim buraya ULAŞMAZ; güvenlik katmanı CONFIRM ile keser,
-        #      onay sonrası confirmed_executor yürütür.
-        if ctx.intent == "FILE_TRANSFER":
-            handled, resp = dosya_komutu_isle(
-                ctx.normalized_input,
-                kanal=getattr(ctx, 'kanal', 'desktop'),
-                plan=(ctx.entities or {}).get('dosya_plani'),
-            )
-            if handled:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 0.3 🔍 Dosya bulucu
-        if ctx.intent == "FILE_SEARCH":
-            handled, resp = dosya_bul_ve_islet(ctx.normalized_input)
-            if handled:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 0.5 WhatsApp: rehber yönetimi + bilinmeyen alıcı rehberliği.
-        #     (Çözülebilen gönderimler buraya ULAŞMAZ — güvenlik katmanı CONFIRM ile
-        #      keser; onay sonrası sistem_komutu_algila üzerinden yürütülür.)
-        if ctx.intent == "WHATSAPP_MESSAGE":
-            handled, resp = whatsapp_komutu_algila(ctx.normalized_input)
-            if handled:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 0.6 E-posta: rehber yönetimi + bilinmeyen alıcı rehberliği
-        #     (Çözülebilen gönderimler CONFIRM ile kesilir; onay sonrası
-        #      sistem_komutu_algila üzerinden yürütülür.)
-        if ctx.intent == "EMAIL_MESSAGE":
-            handled, resp = email_komutu_algila(ctx.normalized_input)
-            if handled:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 0.7 Sabah Brifingi (hava + döviz + bugünkü hatırlatmalar)
-        if ctx.intent == "MORNING_BRIEFING":
-            ctx.execution_success = True
-            ctx.execution_result = sabah_brifingi_olustur(db_cursor)
+        # 0.2 → 6  ARAÇ DEFTERİ ÜZERİNDEN YÜRÜTME
+        #
+        # Eskiden burada ~260 satırlık bir if/elif zinciri vardı: her yetenek
+        # regex'e gömülüydü, dışarıdan isimle çağrılamıyordu. Artık her yetenek
+        # `core/builtin_tools.py` içinde isimli bir ARAÇ; bu katman yalnızca
+        # intent'ten aracı bulup çalıştırır.
+        #
+        # Planner (Faz 1) aynı defteri kullanacak. Plan üretmenin bir anlamı
+        # olması bu ayrıştırmaya bağlıydı: planner `{"action": "dosya_ara"}`
+        # üretir, çözümü Executor yapar. Planner aracın NASIL çalıştığını bilmez.
+        arac = DEFTER.intent_ile(ctx.intent)
+        if arac is None:
+            ctx.execution_success = False
             return ctx
 
-        # 0.35 📸 Ekran görüntüsü (Telegram'dan gelirse foto olarak da yollanır)
-        if ctx.intent == "SCREENSHOT":
-            yol, mesaj = ekran_goruntusu_al()
-            ctx.execution_success = yol is not None
-            ctx.execution_result = mesaj
-            if yol:
-                ctx.entities['screenshot_path'] = yol
+        try:
+            sonuc = arac.calistir(**self._argumanlari_hazirla(ctx, arac, db_cursor, db_conn))
+        except Exception as e:
+            # Araç çökerse akış LLM'e düşer — eski zincirde de tek bir yeteneğin
+            # hatası tüm boru hattını durdurmuyordu.
+            print(f"[Ultron Araç] {arac.ad} çalışırken hata: {e}")
+            ctx.execution_success = False
             return ctx
 
-        # 0.4 📋 Pano sihirbazı
-        if ctx.intent == "CLIPBOARD":
-            r = pano_komutu(ctx.normalized_input)
-            if r:
-                if r['tip'] == 'direct':
-                    ctx.execution_success = True
-                    ctx.execution_result = r['sonuc']
-                    return ctx
-                # 'ai' → içerik + görev LLM'e akar (PromptGenerator [PANO] bloğu ekler)
-                ctx.entities['pano_icerik'] = r['icerik']
-                ctx.entities['pano_gorev'] = r['gorev']
+        # Araç bağlama veri bıraktıysa (pano içeriği, ekran görüntüsü yolu, odak
+        # modu ayarı) entities'e aktar — PromptGenerator ve UI bunları okur.
+        if sonuc.veri:
+            ctx.entities.update(sonuc.veri)
 
-        # 0.5 🎯 Odak Modu (pomodoro) — asıl zamanlayıcı UI tarafında kurulur;
-        #     burada sadece istek ayrıştırılıp entities'e yazılır
-        if ctx.intent == "FOCUS_MODE":
-            ml = ctx.normalized_input.lower()
-            if any(k in ml for k in ['iptal', 'durdur', 'bitir', 'kapat']):
-                ctx.entities['focus_action'] = 'cancel'
-            elif any(k in ml for k in ['durum', 'kaldı', 'ne kadar']):
-                ctx.entities['focus_action'] = 'status'
-            else:
-                m = re.search(r'(\d+)\s*(?:dakika|dk)', ml)
-                ctx.entities['focus_action'] = 'start'
-                ctx.entities['focus_minutes'] = int(m.group(1)) if m else 25
-            ctx.execution_success = True
-            ctx.execution_result = "🎯 Odak modu isteği alındı."  # UI tarafından ezilir
+        if not sonuc.islendi:
+            # DİKKAT: "üstlenmedi" ile "başarısız oldu" AYNI ŞEY DEĞİL.
+            # Üstlenmediyse cevabı LLM üretir; başarısız olduysa aracın kendi
+            # hata mesajı kullanıcıya döner (aşağıdaki dal).
+            ctx.execution_success = False
             return ctx
 
-        # 0.75 🌙 Akşam Raporu (gün özeti + yarının hatırlatmaları)
-        if ctx.intent == "EVENING_REPORT":
-            ctx.execution_success = True
-            ctx.execution_result = aksam_raporu_olustur(db_cursor)
-            return ctx
-
-        # 0.8 Hava Durumu — doğrudan wttr.in (arama motoru YOK, LLM YOK)
-        if ctx.intent == "WEATHER":
-            try:
-                ctx.execution_success = True
-                ctx.execution_result = hava_raporu()
-                return ctx
-            except Exception as e:
-                print(f"[Ultron Weather] {e}")
-
-        # 0.9 Döviz — doğrudan er-api
-        if ctx.intent == "CURRENCY":
-            ctx.execution_success = True
-            ctx.execution_result = doviz_raporu()
-            return ctx
-
-        # 0.91 Hesap makinesi — LLM'e sorulmaz, Python hesaplar (hatasız)
-        if ctx.intent == "CALCULATOR":
-            ifade = ctx.entities.get("expression") or \
-                hesap_niyeti_algila(ctx.normalized_input) or ctx.normalized_input
-            basarili, mesaj = hesapla(ifade)
-            ctx.execution_success = basarili
-            ctx.execution_result = mesaj
-            return ctx
-
-        # 0.92 Saat/tarih — modelin tahmini değil, sistemin gerçek saati
-        if ctx.intent == "TIME_DATE":
-            basarili, mesaj = saat_tarih_raporu(ctx.normalized_input)
-            ctx.execution_success = basarili
-            ctx.execution_result = mesaj
-            return ctx
-
-        # 0.93 Sayaç — hatırlatma tablosuna yazılır, mevcut döngü bildirir
-        if ctx.intent == "TIMER":
-            dakika = ctx.entities.get("timer_minutes") or \
-                sayac_niyeti_algila(ctx.normalized_input)
-            if dakika and db_cursor is not None:
-                basarili, mesaj = sayac_kur(db_cursor, db_conn, dakika)
-                ctx.execution_success = basarili
-                ctx.execution_result = mesaj
-                return ctx
-
-        # 0.94 Notlar — ekle / listele / sil
-        if ctx.intent == "NOTE_TAKE" and db_cursor is not None:
-            islem = not_niyeti_algila(ctx.normalized_input)
-            if islem is None and ctx.entities.get("note_text"):
-                islem = ('ekle', ctx.entities["note_text"])
-            if islem:
-                eylem, icerik = islem
-                if eylem == 'ekle':
-                    basarili, mesaj = not_ekle(db_cursor, db_conn,
-                                               ctx.entities.get("note_text") or icerik)
-                elif eylem == 'listele':
-                    basarili, mesaj = notlari_getir(db_cursor, db_conn)
-                else:
-                    basarili, mesaj = notlari_sil(db_cursor, db_conn)
-                ctx.execution_success = basarili
-                ctx.execution_result = mesaj
-                return ctx
-
-        # 0.95 Medya kontrolü — çalan müziği duraklat/devam/geç
-        if ctx.intent == "MEDIA_CONTROL":
-            aksiyon = ctx.entities.get("media_action") or \
-                medya_komutu_algila(ctx.normalized_input) or "playpause"
-            basarili, mesaj = medya_kontrol(aksiyon)
-            ctx.execution_success = basarili
-            ctx.execution_result = mesaj
-            return ctx
-
-        # 1. System Control & Volume & Music
-        if ctx.intent in ("SYSTEM_CONTROL", "SET_VOLUME", "PLAY_MUSIC"):
-            # LLM doğal dilden yönlendirdiyse ham metinde tetikleyici kelime
-            # ("çal"/"aç") olmayabilir → sistem_komutu_algila'nın anlayacağı
-            # kanonik bir komut kur. Aksi halde regex komutu ham metinden okur.
-            komut = ctx.normalized_input
-            if ctx.intent_source == "llm":
-                if ctx.intent == "PLAY_MUSIC" and ctx.entities.get("song_title"):
-                    komut = f"{ctx.entities['song_title']} çal"
-                elif ctx.intent == "SYSTEM_CONTROL" and ctx.entities.get("app_name"):
-                    komut = f"{ctx.entities['app_name']} aç"
-            is_action, resp = sistem_komutu_algila(komut)
-            if is_action:
-                ctx.execution_success = True
-                ctx.execution_result = resp
-                return ctx
-
-        # 2. File Reader Operation
-        if ctx.intent == "FILE_OPERATION":
-            is_file, path = dosya_okuma_niyeti_algila(ctx.normalized_input)
-            target = path or ctx.entities.get("file_path")
-            if target:
-                success, res = dosya_oku_ve_analiz_et(target)
-                ctx.execution_success = success
-                ctx.execution_result = res
-                return ctx
-
-        # 3. Web Search Operation
-        if ctx.intent == "WEB_SEARCH":
-            search_q = ctx.entities.get("search_query") or ctx.normalized_input
-            success, res = canli_web_ara(search_q)
-            if success:
-                ctx.execution_success = True
-                ctx.execution_result = res
-                return ctx
-
-        # 4. Reminders
-        if ctx.intent == "CREATE_REMINDER":
-            rem = hatirlatma_algila(ctx.normalized_input)
-            if rem and rem.get('tip') == 'hatirlatma':
-                if db_cursor and db_conn:
-                    if hatirlatma_kaydet(db_cursor, db_conn, rem):
-                        ctx.execution_success = True
-                        ctx.execution_result = f"✅ Hatırlatma kaydedildi! '{rem['metin']}' konusunda {rem.get('detay', '')} hatırlatacağım."
-                        return ctx
-            elif rem and rem.get('tip') == 'gecmis_takip':
-                if db_cursor:
-                    rows = gecmis_getir(db_cursor)
-                    if rows:
-                        lines = [f"{i}. {metin} ({durum})" for i, (metin, _t, _o, durum) in enumerate(rows, 1)]
-                        ctx.execution_success = True
-                        ctx.execution_result = "📅 **KAYITLI HATIRLATMALARINIZ:**\n\n" + "\n".join(lines)
-                        return ctx
-                    else:
-                        ctx.execution_success = True
-                        ctx.execution_result = "📅 Henüz kayıtlı bir hatırlatmanız bulunmuyor."
-                        return ctx
-
-        # 5. Haftalık Kişisel Analiz Raporu
-        if ctx.intent == "ANALYSIS_REPORT" and db_cursor:
-            try:
-                rapor = analiz_raporu_olustur(db_cursor)
-                # HTML formatını sohbet balonunun markdown formatına çevir
-                rapor = rapor.replace("<br>", "\n").replace("<b>", "**").replace("</b>", "**")
-                ctx.execution_success = True
-                ctx.execution_result = rapor
-                return ctx
-            except Exception as e:
-                print(f"[Ultron Report] Analiz raporu hatası: {e}")
-
-        # 6. Öğrenilmiş Soru-Cevap (fuzzy match) — yüksek güvende LLM'e gitmeden yanıtla
-        if ctx.intent == "GENERAL_CONVERSATION" and db_cursor:
-            try:
-                cevap, skor = cevapla_guven_skoru_ile(db_cursor, ctx.normalized_input)
-                if skor >= 85:
-                    ctx.execution_success = True
-                    ctx.execution_result = cevap
-                    return ctx
-            except Exception as e:
-                print(f"[Ultron QA] Soru-cevap eşleşme hatası: {e}")
-
-        ctx.execution_success = False
+        ctx.execution_success = sonuc.basarili
+        ctx.execution_result = sonuc.mesaj
         return ctx
+
+    @staticmethod
+    def _argumanlari_hazirla(ctx: UltronContext, arac, db_cursor, db_conn) -> Dict[str, Any]:
+        """Bağlamdaki veriyi aracın parametre adlarına köprüler."""
+        argumanlar: Dict[str, Any] = {'metin': ctx.normalized_input}
+
+        if arac.db_ister:
+            argumanlar['db_cursor'] = db_cursor
+            argumanlar['db_conn'] = db_conn
+
+        # LLM niyet çözücünün kanonik parametreleri regex'in çıkardığına TERCİH
+        # EDİLİR (llm_entities sonra yazılır, entities'i ezer).
+        varliklar: Dict[str, Any] = dict(ctx.entities or {})
+        varliklar.update(ctx.llm_entities or {})
+
+        if arac.ad == 'uygulama_calistir':
+            # Sadece LLM yönlendirdiyse kanonik komut kurulur; regex zaten ham
+            # metinden okuyor. (Eski zincirin davranışı birebir korundu.)
+            if ctx.intent_source == 'llm':
+                if ctx.intent == 'PLAY_MUSIC' and varliklar.get('song_title'):
+                    argumanlar['sarki'] = varliklar['song_title']
+                elif ctx.intent == 'SYSTEM_CONTROL' and varliklar.get('app_name'):
+                    argumanlar['uygulama'] = varliklar['app_name']
+        elif arac.ad == 'dosya_gonder':
+            # Kanal ayrımı: telefondaki "2'yi gönder", masaüstünde yapılmış
+            # aramanın dosyasını göndermesin.
+            argumanlar['kanal'] = getattr(ctx, 'kanal', 'desktop')
+            argumanlar['plan'] = varliklar.get('dosya_plani')
+        elif arac.ad == 'hesap_makinesi' and varliklar.get('expression'):
+            argumanlar['ifade'] = varliklar['expression']
+        elif arac.ad == 'sayac' and varliklar.get('timer_minutes'):
+            argumanlar['dakika'] = varliklar['timer_minutes']
+        elif arac.ad == 'not_yonet' and varliklar.get('note_text'):
+            argumanlar['icerik'] = varliklar['note_text']
+        elif arac.ad == 'dosya_oku' and varliklar.get('file_path'):
+            argumanlar['yol'] = varliklar['file_path']
+        elif arac.ad == 'web_ara' and varliklar.get('search_query'):
+            argumanlar['sorgu'] = varliklar['search_query']
+        elif arac.ad == 'medya_kontrol' and varliklar.get('media_action'):
+            argumanlar['aksiyon'] = varliklar['media_action']
+
+        return argumanlar
 
 
 # =========================================================================

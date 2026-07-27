@@ -58,7 +58,11 @@ main.py                      Giriş noktası + tek kopya kilidi (ULTRON_NEURAL_C
 core/
   engine.py                  14 katmanı sırayla çalıştırır; update_config() ile canlı ayar
   context.py                 UltronContext — katmanlar arası taşınan tek veri nesnesi
-  layers/pipeline_layers.py  14 katmanın tamamı (intent regex'leri + execution burada)
+  paths.py                   📁 TEK veri dizini (%APPDATA%\ULTRON) + eski konumdan göç
+  tools.py                   🧰 ARAÇ DEFTERİ — Arac / AracSonuc / DEFTER (Faz 0)
+  builtin_tools.py           24 yeteneğin araç kaydı (eski if/elif zinciri buraya taşındı)
+  layers/pipeline_layers.py  14 katmanın tamamı (intent regex'leri burada; execution
+                             artık deftere dağıtım yapıyor, ~260 satır zincir kalktı)
   layers/routine_engine.py   Modlar/rutinler (çalışma modu, dinlenme modu…)
   layers/self_reflection.py  Öz-değerlendirme
   interaction/               AIP — ULTRON Interaction Engine (fare/klavye SON çare)
@@ -162,8 +166,12 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 2. **Fare/klavye son çaredir** (AIP felsefesi): URI/AppID → UIA → odak korumalı klavye.
 3. **Riskli her eylem onay kartından geçer** (SecurityAnalyzer skoru, tam eşleşme + 60sn timeout). Onaylanan komut **`confirmed_executor`** üzerinden yürütülür.
 4. **SQLite thread'ler arası paylaşılamaz** — her çağrı kendi bağlantısını açar.
-5. Yeni özellik → `features/` altında ayrı modül, `pipeline_layers.py`'de intent, `KOMUTLAR.md`'de satır.
-6. Değişiklikten sonra **bu dosyayı ve `KOMUTLAR.md`'yi güncelle.**
+5. Yeni özellik → `features/` altında ayrı modül, `pipeline_layers.py`'de intent,
+   **`core/builtin_tools.py`'de `@arac_kaydet` ile araç kaydı**, `KOMUTLAR.md`'de satır.
+6. **Araç yazarken üç durumu karıştırma:** `AracSonuc.islenmedi()` = üstlenmedim, akış
+   LLM'e düşsün · `AracSonuc.hata(mesaj)` = denedim olmadı, mesajım kullanıcıya dönsün.
+   İkisini karıştırırsan "dosya bulunamadı" LLM'e düşer ve Ultron cevap uydurur.
+7. Değişiklikten sonra **bu dosyayı ve `KOMUTLAR.md`'yi güncelle.**
 
 ---
 
@@ -203,6 +211,7 @@ Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
 | 24–25 Tem | `llm_gateway` (LLM UI'dan söküldü — Telegram/görevler artık LLM cevabı alıyor), `llm_intent` (LLM niyet sınıflandırıcı), `memory_rag` (alakaya göre hafıza), `confirmed_executor` (onaylı WA/mail gönderilmiyordu — fix), `quick_tools` (hesap/saat/sayaç/not), `mood.py` yeniden yazıldı, engine'e canlı config, chat_view (girdi geçmişi, kod bloğu, hızlı öneriler, medya butonları) | ⚠️ **Commit edilmedi** |
 | 27 Tem | CLAUDE.md yazıldı · 24–25 Tem'in işi commit edildi (`43e0103`) · KOMUTLAR.md'ye 5 yeni bölüm · **`tests/safety.py` güvenlik zırhı** — testler artık Chrome kapatmıyor/ses değiştirmiyor, zırhı kilitleyen 3 test eklendi | ✅ 52 test yeşil (2.9 sn) |
+| 27 Tem (4) | **🧰 Faz 0 — ARAÇ DEFTERİ:** `core/tools.py` + `core/builtin_tools.py`. `ExecutionEngineLayer`'ın ~260 satırlık if/elif zinciri 24 isimli araca bölündü; katman artık sadece intent→araç dağıtımı yapıyor. Üç durumlu `AracSonuc` (islenmedi / hata / ok) eski zincirin iki ayrı başarısızlık anlamını koruyor. `tests/test_tools.py` (37 test) | ✅ **98 test yeşil** + uçtan uca duman testi (saat, hesap, not, odak, chrome aç, ses kıs) |
 | 27 Tem (3) | **🖥️ Gerçek uygulama haline getirildi:** exe yeniden derlendi (dosya gönderimi dahil), `main.py`'ye `--tray` bayrağı (açılışta pencere değil tepsi), uygulama OneDrive dışına `C:\Users\memoc\UltronApp\ULTRON`'a taşındı, **3 kısayol** kuruldu (Masaüstü / Başlat menüsü / Başlangıç klasörü), veri dosyaları exe tarafına kopyalandı | ✅ Tepsi modunda çalıştığı doğrulandı (PID canlı, pencere açılmadı) |
 | 27 Tem (2) | **📎 Telefondan dosya bul & gönder:** `file_index.py` (134k dosya, 12 sn, alt klasörler dahil, sır filtresi), `file_send.py` (ayrıştırma + Telegram/mail/WhatsApp), `sendDocument`, mail eki (MIMEMultipart), WhatsApp'a pano CF_HDROP + odak korumalı Ctrl+V, `FILE_TRANSFER`/`FILE_INDEX` intent'leri, başkasına gönderimde onay kartı, kanal ayrımı (`ctx.kanal`), 6 saatlik otomatik indeks tazeleme | ✅ **Kullanıcı canlıda doğruladı — "hepsi mis gibi çalışıyor"** (WhatsApp pano yolu dahil). Testler sonraya. |
 
