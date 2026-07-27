@@ -9,7 +9,10 @@ import os
 from typing import Tuple, Dict, Any
 
 from core.context import UltronContext
-from features.actions.system_control import sistem_komutu_algila, sistem_durumu_raporu, sarki_otomatik_baslat
+from features.actions.system_control import (
+    sistem_komutu_algila, sistem_durumu_raporu, sarki_otomatik_baslat,
+    medya_kontrol, medya_komutu_algila,
+)
 from features.web_search import canli_web_ara, web_arama_niyeti_algila
 from features.file_reader import dosya_oku_ve_analiz_et, dosya_okuma_niyeti_algila
 from features.reminders import hatirlatma_algila, hatirlatma_kaydet, gecmis_getir
@@ -25,6 +28,11 @@ from features.scheduler import zamanlama_komutu_algila
 from features.auto_memory import hafiza_ogren
 from features.file_finder import dosya_arama_niyeti, dosya_bul_ve_islet
 from features.clipboard_tools import pano_komutu
+from features.quick_tools import (
+    hesapla, hesap_niyeti_algila, saat_tarih_raporu, saat_tarih_niyeti_algila,
+    sayac_niyeti_algila, sayac_kur, not_niyeti_algila, not_ekle,
+    notlari_getir, notlari_sil,
+)
 from features.screenshot_tool import ekran_goruntusu_al
 
 
@@ -63,6 +71,11 @@ class NormalizationLayer:
 # LAYER 3: INTENT ANALYZER
 # =========================================================================
 class IntentAnalyzerLayer:
+    def __init__(self, config: dict = None):
+        # config verilir ve llm_intent_enabled açıksa, regex GENERAL_CONVERSATION'a
+        # düştüğünde yerel LLM'e danışılır (doğal dil komutlarını yakalamak için).
+        self.config = config or {}
+
     def process(self, ctx: UltronContext) -> UltronContext:
         msg = ctx.normalized_input.lower()
 
@@ -85,6 +98,20 @@ class IntentAnalyzerLayer:
                 re.search(r'\bher\s+(gün|sabah|akşam)\b.*\d{1,2}[:.]\d{2}', msg):
             # "her gün 21:00 dolar kaç" gibi doğal zamanlama da buraya girer
             ctx.intent = "SCHEDULE_TASK"
+            ctx.confidence = 0.95
+        elif not_niyeti_algila(msg):
+            # "notları göster" — dosya aramadan ÖNCE ("göster" çakışıyor)
+            ctx.intent = "NOTE_TAKE"
+            ctx.confidence = 0.95
+        elif sayac_niyeti_algila(msg):
+            # "5 dakika sayaç kur" — hatırlatmadan ÖNCE (ikisi de zaman içerir)
+            ctx.intent = "TIMER"
+            ctx.confidence = 0.95
+        elif saat_tarih_niyeti_algila(msg):
+            ctx.intent = "TIME_DATE"
+            ctx.confidence = 0.95
+        elif hesap_niyeti_algila(msg):
+            ctx.intent = "CALCULATOR"
             ctx.confidence = 0.95
         elif dosya_arama_niyeti(msg):
             # "indirilenlerdeki son pdf'i aç" — SYSTEM_CONTROL'dan ÖNCE ("aç" çakışır)
@@ -112,6 +139,11 @@ class IntentAnalyzerLayer:
         elif re.search(r'\b(ses|sesi|sesini|volume)\b', msg):
             ctx.intent = "SET_VOLUME"
             ctx.confidence = 0.95
+        elif medya_komutu_algila(msg):
+            # ZATEN çalan medyanın kontrolü (duraklat/devam/sonraki/önceki).
+            # PLAY_MUSIC'ten ÖNCE olmalı — "şarkıyı geç" yeni oynatma değildir.
+            ctx.intent = "MEDIA_CONTROL"
+            ctx.confidence = 0.95
         elif any(k in msg for k in ["müzik çal", "şarkı çal", "müzik aç", "şarkı aç", "youtube music"]) or \
                 (re.search(r'\bçal\b', msg) and any(k in msg for k in ["şarkı", "müzik", "youtube"])) or \
                 msg.endswith(" çal"):
@@ -130,12 +162,34 @@ class IntentAnalyzerLayer:
         elif any(k in msg for k in ["oku:", "dosya oku:", "kod oku:", "pdf oku:"]):
             ctx.intent = "FILE_OPERATION"
             ctx.confidence = 0.90
-        elif any(k in msg for k in ["sistem", "donanım", "ram", "cpu", "kapat", "başlat", "çalıştır", "aç"]):
+        # Kelime sınırıyla eşle: "açıkla", "kapat halini anlat", "başlangıç" gibi
+        # kelimeler SYSTEM_CONTROL'ü YANLIŞLIKLA tetiklemesin. Aksi halde bu komutlar
+        # yanlış güvenlik skoru + yanlış onay kartı üretiyordu.
+        elif any(k in msg for k in ["sistem", "donanım", "ram", "cpu"]) or \
+                re.search(r'\b(kapat|başlat|çalıştır|aç)\b', msg):
             ctx.intent = "SYSTEM_CONTROL"
             ctx.confidence = 0.85
         else:
             ctx.intent = "GENERAL_CONVERSATION"
             ctx.confidence = 0.70
+
+        # LLM DESTEĞİ: Regex net bir eyleme bağlayamadıysa (GENERAL_CONVERSATION),
+        # yerel LLM'e sınıflandırma danış. Doğal dille yazılmış komutları
+        # ("bana motivasyon şarkısı koy") yakalar. Ollama yoksa/yavaşsa sessizce
+        # regex sonucunda kalır — akış asla bozulmaz.
+        if ctx.intent == "GENERAL_CONVERSATION" and self.config.get('llm_intent_enabled'):
+            try:
+                from features.llm_intent import llm_intent_coz
+                sonuc = llm_intent_coz(ctx.normalized_input, self.config)
+                if sonuc:
+                    llm_intent, llm_entities = sonuc
+                    if llm_intent != "GENERAL_CONVERSATION":
+                        ctx.intent = llm_intent
+                        ctx.confidence = 0.80
+                        ctx.intent_source = "llm"
+                        ctx.llm_entities = llm_entities or {}
+            except Exception as e:
+                print(f"[Ultron Intent] LLM niyet çözümü atlandı: {e}")
 
         return ctx
 
@@ -146,7 +200,9 @@ class IntentAnalyzerLayer:
 class EntityExtractionLayer:
     def process(self, ctx: UltronContext) -> UltronContext:
         msg = ctx.normalized_input
-        entities = {}
+        # LLM niyet çözücünün çıkardığı kanonik parametrelerle başla; aşağıdaki
+        # regex çıkarımları yalnızca boş alanları doldurur, LLM değerini ezmez.
+        entities = dict(ctx.llm_entities)
 
         # 1. Volume % Extractor
         pct_match = re.search(r'(?:%|yüzde)\s*(\d+)|(\d+)\s*(?:%|kadar)', msg, re.IGNORECASE)
@@ -158,15 +214,15 @@ class EntityExtractionLayer:
         if file_match:
             entities["file_path"] = file_match.group(1).strip()
 
-        # 3. Search Query Extractor
+        # 3. Search Query Extractor (LLM zaten temiz sorgu verdiyse dokunma)
         search_match = re.search(r'(?:ara:|internet:|google:|web:)\s*(.+)', msg, re.IGNORECASE)
         if search_match:
             entities["search_query"] = search_match.group(1).strip()
-        else:
+        elif not entities.get("search_query"):
             entities["search_query"] = msg
 
-        # 4. Song Query Extractor
-        if ctx.intent == "PLAY_MUSIC":
+        # 4. Song Query Extractor (LLM zaten şarkı adı verdiyse onu koru)
+        if ctx.intent == "PLAY_MUSIC" and not entities.get("song_title"):
             song_q = msg
             triggers = ["youtube music'ten", "youtube müzik'ten", "youtube music'den", "youtube müzik'den", "youtube music'te", "youtube müzik'te", "youtube music", "youtube müzik", "müzik çal", "şarkı çal", "müzik aç", "şarkı aç", "çal:"]
             for t in triggers:
@@ -183,18 +239,28 @@ class EntityExtractionLayer:
 # LAYER 5: MEMORY CONTEXT
 # =========================================================================
 class MemoryContextLayer:
-    def __init__(self, db_manager=None):
+    def __init__(self, db_manager=None, config=None):
         self.db = db_manager
+        self.config = config or {}
 
     def process(self, ctx: UltronContext) -> UltronContext:
         memories = []
         if self.db:
             try:
-                # Kullanıcının Veri Hafızası ekranından kaydettiği gerçek kayıtlar
-                for key, value, _category in self.db.list_memory()[:10]:
-                    memories.append(f"{key}: {value}")
+                # Tüm kayıtları çek, sonra MESAJA EN ALAKALI olanları seç (RAG).
+                # Önceki hâl alakadan bağımsız "en son 10"u dökerek doğru bilgiyi
+                # çoğu zaman prompt'un dışında bırakıyordu.
+                tum = self.db.list_memory()
+                from features.memory_rag import alakali_hafizalar
+                memories = alakali_hafizalar(
+                    ctx.normalized_input, tum, self.config, k=6)
             except Exception as e:
                 print(f"[Ultron MemoryContext] Hafıza okunamadı: {e}")
+                # Güvenli geri düşüş: eski davranış
+                try:
+                    memories = [f"{k}: {v}" for k, v, _c in self.db.list_memory()[:10]]
+                except Exception:
+                    memories = []
         ctx.user_memories = memories
         return ctx
 
@@ -205,6 +271,15 @@ class MemoryContextLayer:
 class SecurityAnalyzerLayer:
     def process(self, ctx: UltronContext) -> UltronContext:
         msg = ctx.normalized_input.lower()
+
+        # Medya kontrolü zararsız ve anında geri alınabilir (tuş sinyali).
+        # Onay sorulmadan geçer — aksi halde "spotify'da müziği durdur" gibi
+        # komutlar aşağıdaki "durdur+spotify" kuralına takılıp onay kartı açıyordu.
+        if ctx.intent == "MEDIA_CONTROL":
+            ctx.security_score = 5
+            ctx.security_level = "SAFE"
+            ctx.security_message = "✅ **[GÜVENLİ]** Medya kontrolü uygulanıyor."
+            return ctx
 
         # 1. Tier: 100+ (Kritik - Manuel Onay Şartı)
         if "evet bilgisayarı kapat" in msg:
@@ -222,7 +297,10 @@ class SecurityAnalyzerLayer:
         # 1.5 WhatsApp mesaj gönderimi: alıcı çözülüyorsa ONAY kartı göster.
         #     (Alıcı rehberde yoksa güvenli sayılır — execution katmanı rehbere
         #      ekleme talimatı döner, gönderim yapılmaz.)
-        wa = whatsapp_gonderim_ayristir(ctx.normalized_input)
+        #     SADECE WHATSAPP_MESSAGE niyetinde ayrıştır — yoksa her mesajda gereksiz
+        #     çalışıp "X'e yaz" gibi cümlelerde yanlış gönderim onayı üretebiliyordu.
+        wa = whatsapp_gonderim_ayristir(ctx.normalized_input) \
+            if ctx.intent == "WHATSAPP_MESSAGE" else None
         if wa:
             alici, metin = wa
             numara = kisi_coz(alici)
@@ -238,7 +316,8 @@ class SecurityAnalyzerLayer:
                 return ctx
 
         # 1.6 E-posta gönderimi: alıcı çözülüyorsa ONAY kartı göster
-        ep = email_gonderim_ayristir(ctx.normalized_input)
+        ep = email_gonderim_ayristir(ctx.normalized_input) \
+            if ctx.intent == "EMAIL_MESSAGE" else None
         if ep:
             ep_alici, ep_konu, ep_icerik = ep
             ep_adres = email_coz(ep_alici)
@@ -329,8 +408,10 @@ class ExecutionEngineLayer:
             ctx.execution_result = ctx.security_message
             return ctx
 
-        # 0. Ruh Hali Kaydı (her mesajda pasif olarak çalışır, akışı etkilemez)
-        if db_cursor and db_conn:
+        # 0. Ruh Hali Kaydı — SADECE gerçek sohbette. Komut metinleri ("... çal",
+        #    "chrome aç") duygu geçmişini kirletmesin diye GENERAL_CONVERSATION dışı
+        #    niyetlerde atlanır.
+        if db_cursor and db_conn and ctx.intent == "GENERAL_CONVERSATION":
             try:
                 ruh_hali, _skor = ruh_hali_analiz(ctx.normalized_input)
                 if ruh_hali != 'belirsiz':
@@ -449,9 +530,71 @@ class ExecutionEngineLayer:
             ctx.execution_result = doviz_raporu()
             return ctx
 
+        # 0.91 Hesap makinesi — LLM'e sorulmaz, Python hesaplar (hatasız)
+        if ctx.intent == "CALCULATOR":
+            ifade = ctx.entities.get("expression") or \
+                hesap_niyeti_algila(ctx.normalized_input) or ctx.normalized_input
+            basarili, mesaj = hesapla(ifade)
+            ctx.execution_success = basarili
+            ctx.execution_result = mesaj
+            return ctx
+
+        # 0.92 Saat/tarih — modelin tahmini değil, sistemin gerçek saati
+        if ctx.intent == "TIME_DATE":
+            basarili, mesaj = saat_tarih_raporu(ctx.normalized_input)
+            ctx.execution_success = basarili
+            ctx.execution_result = mesaj
+            return ctx
+
+        # 0.93 Sayaç — hatırlatma tablosuna yazılır, mevcut döngü bildirir
+        if ctx.intent == "TIMER":
+            dakika = ctx.entities.get("timer_minutes") or \
+                sayac_niyeti_algila(ctx.normalized_input)
+            if dakika and db_cursor is not None:
+                basarili, mesaj = sayac_kur(db_cursor, db_conn, dakika)
+                ctx.execution_success = basarili
+                ctx.execution_result = mesaj
+                return ctx
+
+        # 0.94 Notlar — ekle / listele / sil
+        if ctx.intent == "NOTE_TAKE" and db_cursor is not None:
+            islem = not_niyeti_algila(ctx.normalized_input)
+            if islem is None and ctx.entities.get("note_text"):
+                islem = ('ekle', ctx.entities["note_text"])
+            if islem:
+                eylem, icerik = islem
+                if eylem == 'ekle':
+                    basarili, mesaj = not_ekle(db_cursor, db_conn,
+                                               ctx.entities.get("note_text") or icerik)
+                elif eylem == 'listele':
+                    basarili, mesaj = notlari_getir(db_cursor, db_conn)
+                else:
+                    basarili, mesaj = notlari_sil(db_cursor, db_conn)
+                ctx.execution_success = basarili
+                ctx.execution_result = mesaj
+                return ctx
+
+        # 0.95 Medya kontrolü — çalan müziği duraklat/devam/geç
+        if ctx.intent == "MEDIA_CONTROL":
+            aksiyon = ctx.entities.get("media_action") or \
+                medya_komutu_algila(ctx.normalized_input) or "playpause"
+            basarili, mesaj = medya_kontrol(aksiyon)
+            ctx.execution_success = basarili
+            ctx.execution_result = mesaj
+            return ctx
+
         # 1. System Control & Volume & Music
         if ctx.intent in ("SYSTEM_CONTROL", "SET_VOLUME", "PLAY_MUSIC"):
-            is_action, resp = sistem_komutu_algila(ctx.normalized_input)
+            # LLM doğal dilden yönlendirdiyse ham metinde tetikleyici kelime
+            # ("çal"/"aç") olmayabilir → sistem_komutu_algila'nın anlayacağı
+            # kanonik bir komut kur. Aksi halde regex komutu ham metinden okur.
+            komut = ctx.normalized_input
+            if ctx.intent_source == "llm":
+                if ctx.intent == "PLAY_MUSIC" and ctx.entities.get("song_title"):
+                    komut = f"{ctx.entities['song_title']} çal"
+                elif ctx.intent == "SYSTEM_CONTROL" and ctx.entities.get("app_name"):
+                    komut = f"{ctx.entities['app_name']} aç"
+            is_action, resp = sistem_komutu_algila(komut)
             if is_action:
                 ctx.execution_success = True
                 ctx.execution_result = resp
@@ -550,19 +693,31 @@ class PromptGeneratorLayer:
                                 f"GÖREV: {ctx.entities.get('pano_gorev', '')}\n")
 
         ctx.enriched_prompt = (
-            f"[ULTRON SYSTEM CONTEXT]\n"
-            f"Sen ULTRON adında Türkçe konuşan kişisel masaüstü asistanısın.\n"
+            f"[ULTRON SİSTEM]\n"
+            f"Sen ULTRON'sun: Türkçe konuşan kişisel bir masaüstü ve Telegram asistanı. "
+            f"Kullanıcıya DAİMA BİRİNCİ TEKİL ŞAHISLA cevap ver (\"ben ... yapabilirim\"). "
+            f"Kullanıcıya \"sen şunu yapabilirsin\" DEME — yetenekler SANA aittir, ona değil.\n"
+            f"\n"
+            f"GERÇEK YETENEKLERİN (bunları gerçekten yapabilirsin):\n"
+            f"• Uygulama açma/kapatma, ses ve sistem kontrolü, ekran görüntüsü alma\n"
+            f"• Hatırlatma kurma, sayaç kurma, sabah brifingi, hava durumu ve döviz kuru\n"
+            f"• WhatsApp ve e-posta mesajı gönderme (kullanıcı onayıyla)\n"
+            f"• İnternette arama, dosya bulma/okuma, müzik çalma, not/hafıza tutma\n"
+            f"• Çalan müziği kontrol etme (duraklat, devam ettir, sonraki/önceki şarkı)\n"
+            f"• Matematik işlemi hesaplama, saat ve tarih söyleme\n"
+            f"\n"
             f"KURALLAR (kesinlikle uy):\n"
             f"1. KISA ve NET cevap ver — en fazla 4-5 cümle.\n"
-            f"2. Bir eylemi (şarkı çalma, uygulama açma, mesaj gönderme vb.) sen "
-            f"GERÇEKLEŞTİREMEZSİN; yapmış gibi ASLA anlatma. Böyle bir istek sana "
-            f"düştüyse 'Bu komutu anlayamadım, şöyle deneyin: ...' de.\n"
+            f"2. Bir eylemi bu yanıtın içinde SEN fiilen tetikleyemezsin; onu sistem "
+            f"yürütür. Bu yüzden 'açtım / gönderdim / çaldım' gibi YAPMIŞ gibi ANLATMA. "
+            f"Ama yeteneklerini SORANA yukarıdaki gerçek yeteneklerini anlat.\n"
             f"3. Emin olmadığın bilgiyi uydurma; bilmiyorsan bilmediğini söyle.\n"
             f"[KULLANICI HAFIZASI]\n{mem_str}\n"
             f"{chat_history_str}"
             f"{web_context_str}"
             f"Kullanıcı Komutu: {ctx.normalized_input}\n"
-            f"Amaç: {ctx.intent}"
+            f"Amaç: {ctx.intent}\n"
+            f"ULTRON'un cevabı (birinci tekil şahıs, Türkçe):"
         )
         return ctx
 
@@ -571,14 +726,39 @@ class PromptGeneratorLayer:
 # LAYER 10: LLM CORE
 # =========================================================================
 class LLMCoreLayer:
-    def process(self, ctx: UltronContext) -> UltronContext:
+    """Gerçek LLM çağrısını yapar (allow_llm=True) veya çağıranın kendi LLM'ini
+    çalıştırması için enriched_prompt'u bırakır (allow_llm=False — masaüstü streaming).
+
+    Önceden bu katman HİÇ LLM çağırmıyordu; sadece prompt'u kopyalıyordu. Bu yüzden
+    engine'i tek başına kullanan yerler (zamanlanmış görevler, Telegram) cevap
+    alamıyordu. Artık config verilip allow_llm açılırsa engine tam cevabı üretir."""
+
+    def __init__(self, config: dict = None):
+        self.config = config or {}
+
+    def process(self, ctx: UltronContext, allow_llm: bool = False) -> UltronContext:
         if ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM", "FORBIDDEN"):
             ctx.llm_response = ctx.security_message
             return ctx
-            
+
+        # Deterministik execution sonucu varsa (ve LLM istemeyen niyetse) onu kullan
         if ctx.execution_success and ctx.intent not in ("WEB_SEARCH", "GENERAL_CONVERSATION"):
             ctx.llm_response = ctx.execution_result
+            return ctx
+
+        # Buraya kadar geldiyse LLM cevabı gerekiyor (sohbet, web araması yorumu vb.)
+        if allow_llm:
+            provider = self.config.get('ai_provider', 'ollama')
+            try:
+                from features.llm_gateway import llm_uret
+                ans, _ctx = llm_uret(provider, ctx.enriched_prompt, self.config)
+                ctx.llm_response = ans or "Yanıt alınamadı."
+                ctx.llm_generated = True
+            except Exception as e:
+                print(f"[Ultron LLMCore] LLM çağrısı başarısız: {e}")
+                ctx.llm_response = f"⚠️ AI yanıtı üretilemedi: {e}"
         else:
+            # Masaüstü UI streaming için ham prompt'u bırak (kendi worker'ıyla akıtır)
             ctx.llm_response = ctx.enriched_prompt
         return ctx
 

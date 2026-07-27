@@ -115,11 +115,11 @@ class RemindersViewWidget(QWidget):
         add_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #99000f, stop:1 #ff1a26);
-                color: #08090d;
-                border: none;
+                color: #ffffff;
+                border: 1px solid #ff4d58;
                 border-radius: 8px;
                 padding: 8px 16px;
-                font-weight: 700;
+                font-weight: 800;
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #b80012, stop:1 #ff4d58);
@@ -134,7 +134,8 @@ class RemindersViewWidget(QWidget):
         # Scroll Area
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport { border: none; background: transparent; }")
+        self.scroll.viewport().setStyleSheet("background: transparent;")
 
         self.cards_container = QWidget()
         self.cards_container.setStyleSheet("background: transparent;")
@@ -153,12 +154,8 @@ class RemindersViewWidget(QWidget):
             self.rem_input.clear()
 
     def set_reminders(self, reminder_list: list):
-        """
-        reminder_list: list of dicts [{'id': 1, 'text': '...', 'time': '...', 'completed': False}]
-        """
         self.reminders = reminder_list
         
-        # Clear layout
         while self.cards_layout.count() > 1:
             child = self.cards_layout.takeAt(0)
             if child.widget():
@@ -166,7 +163,7 @@ class RemindersViewWidget(QWidget):
 
         if not reminder_list:
             no_data = QLabel("Aktif hatırlatma bulunmuyor. Yeni bir hatırlatma ekleyin!")
-            no_data.setStyleSheet("color: #5f6368; font-size: 13px; padding: 20px;")
+            no_data.setStyleSheet("color: #73575c; font-size: 13px; padding: 20px;")
             self.cards_layout.insertWidget(0, no_data)
             return
 

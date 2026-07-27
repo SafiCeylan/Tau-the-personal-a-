@@ -90,7 +90,7 @@ class TestUltronExhaustiveSuite(unittest.TestCase):
         """'chrome başlat'"""
         status, resp = sistem_komutu_algila("chrome başlat")
         self.assertTrue(status)
-        self.assertIn("Google Chrome", resp)
+        self.assertIn("Chrome", resp)
 
     def test_app_kill_chrome(self):
         """'chrome kapat'"""
@@ -269,6 +269,132 @@ class TestUltronExhaustiveSuite(unittest.TestCase):
 
         self.assertTrue(ctx.execution_success)
         self.assertIn("TEST MODU MODU OTONOM BAŞLATILDI", ctx.execution_result)
+
+
+class TestMoodAnalysis(unittest.TestCase):
+    """Duygu analizi: ekli hâller, olumsuzlama, emoji ve kirlilik önleme."""
+
+    def _analiz(self, metin):
+        from features.mood import ruh_hali_analiz
+        return ruh_hali_analiz(metin)[0]
+
+    def test_pozitif_ekli(self):
+        self.assertEqual(self._analiz("bugün çok mutluyum"), "pozitif")
+
+    def test_negatif_ekli(self):
+        self.assertEqual(self._analiz("sürekli üzülüyorum"), "negatif")
+
+    def test_olumsuzlama_pozitifi_cevirir(self):
+        # "mutlu değilim" pozitif SAYILMAMALI — eski bugun asıl kaynağı
+        self.assertEqual(self._analiz("mutlu değilim açıkçası"), "negatif")
+
+    def test_emoji_pozitif(self):
+        self.assertEqual(self._analiz("harika bir gün 😊"), "pozitif")
+
+    def test_notr(self):
+        self.assertEqual(self._analiz("bugün normal bir gündü"), "nötr")
+
+    def test_alakasiz_belirsiz(self):
+        # Komut/soru metni duygu üretmemeli (geçmişi kirletmesin)
+        self.assertEqual(self._analiz("saat kaç"), "belirsiz")
+
+
+class TestLLMIntent(unittest.TestCase):
+    """LLM niyet çözücü: JSON ayrıştırma + doğrulama (Ollama olmadan, mock ile)."""
+
+    def test_json_ayikla_temiz(self):
+        from features.llm_intent import _json_ayikla
+        self.assertEqual(_json_ayikla('{"intent":"WEATHER"}'), {"intent": "WEATHER"})
+
+    def test_json_ayikla_gurultulu(self):
+        # Model açıklama eklerse bile ilk JSON bloğu çıkarılmalı
+        from features.llm_intent import _json_ayikla
+        d = _json_ayikla('Tabii! İşte: {"intent":"PLAY_MUSIC","sarki":"x"} umarım yardımcı olur')
+        self.assertEqual(d["intent"], "PLAY_MUSIC")
+
+    def test_json_ayikla_bozuk(self):
+        from features.llm_intent import _json_ayikla
+        self.assertIsNone(_json_ayikla("hiç json yok burada"))
+
+    def test_gecersiz_niyet_reddedilir(self):
+        # Mock: model geçersiz bir etiket dönerse None dönmeli
+        import features.llm_intent as li
+        import features.ollama as ol
+        orig = ol.ollama_generate
+        ol.ollama_generate = lambda *a, **k: ('{"intent":"UÇAK_KAÇIR"}', [])
+        try:
+            self.assertIsNone(li.llm_intent_coz("selam", {"ollama_model": "x"}))
+        finally:
+            ol.ollama_generate = orig
+
+    def test_gecerli_niyet_entity_ile(self):
+        import features.llm_intent as li
+        import features.ollama as ol
+        orig = ol.ollama_generate
+        ol.ollama_generate = lambda *a, **k: ('{"intent":"WEB_SEARCH","sorgu":"python"}', [])
+        try:
+            intent, ent = li.llm_intent_coz("python nedir araştır", {"ollama_model": "x"})
+            self.assertEqual(intent, "WEB_SEARCH")
+            self.assertEqual(ent["search_query"], "python")
+        finally:
+            ol.ollama_generate = orig
+
+
+class TestMemoryRAG(unittest.TestCase):
+    """Alaka-sıralı hafıza erişimi (RAG) — doğru kaydı yüzeye çıkarır."""
+
+    HAFIZALAR = [
+        ('en sevdiğim renk', 'lacivert', 'Genel'),
+        ('arabam', 'Volkswagen Golf 2018', 'Genel'),
+        ('en sevdiğim yemek', 'mantı', 'Genel'),
+        ('evcil hayvan', 'Boncuk adında kedi', 'Genel'),
+    ]
+
+    def _ilk(self, soru):
+        from features.memory_rag import alakali_hafizalar
+        r = alakali_hafizalar(soru, self.HAFIZALAR, {}, k=1)
+        return r[0] if r else None
+
+    def test_dogrudan_eslesme(self):
+        self.assertIn("Volkswagen", self._ilk("benim arabam ne marka"))
+
+    def test_turkce_cekim_eslesme(self):
+        # "kedimin" → "kedi" ön-ek eşleşmesi
+        self.assertIn("Boncuk", self._ilk("kedimin adı ne"))
+
+    def test_bos_hafiza(self):
+        from features.memory_rag import alakali_hafizalar
+        self.assertEqual(alakali_hafizalar("herhangi", [], {}), [])
+
+    def test_alakasizda_geri_dusme(self):
+        # Hiç örtüşme yoksa boş değil, en yeni kayıtlara düşmeli (prompt boş kalmasın)
+        from features.memory_rag import alakali_hafizalar
+        r = alakali_hafizalar("xyzqwer", self.HAFIZALAR, {}, k=2)
+        self.assertEqual(len(r), 2)
+
+
+class TestConfirmedExecutor(unittest.TestCase):
+    """Onaylı komut yürütücü doğru executor'a yönlendiriyor mu?"""
+
+    def test_whatsapp_gondericiye_yonlenir(self):
+        import features.confirmed_executor as ce
+        import features.actions.whatsapp_control as wc
+        orig_send, orig_coz = wc.whatsapp_mesaj_gonder, wc.kisi_coz
+        wc.whatsapp_mesaj_gonder = lambda a, m: (True, f"WA:{a}:{m}")
+        wc.kisi_coz = lambda a: "+905551112233"
+        try:
+            ok, resp = ce.onayli_komut_yurut("annem'e whatsapp'tan mesaj gönder: selam")
+            self.assertTrue(ok)
+            self.assertTrue(resp.startswith("WA:"))
+        finally:
+            wc.whatsapp_mesaj_gonder, wc.kisi_coz = orig_send, orig_coz
+
+    def test_sistem_komutu_sistemcontrole_yonlenir(self):
+        # WhatsApp/e-posta olmayan komut sistem yürütücüsüne gitmeli
+        import features.confirmed_executor as ce
+        ok, resp = ce.onayli_komut_yurut("chrome kapat")
+        self.assertTrue(ok)
+        self.assertIsInstance(resp, str)
 
 
 if __name__ == '__main__':

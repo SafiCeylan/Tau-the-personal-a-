@@ -179,10 +179,10 @@ class ModesViewWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        # Top Action Bar
+        # Top Action Bar (Use '&&' so Qt does not render underline mnemonic!)
         top_bar = QHBoxLayout()
         
-        title_lbl = QLabel("🎛️ ULTRON MOD & RUTİN YÖNETİCİSİ")
+        title_lbl = QLabel("🎛️ ULTRON MOD && RUTİN YÖNETİCİSİ")
         title_lbl.setStyleSheet("font-size: 20px; font-weight: 900; color: #ff1a26; letter-spacing: 1.5px;")
         top_bar.addWidget(title_lbl)
         top_bar.addStretch()
@@ -230,11 +230,12 @@ class ModesViewWidget(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet("""
-            QScrollArea {
+            QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport {
                 background: transparent;
                 border: none;
             }
         """)
+        self.scroll_area.viewport().setStyleSheet("background: transparent;")
 
         self.cards_container = QWidget()
         self.cards_layout = QVBoxLayout(self.cards_container)
@@ -245,7 +246,6 @@ class ModesViewWidget(QWidget):
         layout.addWidget(self.scroll_area)
 
     def load_modes(self):
-        # Clear existing cards
         while self.cards_layout.count() > 1:
             item = self.cards_layout.takeAt(0)
             if item.widget():
@@ -380,7 +380,6 @@ class ModesViewWidget(QWidget):
         except Exception:
             pass
 
-        # Insert Card into Layout
         count = self.cards_layout.count()
         self.cards_layout.insertWidget(count - 1, card)
 

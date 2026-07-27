@@ -16,5 +16,7 @@
   "tts_enabled": false,
   "tts_engine": "edge",
   "wake_enabled": false,
-  "mic_device_index": -1
+  "mic_device_index": -1,
+  "llm_intent_enabled": true,
+  "reminder_lead_minutes": 10
 }

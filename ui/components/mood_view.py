@@ -72,7 +72,8 @@ class MoodViewWidget(QWidget):
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport { border: none; background: transparent; }")
+        self.scroll.viewport().setStyleSheet("background: transparent;")
 
         self.log_container = QWidget()
         self.log_container.setStyleSheet("background: transparent;")

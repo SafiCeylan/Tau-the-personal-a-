@@ -18,9 +18,13 @@ class UltronContext:
     # 3. Intent Analyzer
     intent: str = "UNKNOWN"
     confidence: float = 0.0
-    
+    intent_source: str = "regex"  # "regex" | "llm" — gözlemlenebilirlik için
+
     # 4. Entity Extraction
     entities: Dict[str, Any] = field(default_factory=dict)
+    # LLM niyet çözücünün çıkardığı kanonik parametreler (EntityExtraction bunları
+    # ezmez; execution katmanı tercih eder). Örn: {"song_title": "motivasyon"}
+    llm_entities: Dict[str, Any] = field(default_factory=dict)
     
     # 5. Memory Context
     user_memories: List[str] = field(default_factory=list)
@@ -42,6 +46,9 @@ class UltronContext:
     
     # 10. LLM Core
     llm_response: str = ""
+    # LLM gerçekten engine içinde çağrıldı mı? (False ise llm_response ham prompt'tur
+    # ve çağıran UI streaming için kendi LLM worker'ını çalıştırmalıdır.)
+    llm_generated: bool = False
     
     # 11. Action Planner
     action_plan: List[Dict[str, Any]] = field(default_factory=list)

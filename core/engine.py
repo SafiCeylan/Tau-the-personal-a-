@@ -15,22 +15,23 @@ from core.layers.routine_engine import RoutineEngine
 from core.layers.self_reflection import SelfReflectionEngine
 
 class UltronCoreEngine:
-    def __init__(self, db_manager=None, cursor=None, conn=None):
+    def __init__(self, db_manager=None, cursor=None, conn=None, config=None):
         self.db = db_manager
         self.cursor = cursor
         self.conn = conn
+        self.config = config or {}
 
         # Initialize 14 layers
         self.l1_capture = InputCaptureLayer()
         self.l2_norm = NormalizationLayer()
-        self.l3_intent = IntentAnalyzerLayer()
+        self.l3_intent = IntentAnalyzerLayer(self.config)
         self.l4_entity = EntityExtractionLayer()
-        self.l5_memory = MemoryContextLayer(db_manager)
+        self.l5_memory = MemoryContextLayer(db_manager, self.config)
         self.l6_security = SecurityAnalyzerLayer()
         self.l7_planner = TaskPlannerLayer()
         self.l8_tools = ToolSelectionEngineLayer()
         self.l9_prompt = PromptGeneratorLayer()
-        self.l10_llm = LLMCoreLayer()
+        self.l10_llm = LLMCoreLayer(self.config)
         self.l11_action = ActionPlannerLayer()
         self.l12_exec = ExecutionEngineLayer()
         self.l13_checker = ResultCheckerLayer()
@@ -40,9 +41,21 @@ class UltronCoreEngine:
         self.routine_engine = RoutineEngine(db_manager)
         self.self_reflection = SelfReflectionEngine()
 
-    def process(self, raw_input: str, input_type: str = "text", recent_context: list = None) -> UltronContext:
+    def update_config(self, config: dict):
+        """Ayarlar kaydedilince yeni config'i canlı uygular (yeniden başlatma gerekmez)."""
+        self.config = config or {}
+        self.l3_intent.config = self.config
+        self.l5_memory.config = self.config
+        self.l10_llm.config = self.config
+
+    def process(self, raw_input: str, input_type: str = "text", recent_context: list = None,
+                allow_llm: bool = False) -> UltronContext:
         """
         Executes the 14-layer pipeline sequentially for every user prompt.
+
+        allow_llm: True ise LLM cevabı da engine İÇİNDE üretilir (final_output hazır
+        gelir) — zamanlanmış görevler ve Telegram bunu kullanır. False ise (masaüstü)
+        enriched_prompt bırakılır; UI streaming worker'ıyla cevabı kendisi akıtır.
 
         SQLite bağlantıları thread'ler arasında paylaşılamadığı için her çağrıda
         (worker thread'de çalışsa bile güvenli olacak şekilde) kendi bağlantısını açar.
@@ -59,7 +72,7 @@ class UltronCoreEngine:
                 own_conn = None
 
         try:
-            return self._run_pipeline(raw_input, input_type, recent_context, cursor, conn)
+            return self._run_pipeline(raw_input, input_type, recent_context, cursor, conn, allow_llm)
         finally:
             if own_conn is not None:
                 try:
@@ -67,7 +80,7 @@ class UltronCoreEngine:
                 except Exception:
                     pass
 
-    def _run_pipeline(self, raw_input, input_type, recent_context, cursor, conn) -> UltronContext:
+    def _run_pipeline(self, raw_input, input_type, recent_context, cursor, conn, allow_llm=False) -> UltronContext:
         # 1. Input Capture
         ctx = self.l1_capture.process(raw_input, input_type)
         if recent_context:
@@ -122,8 +135,8 @@ class UltronCoreEngine:
         # 9. Prompt Generator (Builds enriched prompt with live web data and multi-turn chat history)
         ctx = self.l9_prompt.process(ctx)
 
-        # 10. LLM Core
-        ctx = self.l10_llm.process(ctx)
+        # 10. LLM Core (allow_llm=True ise cevabı burada üretir)
+        ctx = self.l10_llm.process(ctx, allow_llm=allow_llm)
 
         # 11. Action Planner
         ctx = self.l11_action.process(ctx)

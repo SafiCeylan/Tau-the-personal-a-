@@ -27,17 +27,19 @@ def _zaten_calisiyor_mu() -> bool:
 
 
 def main():
-    db_manager = DatabaseManager(os.path.join(BASE_DIR, 'bilgiler.db'))
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-
     app = QApplication(sys.argv)
     # Tray modu: pencere kapansa da uygulama arka planda yaşamaya devam eder
     app.setQuitOnLastWindowClosed(False)
 
+    # Önce tek-kopya kilidini kontrol et: ikinci kopya ise DB'yi hiç açmadan çık
+    # (gereksiz bağlantı açıp kapatmayı ve olası dosya kilidi çakışmasını önler).
     if _zaten_calisiyor_mu():
         print("ULTRON zaten çalışıyor — mevcut pencere öne getirildi. Bu kopya kapanıyor.")
         sys.exit(0)
+
+    db_manager = DatabaseManager(os.path.join(BASE_DIR, 'bilgiler.db'))
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
 
     try:
         from ui.tau_window import TauMainWindow, load_config

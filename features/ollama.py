@@ -23,6 +23,8 @@ def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
+        # Düşük sıcaklık: küçük modellerde (3B-4B) Türkçe tutarlılığı artırır
+        "options": {"temperature": 0.5, "top_p": 0.9},
     }
 
     parcalar = []
@@ -44,30 +46,34 @@ def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
                 break
     return ''.join(parcalar)
 
-def ollama_generate(prompt, ollama_url='http://127.0.0.1:11434', model='gemma3:4b', context=None):
+def ollama_generate(prompt, ollama_url='http://127.0.0.1:11434', model='gemma3:4b',
+                    context=None, temperature=0.5):
     """
     Ollama API'sine istek gönderir ve cevabı döner.
-    
+
     Args:
         prompt (str): Kullanıcı girdisi
         ollama_url (str): Ollama sunucu adresi
         model (str): Kullanılacak model adı (örn: llama3, mistral)
         context (list): Konuşma bağlamı (hafıza için)
-        
+        temperature (float): Düşük değer (0.3-0.6) küçük modellerde tutarlılığı
+            artırır, saçmalama/şahıs karışıklığını azaltır.
+
     Returns:
         str: Modelin cevabı
     """
     if requests is None:
         return "Hata: 'requests' kütüphanesi eksik. Lütfen `pip install requests` komutunu çalıştırın."
-        
+
     url = f"{ollama_url.rstrip('/')}/api/generate"
-    
+
     payload = {
         "model": model,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "options": {"temperature": temperature, "top_p": 0.9},
     }
-    
+
     if context:
         payload["context"] = context
         

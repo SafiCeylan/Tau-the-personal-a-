@@ -1,6 +1,6 @@
 """
 ULTRON AI CORE DESIGN SYSTEM — Avengers: Age of Ultron Theme
-Dominant Crimson Red (#ff1a26), Molten Scarlet (#ff3b47), Pitch Obsidian (#060305),
+Dominant Crimson Red (#ff1a26), Molten Scarlet (#ff4d58), Pitch Obsidian (#060305),
 and Aggressive Cybernetic Sci-Fi HUD Styling.
 """
 
@@ -27,11 +27,16 @@ QWidget {
     font-size: 13px;
 }
 
+QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport {
+    background-color: transparent;
+    border: none;
+}
+
 /* ScrollBar Styling */
 QScrollBar:vertical {
     border: none;
     background: rgba(10, 3, 5, 0.8);
-    width: 7px;
+    width: 6px;
     margin: 0px;
     border-radius: 3px;
 }
@@ -41,10 +46,29 @@ QScrollBar::handle:vertical {
     border-radius: 3px;
 }
 QScrollBar::handle:vertical:hover {
-    background: rgba(255, 26, 38, 0.8);
+    background: rgba(255, 26, 38, 0.85);
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: rgba(10, 3, 5, 0.8);
+    height: 6px;
+    margin: 0px;
+    border-radius: 3px;
+}
+QScrollBar::handle:horizontal {
+    background: rgba(255, 26, 38, 0.4);
+    min-width: 24px;
+    border-radius: 3px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: rgba(255, 26, 38, 0.85);
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
 }
 
 /* Ultron Card Panel */
@@ -68,8 +92,8 @@ QFrame.card:hover {
 QPushButton.navBtn {
     background-color: transparent;
     color: #a88e93;
-    border: none;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
     padding: 10px 14px;
     text-align: left;
     font-size: 13px;
@@ -80,13 +104,15 @@ QPushButton.navBtn {
 QPushButton.navBtn:hover {
     background-color: rgba(255, 26, 38, 0.15);
     color: #ff4d58;
+    border-color: rgba(255, 26, 38, 0.3);
 }
 
 QPushButton.navBtn:checked {
-    background-color: rgba(255, 26, 38, 0.25);
-    color: #ff1a26;
+    background-color: rgba(255, 26, 38, 0.22);
+    color: #ffffff;
     font-weight: 700;
-    border-left: 3px solid #ff1a26;
+    border: 1px solid rgba(255, 26, 38, 0.5);
+    border-left: 4px solid #ff1a26;
 }
 
 /* Text Inputs */
@@ -97,7 +123,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {
     padding: 8px 12px;
     color: #f5e6e8;
     selection-background-color: #ff1a26;
-    selection-color: #060305;
+    selection-color: #ffffff;
 }
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
@@ -120,6 +146,7 @@ QPushButton.primaryBtn {
 QPushButton.primaryBtn:hover {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #b80012, stop:1 #ff4d58);
     border-color: #ff1a26;
+    color: #ffffff;
 }
 
 QPushButton.primaryBtn:pressed {
@@ -187,5 +214,28 @@ QComboBox QAbstractItemView {
     border: 1px solid rgba(255, 26, 38, 0.4);
     selection-background-color: rgba(255, 26, 38, 0.3);
     selection-color: #ffffff;
+}
+/* Açılır ok — koyu zeminde kaybolmasın */
+QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+QComboBox::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #ff4d58;
+    margin-right: 8px;
+}
+/* Düzenlenebilir combo (model seçici): içteki yazı alanı görünür olsun.
+   Stil verilmezse koyu zeminde okunmaz ince bir çizgi olarak çiziliyordu. */
+QComboBox:editable {
+    background-color: rgba(14, 4, 7, 0.95);
+}
+QComboBox QLineEdit, QComboBox::item {
+    background-color: transparent;
+    color: #f5e6e8;
+    border: none;
+    padding: 0px;
 }
 """

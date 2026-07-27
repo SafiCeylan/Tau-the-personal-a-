@@ -64,7 +64,12 @@ WAKE_MODEL_PATH = os.path.join(
 )
 
 UI_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(os.path.dirname(UI_DIR), 'config.json')
+if getattr(sys, 'frozen', False):
+    # Paketlenmiş exe: config.json exe'nin YANINDA olsun (kullanıcı düzenleyebilsin,
+    # ayarlar oraya yazılsın). _internal içine gizlenmesin.
+    CONFIG_PATH = os.path.join(os.path.dirname(sys.executable), 'config.json')
+else:
+    CONFIG_PATH = os.path.join(os.path.dirname(UI_DIR), 'config.json')
 
 PROVIDER_LABELS = {
     'kobold': 'KoboldCPP (Yerel)',
@@ -107,7 +112,7 @@ def load_config():
         'ai_provider': 'ollama',
         'kobold_url': 'http://localhost:5001',
         'ollama_url': 'http://127.0.0.1:11434',
-        'ollama_model': 'gemma3:4b',
+        'ollama_model': 'qwen2.5:3b',
         'tau_backend_url': None,
         'tau_api_key': None,
         'gemini_api_key': None,
@@ -134,39 +139,8 @@ def save_config(cfg):
         return False
 
 
-def llm_uret(provider, prompt, config, context=None):
-    """Seçili sağlayıcıdan yanıt üretir → (cevap, güncel_bağlam).
-    Hem masaüstü AIWorkerThread hem Telegram köprüsü bunu kullanır."""
-    if provider == 'ollama':
-        return ollama_generate(
-            prompt,
-            ollama_url=config.get('ollama_url', 'http://127.0.0.1:11434'),
-            model=config.get('ollama_model', 'gemma3:4b'),
-            context=context,
-        )
-    if provider == 'gemini':
-        return gemini_generate(
-            prompt,
-            api_key=config.get('gemini_api_key'),
-            model=config.get('gemini_model', 'gemini-1.5-flash'),
-            context=context,
-        )
-    if provider == 'kobold':
-        return kobold_generate(
-            prompt,
-            kobold_url=config.get('kobold_url', 'http://localhost:5001'),
-            context=context,
-        )
-    if provider == 'tau_backend':
-        ans = tau_backend_soru_sor(
-            prompt,
-            backend_url=config.get('tau_backend_url'),
-            api_key=config.get('tau_api_key'),
-            timeout=config.get('tau_timeout', 30),
-            endpoint=config.get('tau_endpoint', '/chat'),
-        )
-        return ans, context
-    return f"Bilinmeyen AI sağlayıcı: '{provider}'", context
+# LLM sağlayıcı seçimi artık UI'dan bağımsız (engine + Telegram de kullanır).
+from features.llm_gateway import llm_uret
 
 
 class AIWorkerThread(QThread):
@@ -322,13 +296,36 @@ class WakeWordThread(QThread):
         self.status_signal.emit(f"🎙️ 'Hey Ultron' dinleyicisi aktif (lokal) — mikrofon: {mik_adi}")
 
         with stream:
+            mikrofon_acik = True
             while not self._stop:
+                # DURAKLAT: STT (komut dinleme) veya TTS sırasında mikrofonu GERÇEKTEN
+                # bırak. Sadece veriyi atmak yetmez — stream açık kalırsa Windows
+                # mikrofonu ikinci akışa (sr.Microphone) vermez ve sesli komut çalışmaz.
+                if self.paused:
+                    if mikrofon_acik:
+                        try:
+                            stream.stop()      # mikrofonu serbest bırak
+                        except Exception:
+                            pass
+                        mikrofon_acik = False
+                    time.sleep(0.15)
+                    continue
+                if not mikrofon_acik:
+                    try:
+                        stream.start()         # mikrofonu geri al
+                    except Exception as e:
+                        print(f"[WakeWord] Mikrofon geri alınamadı: {e}")
+                    mikrofon_acik = True
+                    rec.Reset()
+                    while not q.empty():       # duraklama sırasındaki bayat sesi at
+                        try:
+                            q.get_nowait()
+                        except queue.Empty:
+                            break
                 try:
                     data = q.get(timeout=1)
                 except queue.Empty:
                     continue
-                if self.paused:
-                    continue  # sesi tüket ama işleme (kendi TTS'ini duymasın)
                 if rec.AcceptWaveform(data):
                     text = json.loads(rec.Result()).get('text', '')
                     if 'ultra' in text:
@@ -353,6 +350,7 @@ class TelegramWorkerThread(QThread):
         self._stop = False
         self.ai_context = {}
         self.pending = {}  # chat_id -> (komut, son_gecerlilik_zamani)
+        self.history = {}  # chat_id -> [{"role": "user"/"assistant", "text": ...}] (çok-turlu bağlam)
 
     def stop(self):
         self._stop = True
@@ -463,10 +461,23 @@ class TelegramWorkerThread(QThread):
         if reply:
             tg.send_message(token, chat_id, reply)
             self.activity_signal.emit(text, reply)
+            # Çok-turlu bağlam için turu kaydet (bir sonraki mesaj bunu görsün)
+            self._gecmise_ekle(chat_id, "user", text)
+            self._gecmise_ekle(chat_id, "assistant", reply)
+
+    def _gecmise_ekle(self, chat_id, role, text):
+        """Telegram sohbet geçmişine bir tur ekler (son 20 tur tutulur)."""
+        gecmis = self.history.setdefault(chat_id, [])
+        gecmis.append({"role": role, "text": text})
+        if len(gecmis) > 20:
+            self.history[chat_id] = gecmis[-20:]
 
     def _process_command(self, tg, token, chat_id, text):
-        """Engine → (onay | doğrudan sonuç | LLM) akışı. None dönerse onay bekleniyor."""
-        engine_ctx = self.controller.engine.process(text)
+        """Engine → (onay | doğrudan sonuç | LLM) akışı. None dönerse onay bekleniyor.
+        allow_llm=True: LLM cevabı artık engine İÇİNDE üretilir (elle çağrı yok)."""
+        # Çok-turlu bağlam: önceki turları engine'e geçir (masaüstüyle aynı davranış)
+        engine_ctx = self.controller.engine.process(
+            text, recent_context=self.history.get(chat_id), allow_llm=True)
 
         if engine_ctx.security_level == "FORBIDDEN":
             return engine_ctx.security_message
@@ -478,25 +489,16 @@ class TelegramWorkerThread(QThread):
             self.activity_signal.emit(text, "(onay bekleniyor — Telegram)")
             return None
 
+        # 📸 Ekran görüntüsü istendiyse fotoğrafı da gönder
         if engine_ctx.execution_result and engine_ctx.execution_success:
-            # 📸 Ekran görüntüsü istendiyse fotoğrafı da gönder
             ss_yol = (engine_ctx.entities or {}).get('screenshot_path')
             if ss_yol:
                 if tg.send_photo(token, chat_id, ss_yol, caption="🖥️ ULTRON — PC ekranı"):
                     self.activity_signal.emit(text, "(ekran görüntüsü Telegram'a gönderildi)")
                     return None  # foto zaten gitti, ayrıca metin gerekmez
-            return engine_ctx.execution_result
 
-        # LLM'e düş
-        provider = self.controller.provider
-        prompt = engine_ctx.enriched_prompt or text
-        try:
-            ans, new_ctx = llm_uret(provider, prompt, self.controller.config,
-                                    self.ai_context.get(provider))
-            self.ai_context[provider] = new_ctx
-            return ans or "Yanıt alınamadı."
-        except Exception as e:
-            return f"⚠️ AI Hatası: {e}"
+        # Engine artık hem deterministik sonucu hem LLM cevabını final_output'ta hazırlar
+        return engine_ctx.final_output or "Yanıt alınamadı."
 
     def _handle_voice_message(self, tg, token, chat_id, voice):
         """🎙️ Telegram sesli mesajı: indir → OGG/Opus çöz → Google STT → komut olarak işle."""
@@ -588,7 +590,9 @@ class TelegramWorkerThread(QThread):
             self.activity_signal.emit(cmd, "(Telegram'dan iptal edildi)")
             return
 
-        is_action, resp = sistem_komutu_algila(cmd)
+        # WhatsApp/e-posta gönderimi sistem_komutu_algila'da değil — birleşik yürütücü.
+        from features.confirmed_executor import onayli_komut_yurut
+        is_action, resp = onayli_komut_yurut(cmd)
         final_msg = resp if (is_action and resp) else f"'{cmd}' komutu onaylandı ve yürütüldü."
         tg.send_message(token, chat_id, f"✅ **ONAYLANDI:** {final_msg}")
         self.activity_signal.emit(cmd, final_msg)
@@ -617,14 +621,19 @@ class ListenWorkerThread(QThread):
     finished_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
 
-    def __init__(self, device_index=None):
+    def __init__(self, device_index=None, pre_delay=0.0):
         super().__init__()
         self.device_index = device_index
+        # Wake word dinleyicisinin mikrofonu bırakması için kısa bekleme
+        # (aynı mikrofon iki akışa aynı anda verilemez).
+        self.pre_delay = pre_delay
 
     def run(self):
         if not SPEECH_AVAILABLE:
             self.error_signal.emit("Sesli komut için gerekli kütüphaneler eksik.")
             return
+        if self.pre_delay > 0:
+            time.sleep(self.pre_delay)
         try:
             text = dinle_ve_yaziya_cevir(device_index=self.device_index)
             self.finished_signal.emit(text or "")
@@ -640,7 +649,7 @@ class AssistantController:
         self.config = config
         self.provider = config.get('ai_provider', 'ollama')
         self.ai_context = {}
-        self.engine = UltronCoreEngine(db_manager=db_manager, cursor=cursor, conn=conn)
+        self.engine = UltronCoreEngine(db_manager=db_manager, cursor=cursor, conn=conn, config=config)
 
     def log(self, soru, cevap):
         try:
@@ -740,6 +749,19 @@ class AssistantController:
         self.cursor.execute("UPDATE hatirlatmalar SET durum = 'tamamlandi' WHERE id = ?", (rem_id,))
         self.conn.commit()
 
+    def get_upcoming_reminders(self, lead_minutes: int = 10):
+        """Önümüzdeki `lead_minutes` dakika içinde zamanı gelecek (henüz gelmemiş)
+        hatırlatmalar → proaktif 'yaklaşıyor' uyarısı için. (id, metin, hedef_tarih)."""
+        now = datetime.now()
+        now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+        ufuk = (now + timedelta(minutes=lead_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+        self.cursor.execute("""
+            SELECT id, metin, hedef_tarih FROM hatirlatmalar
+            WHERE durum = 'bekliyor' AND hedef_tarih IS NOT NULL
+              AND hedef_tarih > ? AND hedef_tarih <= ?
+        """, (now_str, ufuk))
+        return self.cursor.fetchall()
+
     def get_mood_stats(self):
         bir_hafta_once = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
         self.cursor.execute("""
@@ -828,6 +850,9 @@ class TauMainWindow(QMainWindow):
                 print("[TAU] Varsayılan zamanlanmış görevler kuruldu (08:00 brifing, 22:00 rapor)")
         except Exception as e:
             print(f"[TAU] Zamanlanmış görev tablosu hazırlanamadı: {e}")
+
+        # Proaktif ön-uyarı verilen hatırlatma id'leri (oturum içi, tekrar uyarmasın)
+        self._prenotified_reminders = set()
 
         self.reminder_timer = QTimer(self)
         self.reminder_timer.timeout.connect(self._autonomous_tick)
@@ -1051,7 +1076,10 @@ class TauMainWindow(QMainWindow):
             self._post_assistant(f"⚠️ Onaylanan komut yürütülürken hata: {err}")
             self._set_ai_state("idle")
 
-        worker = FuncWorkerThread(sistem_komutu_algila, cmd_to_run)
+        # Onaylı komutu DOĞRU executor'a yönlendir: WhatsApp/e-posta gönderimi
+        # sistem_komutu_algila'da değil — birleşik yürütücü halleder.
+        from features.confirmed_executor import onayli_komut_yurut
+        worker = FuncWorkerThread(onayli_komut_yurut, cmd_to_run)
         worker.finished_signal.connect(_on_done)
         worker.error_signal.connect(_on_err)
         self._track_worker(worker)
@@ -1314,8 +1342,35 @@ class TauMainWindow(QMainWindow):
     # Otonom Döngü: Hatırlatmalar + Zamanlanmış Görevler
     # ------------------------------------------------------------------
     def _autonomous_tick(self):
+        self.check_upcoming_reminders()   # önce "yaklaşıyor" uyarısı
         self.check_due_reminders()
         self.check_scheduled_tasks()
+
+    def check_upcoming_reminders(self):
+        """Yaklaşan hatırlatmalar için PROAKTİF ön-uyarı ("toplantıya 10 dk kaldı").
+        Her hatırlatma için ön-uyarı yalnızca BİR kez verilir (bellekteki set)."""
+        lead = int(self.controller.config.get('reminder_lead_minutes', 10) or 10)
+        if lead <= 0:
+            return
+        try:
+            yaklasan = self.controller.get_upcoming_reminders(lead)
+        except Exception as e:
+            print(f"[TAU] Yaklaşan hatırlatma kontrolü hatası: {e}")
+            return
+
+        for rem_id, metin, hedef in yaklasan:
+            if rem_id in self._prenotified_reminders:
+                continue
+            self._prenotified_reminders.add(rem_id)
+            try:
+                kalan = datetime.strptime(hedef, '%Y-%m-%d %H:%M:%S') - datetime.now()
+                dk = max(1, round(kalan.total_seconds() / 60))
+            except Exception:
+                dk = lead
+            msg = f"🔔 **YAKLAŞIYOR ({dk} dk):** {metin}"
+            self._post_assistant(msg)
+            self._show_system_notification("ULTRON — Yaklaşan Hatırlatma", f"{dk} dk: {metin}")
+            self._telegram_bildir(msg)
 
     def check_scheduled_tasks(self):
         """Saati gelen zamanlanmış görevleri (sabah brifingi, akşam raporu vb.) çalıştırır."""
@@ -1336,11 +1391,13 @@ class TauMainWindow(QMainWindow):
     def _run_scheduled_task(self, saat: str, komut: str):
         """Görevi worker'da engine'den geçirir; sonucu masaüstüne + Telegram'a basar."""
         def _do():
-            ctx = self.controller.engine.process(komut)
+            # allow_llm=True: "her sabah bana motivasyon sözü söyle" gibi LLM gerektiren
+            # zamanlanmış görevler artık gerçek cevap üretir (önceden sessizce boş dönüyordu).
+            ctx = self.controller.engine.process(komut, allow_llm=True)
             if ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM", "FORBIDDEN"):
                 return f"⏭️ Zamanlanmış görev \"{komut}\" onay gerektirdiği için atlandı (güvenlik)."
-            if ctx.execution_success and ctx.execution_result:
-                return ctx.execution_result
+            if ctx.final_output:
+                return ctx.final_output
             return f"ℹ️ Zamanlanmış görev \"{komut}\" sonuç üretmedi."
 
         def _on_done(result):
@@ -1422,11 +1479,13 @@ class TauMainWindow(QMainWindow):
         self.ultron_focus_view.set_ai_state("listening")
 
         # Komut dinlenirken wake dinleyicisi duraksın (aynı anda iki niyet olmasın)
+        # ve mikrofonu bıraksın → STT için 0.7s ön-gecikme.
         if self.wake_worker is not None:
             self.wake_worker.paused = True
 
         self.listen_worker = ListenWorkerThread(
-            device_index=self.controller.config.get('mic_device_index', -1))
+            device_index=self.controller.config.get('mic_device_index', -1),
+            pre_delay=0.7)
         self.listen_worker.finished_signal.connect(self._on_wake_command)
         self.listen_worker.error_signal.connect(self._on_wake_command_error)
         self._track_worker(self.listen_worker)
@@ -1570,18 +1629,35 @@ class TauMainWindow(QMainWindow):
             QMessageBox.warning(self, "Sesli Komut", "Sesli komut için SpeechRecognition / PyAudio paketi yüklü değil.")
             return
 
+        # Wake word dinleyicisi mikrofonu tutuyorsa STT süresince bıraksın
+        # (aksi halde sr.Microphone aynı aygıtı açamaz → sesli komut sessizce çalışmaz).
+        wake_var = self.wake_worker is not None
+        if wake_var:
+            self.wake_worker.paused = True
+
         self.chat_view.set_ai_state("listening")
         self.listen_worker = ListenWorkerThread(
-            device_index=self.controller.config.get('mic_device_index', -1))
+            device_index=self.controller.config.get('mic_device_index', -1),
+            pre_delay=0.7 if wake_var else 0.0)
         self.listen_worker.finished_signal.connect(self.on_voice_input)
-        self.listen_worker.error_signal.connect(self.on_ai_error)
+        self.listen_worker.error_signal.connect(self._on_stt_error)
         self._track_worker(self.listen_worker)
         self.listen_worker.start()
 
     def on_voice_input(self, text: str):
         self.chat_view.set_ai_state("idle")
+        # Wake dinleyicisini geri aç (mikrofonu tekrar dinlemeye başlasın)
+        if self.wake_worker is not None:
+            self.wake_worker.paused = False
         if text:
             self.on_user_send_message(text)
+
+    def _on_stt_error(self, err: str):
+        """Sesli komut hatası: wake'i geri aç ve kullanıcıyı bilgilendir."""
+        if self.wake_worker is not None:
+            self.wake_worker.paused = False
+        self.chat_view.set_ai_state("idle")
+        self._post_assistant(f"🎙️ Sesli komut alınamadı: {err}", speak=False)
 
     # Reminders Handlers
     def on_add_reminder(self, text: str):
@@ -1616,6 +1692,8 @@ class TauMainWindow(QMainWindow):
         if save_config(new_cfg):
             self.controller.config = new_cfg
             self.controller.provider = new_cfg.get('ai_provider', 'ollama')
+            # Engine'in niyet katmanı da yeni ayarı görsün (LLM intent aç/kapa vb.)
+            self.controller.engine.update_config(new_cfg)
             
             provider_name = PROVIDER_LABELS.get(self.controller.provider, self.controller.provider)
             model_name = new_cfg.get('ollama_model', '') if self.controller.provider == 'ollama' else ''

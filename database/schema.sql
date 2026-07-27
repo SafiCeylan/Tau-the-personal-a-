@@ -91,3 +91,9 @@ CREATE TABLE IF NOT EXISTS zamanli_gorevler (
     aktif INTEGER DEFAULT 1,
     olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ); 
+-- Hızlı Notlar Tablosu
+CREATE TABLE IF NOT EXISTS notlar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    metin TEXT NOT NULL,
+    olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

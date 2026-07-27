@@ -88,24 +88,111 @@ def sistem_sesi_kontrol(action: str, percent: int = None):
     VK_VOLUME_UP = 0xAF
     KEYEVENTF_KEYUP = 0x0002
 
+    def _bas(vk, kez):
+        for _ in range(kez):
+            ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+            time.sleep(0.01)
+
     if action == "mute":
         ctypes.windll.user32.keybd_event(VK_VOLUME_MUTE, 0, 0, 0)
         ctypes.windll.user32.keybd_event(VK_VOLUME_MUTE, 0, KEYEVENTF_KEYUP, 0)
         return True, "🔇 Sistem sesi değiştirildi."
-    elif action in ("set", "up"):
-        steps = int(percent / 2) if percent else 10
-        for _ in range(steps):
-            ctypes.windll.user32.keybd_event(VK_VOLUME_UP, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(VK_VOLUME_UP, 0, KEYEVENTF_KEYUP, 0)
-            time.sleep(0.01)
+    elif action == "set":
+        # Mutlak ayar: her tuş adımı ~%2. Önce garanti 0'a indir (50 adım aşağı),
+        # sonra hedefe kadar çık. Böylece "%30 yap" gerçekten %30'a ayarlar,
+        # mevcut seviyenin üstüne EKLEMEZ.
+        target_pct = max(0, min(100, percent if percent is not None else 50))
+        _bas(VK_VOLUME_DOWN, 50)
+        _bas(VK_VOLUME_UP, int(round(target_pct / 2)))
+        return True, f"🔊 Sistem sesi **%{target_pct}** seviyesine ayarlandı."
+    elif action == "up":
+        _bas(VK_VOLUME_UP, int(percent / 2) if percent else 10)
         return True, f"🔊 Sistem sesi artırıldı."
     elif action == "down":
-        steps = int(percent / 2) if percent else 10
-        for _ in range(steps):
-            ctypes.windll.user32.keybd_event(VK_VOLUME_DOWN, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(VK_VOLUME_DOWN, 0, KEYEVENTF_KEYUP, 0)
-            time.sleep(0.01)
+        _bas(VK_VOLUME_DOWN, int(percent / 2) if percent else 10)
         return True, f"🔉 Sistem sesi kısıldı."
+
+
+# =========================================================================
+# MEDYA KONTROLÜ — YouTube Music, Spotify, tarayıcı: hepsinde çalışır
+# =========================================================================
+# Windows medya tuşlarını simüle eder. Uygulamaya özel API gerekmez; hangi
+# oynatıcı öndeyse/aktifse onu kontrol eder (donanım medya tuşuyla aynı yol).
+VK_MEDIA_NEXT = 0xB0
+VK_MEDIA_PREV = 0xB1
+VK_MEDIA_STOP = 0xB2
+VK_MEDIA_PLAY_PAUSE = 0xB3
+
+MEDIA_ACTIONS = {
+    "playpause": (VK_MEDIA_PLAY_PAUSE, "⏯️ Oynat/Duraklat gönderildi."),
+    "pause": (VK_MEDIA_PLAY_PAUSE, "⏸️ Müzik duraklatıldı."),
+    "play": (VK_MEDIA_PLAY_PAUSE, "▶️ Müzik devam ediyor."),
+    "next": (VK_MEDIA_NEXT, "⏭️ Sonraki şarkıya geçildi."),
+    "prev": (VK_MEDIA_PREV, "⏮️ Önceki şarkıya dönüldü."),
+    "stop": (VK_MEDIA_STOP, "⏹️ Oynatma durduruldu."),
+}
+
+
+def medya_kontrol(action: str):
+    """
+    Medya oynatmayı kontrol eder (duraklat/devam/sonraki/önceki/durdur).
+
+    Not: Windows medya tuşu sinyali gönderir — YouTube Music, Spotify,
+    VLC, tarayıcı sekmesi fark etmez, aktif oynatıcı yanıt verir.
+    """
+    if sys.platform != 'win32':
+        return False, "Medya kontrolü şu an sadece Windows'ta destekleniyor."
+
+    islem = MEDIA_ACTIONS.get(action)
+    if not islem:
+        return False, f"Bilinmeyen medya komutu: {action}"
+
+    vk, mesaj = islem
+    KEYEVENTF_KEYUP = 0x0002
+    try:
+        ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+        return True, mesaj
+    except Exception as e:
+        return False, f"Medya kontrolü başarısız: {e}"
+
+
+def medya_komutu_algila(mesaj: str):
+    """
+    Mesajdan medya komutunu çıkarır → action adı veya None.
+
+    ÖNEMLİ: "şarkı çal" gibi YENİ müzik başlatma istekleri buraya DÜŞMEMELİ
+    (onlar PLAY_MUSIC'e gider). Burada sadece ZATEN çalan medyanın kontrolü var.
+    """
+    m = (mesaj or "").lower().strip()
+    if not m:
+        return None
+
+    # Şarkı adı içeren "X çal" gibi istekler medya kontrolü değil, yeni oynatmadır
+    if re.search(r'\b(çal|aç)\b', m) and any(
+            k in m for k in ["şarkı", "müzik", "youtube", "parça", "albüm"]):
+        # "müziği devam ettir/durdur" hariç — onlar kontroldür
+        if not any(k in m for k in ["devam", "durdur", "duraklat", "duraklat", "geç"]):
+            return None
+
+    if any(k in m for k in ["sonraki şarkı", "şarkıyı geç", "diğer şarkı", "next",
+                            "sonraki parça", "şarkı geç", "geç bunu", "bunu geç"]):
+        return "next"
+    if any(k in m for k in ["önceki şarkı", "geri al", "bir önceki", "previous",
+                            "önceki parça", "baştan çal", "başa sar"]):
+        return "prev"
+    if any(k in m for k in ["müziği durdur", "şarkıyı durdur", "durdur müziği",
+                            "duraklat", "pause", "müziği duraklat", "sesi kes müzik"]):
+        return "pause"
+    if any(k in m for k in ["devam ettir", "müziği devam", "devam et müzik",
+                            "resume", "kaldığı yerden", "müziği aç"]):
+        return "play"
+    if any(k in m for k in ["oynat/duraklat", "play pause", "playpause"]):
+        return "playpause"
+    if any(k in m for k in ["müziği kapat", "oynatmayı durdur", "medyayı durdur"]):
+        return "stop"
+    return None
 
 
 def _load_app_cache() -> dict:

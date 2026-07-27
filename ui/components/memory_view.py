@@ -147,7 +147,8 @@ class MemoryViewWidget(QWidget):
         # ScrollArea
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport { border: none; background: transparent; }")
+        self.scroll.viewport().setStyleSheet("background: transparent;")
 
         self.cards_container = QWidget()
         self.cards_container.setStyleSheet("background: transparent;")

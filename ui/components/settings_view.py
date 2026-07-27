@@ -21,7 +21,7 @@ class SettingsViewWidget(QWidget):
         title_box = QVBoxLayout()
         title_box.setSpacing(4)
         
-        head = QLabel("⚙️ Sistem & AI Yapılandırması")
+        head = QLabel("⚙️ Sistem && AI Yapılandırması")
         head.setStyleSheet("color: #ff4d58; font-size: 20px; font-weight: 800;")
         
         sub = QLabel("Model sağlayıcısını, yerel sunucu adreslerini ve sistem tercihlerini yönetin")
@@ -60,7 +60,26 @@ class SettingsViewWidget(QWidget):
 
         # Inputs
         self.ollama_url_in = QLineEdit(self.config.get("ollama_url", "http://127.0.0.1:11434"))
-        self.ollama_model_in = QLineEdit(self.config.get("ollama_model", "gemma3:4b"))
+        # Ollama model: yüklü modelleri Ollama'dan otomatik çeken düzenlenebilir menü
+        self.ollama_model_combo = QComboBox()
+        self.ollama_model_combo.setEditable(True)  # elle özel model adı da yazılabilir
+        # Görünürlük garantisi: tema gelmese bile kutu ve yazı net okunsun
+        self.ollama_model_combo.setMinimumHeight(34)
+        self.ollama_model_combo.setStyleSheet("""
+            QComboBox { background-color: #14060a; color: #f5e6e8;
+                        border: 1px solid rgba(255,26,38,0.45); border-radius: 8px;
+                        padding: 4px 10px; font-size: 13px; }
+            QComboBox QLineEdit { background: transparent; color: #f5e6e8;
+                                  border: none; font-size: 13px; }
+            QComboBox QAbstractItemView { background-color: #0c0407; color: #f5e6e8;
+                                          selection-background-color: rgba(255,26,38,0.35); }
+        """)
+        self.ollama_model_combo.setToolTip(
+            "Ollama'da yüklü modeller. Listede yoksa '🔄 Yükle'ye basın.")
+        self._populate_ollama_models(
+            self.config.get("ollama_url", "http://127.0.0.1:11434"),
+            self.config.get("ollama_model", "qwen2.5:3b"),
+        )
 
         self.gemini_key_in = QLineEdit(self.config.get("gemini_api_key", "") or "")
         self.gemini_key_in.setEchoMode(QLineEdit.Password)
@@ -74,14 +93,14 @@ class SettingsViewWidget(QWidget):
         self.tau_key_in = QLineEdit(self.config.get("tau_api_key", "") or "")
         self.tau_key_in.setEchoMode(QLineEdit.Password)
 
-        # E-posta (Gmail SMTP) — "X'e mail gönder" özelliği için
+        # E-posta (Gmail SMTP)
         self.smtp_user_in = QLineEdit(self.config.get("smtp_user", "") or "")
         self.smtp_user_in.setPlaceholderText("ornek@gmail.com")
         self.smtp_pass_in = QLineEdit(self.config.get("smtp_pass", "") or "")
         self.smtp_pass_in.setEchoMode(QLineEdit.Password)
         self.smtp_pass_in.setPlaceholderText("Gmail UYGULAMA şifresi (normal şifre değil)")
 
-        # Telegram köprüsü — telefondan komut vermek için
+        # Telegram köprüsü
         self.tg_token_in = QLineEdit(self.config.get("telegram_token", "") or "")
         self.tg_token_in.setEchoMode(QLineEdit.Password)
         self.tg_token_in.setPlaceholderText("@BotFather'dan alınan bot token'ı")
@@ -90,7 +109,21 @@ class SettingsViewWidget(QWidget):
 
         form.addRow("Aktif AI Sağlayıcı:", self.provider_combo)
         form.addRow("Ollama Sunucu URL:", self.ollama_url_in)
-        form.addRow("Ollama Model Adı:", self.ollama_model_in)
+        # Ollama model satırı: açılır menü + yükle/yenile butonu
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.ollama_model_combo, 1)
+        model_refresh_btn = QPushButton("🔄 Yükle")
+        model_refresh_btn.setCursor(Qt.PointingHandCursor)
+        model_refresh_btn.setToolTip("Ollama'da yüklü modelleri listeye çeker")
+        model_refresh_btn.clicked.connect(lambda: self._populate_ollama_models(
+            self.ollama_url_in.text().strip() or "http://127.0.0.1:11434",
+            self.ollama_model_combo.currentText().strip(),
+            notify=True,
+        ))
+        model_row.addWidget(model_refresh_btn)
+        model_widget = QWidget()
+        model_widget.setLayout(model_row)
+        form.addRow("Ollama Model Adı:", model_widget)
         form.addRow("Google Gemini API Key:", self.gemini_key_in)
         form.addRow("Gemini Model:", self.gemini_model_in)
         form.addRow("KoboldCPP URL:", self.kobold_url_in)
@@ -116,7 +149,11 @@ class SettingsViewWidget(QWidget):
         self.wake_check = QCheckBox("\"Hey Ultron\" ile sesli uyandırma (lokal, Vosk)")
         self.wake_check.setChecked(bool(self.config.get("wake_enabled")))
 
-        # Mikrofon seçici (wake word ve sesli komut bunu kullanır)
+        self.llm_intent_check = QCheckBox(
+            "Doğal dil komut anlama (LLM niyet — biraz daha yavaş, çok daha akıllı)")
+        self.llm_intent_check.setChecked(bool(self.config.get("llm_intent_enabled")))
+
+        # Mikrofon seçici
         self.mic_combo = QComboBox()
         self.mic_combo.addItem("Sistem varsayılanı", -1)
         for idx, name in self._list_microphones():
@@ -138,6 +175,7 @@ class SettingsViewWidget(QWidget):
         form.addRow("🔊 Sesli Yanıt (TTS):", self.tts_check)
         form.addRow("TTS Motoru:", self.tts_engine_combo)
         form.addRow("🎙️ Wake Word:", self.wake_check)
+        form.addRow("🧠 Akıllı Komut:", self.llm_intent_check)
         form.addRow("Mikrofon:", mic_widget)
 
         layout.addWidget(card)
@@ -164,9 +202,49 @@ class SettingsViewWidget(QWidget):
         layout.addStretch()
 
     @staticmethod
+    def _list_ollama_models(url):
+        """Ollama /api/tags'tan yüklü model adlarını çeker. Ulaşılamazsa boş liste."""
+        models = []
+        try:
+            import requests
+            r = requests.get(url.rstrip('/') + '/api/tags', timeout=3)
+            if r.status_code == 200:
+                for m in r.json().get('models', []):
+                    name = m.get('name') or m.get('model')
+                    if name and name not in models:
+                        models.append(name)
+        except Exception as e:
+            print(f"[Ayarlar] Ollama model listesi alınamadı: {e}")
+        return models
+
+    def _populate_ollama_models(self, url, current, notify=False):
+        """Menüyü Ollama'daki modellerle doldurur; mevcut seçimi korur.
+        notify=True ise (kullanıcı butona bastıysa) sonucu mesajla bildirir."""
+        models = self._list_ollama_models(url)
+        self.ollama_model_combo.clear()
+        self.ollama_model_combo.addItems(models)
+        # Kayıtlı/seçili modeli koru — listede yoksa yine de yaz (özel model olabilir)
+        if current:
+            idx = self.ollama_model_combo.findText(current)
+            if idx >= 0:
+                self.ollama_model_combo.setCurrentIndex(idx)
+            else:
+                self.ollama_model_combo.setEditText(current)
+        if notify:
+            if models:
+                QMessageBox.information(
+                    self, "Modeller Yüklendi",
+                    "Ollama'da bulunan modeller:\n• " + "\n• ".join(models) +
+                    "\n\nBirini seçip 'Ayarları Kaydet'e basın.")
+            else:
+                QMessageBox.warning(
+                    self, "Model Bulunamadı",
+                    "Ollama'dan model listesi alınamadı.\n\n"
+                    "• Ollama açık mı? (terminalde 'ollama list' deneyin)\n"
+                    "• Sunucu URL doğru mu?")
+
+    @staticmethod
     def _list_microphones():
-        """Kullanılabilir mikrofon girişlerini (indeks, ad) listeler.
-        Sadece MME host API'si listelenir — fiziksel aygıt başına tek, kısa kayıt."""
         mics = []
         try:
             import sounddevice as sd
@@ -183,7 +261,6 @@ class SettingsViewWidget(QWidget):
         return mics
 
     def test_microphone(self):
-        """Seçili mikrofondan 2 saniye kayıt alıp ses seviyesini ölçer."""
         try:
             import array
             import sounddevice as sd
@@ -256,13 +333,11 @@ class SettingsViewWidget(QWidget):
             QMessageBox.critical(self, "Bağlantı Hatası", f"Sunucuya bağlanılamadı:\n{e}")
 
     def save_settings(self):
-        # Mevcut config'i temel al: formda olmayan anahtarlar (tau_timeout,
-        # tau_endpoint, kullanıcının elle eklediği ayarlar) kaybolmasın
         new_config = dict(self.config)
         new_config.update({
             "ai_provider": self.provider_combo.currentData(),
             "ollama_url": self.ollama_url_in.text().strip(),
-            "ollama_model": self.ollama_model_in.text().strip(),
+            "ollama_model": self.ollama_model_combo.currentText().strip(),
             "gemini_api_key": self.gemini_key_in.text().strip(),
             "gemini_model": self.gemini_model_in.text().strip(),
             "kobold_url": self.kobold_url_in.text().strip(),
@@ -275,6 +350,7 @@ class SettingsViewWidget(QWidget):
             "tts_enabled": self.tts_check.isChecked(),
             "tts_engine": self.tts_engine_combo.currentData(),
             "wake_enabled": self.wake_check.isChecked(),
+            "llm_intent_enabled": self.llm_intent_check.isChecked(),
             "mic_device_index": self.mic_combo.currentData(),
         })
         new_config.setdefault("tau_timeout", 30)

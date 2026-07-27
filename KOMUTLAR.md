@@ -86,6 +86,52 @@ oku: C:\yol\dosya.pdf                     ← içeriğini okur/özetler
 > Klasörler: indirilenler, masaüstü, belgeler, resimler, videolar, müzikler
 > Türler: pdf, resim, video, müzik, excel, word, sunum, zip, metin, kurulum
 
+## 📝 NOTLAR
+```
+not al: yarın market listesi lazım
+not: kablo almayı unutma
+şunu not et bugün hava çok güzeldi
+aklımda kalsın: kapıcıya para verilecek
+notlarımı göster                          ← son 15 not
+notlarımı sil                             ← hepsini temizler
+```
+
+## 🧮 HESAP MAKİNESİ
+```
+125 * 48 kaç eder
+17 + 33
+yüz yirmi beş çarpı kırk sekiz            ← sözel sayılar da çalışır
+340 bölü 4
+```
+> LLM'e sorulmaz — güvenli matematik motoru hesaplar (yanlış cevap ihtimali yok).
+
+## 🕐 SAAT / TARİH
+```
+saat kaç
+bugün ayın kaçı
+bugün günlerden ne
+bugünün tarihi ne
+```
+> Gerçek sistem saatinden okunur, modele sorulmaz.
+
+## ⏱️ SAYAÇ
+```
+10 dakika sayaç kur
+25 dakikaya kur
+yarım saat sonra uyar
+zamanlayıcı 5 dakika
+```
+> Sayaç hatırlatma olarak kaydedilir — süre dolunca bildirim + Telegram.
+
+## ⏯️ ÇALAN MÜZİĞİ KONTROL
+```
+şarkıyı geç / sonraki şarkı
+önceki şarkı / başa sar
+müziği duraklat / devam ettir
+müziği durdur
+```
+> Sohbet penceresinin altındaki ⏮ ⏯ ⏭ butonları da aynı işi yapar (mesaj yazmadan).
+
 ## 📋 PANO
 ```
 panoyu oku

@@ -15,34 +15,35 @@ class SidebarWidget(QFrame):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 20, 16, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 18, 14, 18)
+        layout.setSpacing(10)
 
         # 1. Ultron Brand Header
         brand_layout = QHBoxLayout()
+        brand_layout.setSpacing(10)
         
         # Ultron Emblem
         emblem = QLabel("⚡")
-        emblem.setFixedSize(40, 40)
+        emblem.setFixedSize(38, 38)
         emblem.setAlignment(Qt.AlignCenter)
         emblem.setStyleSheet("""
             background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5,
-                stop:0 #ffffff, stop:0.5 #ff1a26, stop:1 #80000a);
+                stop:0 #ffffff, stop:0.55 #ff1a26, stop:1 #660008);
             color: #ffffff;
             font-weight: 900;
-            font-size: 18px;
-            border-radius: 10px;
+            font-size: 17px;
+            border-radius: 9px;
             border: 1px solid #ff4d58;
         """)
         
         title_box = QVBoxLayout()
-        title_box.setSpacing(2)
+        title_box.setSpacing(1)
         
         app_name = QLabel("ULTRON")
-        app_name.setStyleSheet("color: #ff1a26; font-size: 18px; font-weight: 900; letter-spacing: 2.5px;")
+        app_name.setStyleSheet("color: #ff1a26; font-size: 17px; font-weight: 900; letter-spacing: 2px;")
         
         app_sub = QLabel("NEURAL CORE v3.0")
-        app_sub.setStyleSheet("color: #a88e93; font-size: 10px; font-weight: 700; letter-spacing: 1px;")
+        app_sub.setStyleSheet("color: #a88e93; font-size: 9.5px; font-weight: 700; letter-spacing: 1px;")
         
         title_box.addWidget(app_name)
         title_box.addWidget(app_sub)
@@ -58,49 +59,53 @@ class SidebarWidget(QFrame):
         sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("background-color: rgba(255, 26, 38, 0.25); height: 1px; border: none;")
         layout.addWidget(sep)
-        layout.addSpacing(10)
+        layout.addSpacing(4)
 
         # New Session Button
-        self.new_chat_btn = QPushButton("🔴 YENİ OTURUM BAŞLAT")
+        self.new_chat_btn = QPushButton("🔴  YENİ OTURUM BAŞLAT")
         self.new_chat_btn.setCursor(Qt.PointingHandCursor)
         self.new_chat_btn.setStyleSheet("""
             QPushButton {
-                background: rgba(255, 26, 38, 0.15);
+                background: rgba(255, 26, 38, 0.16);
                 color: #ff4d58;
-                border: 1px solid rgba(255, 26, 38, 0.4);
+                border: 1px solid rgba(255, 26, 38, 0.45);
                 border-radius: 8px;
-                padding: 10px 14px;
-                font-weight: 700;
-                letter-spacing: 1px;
-                text-align: left;
+                padding: 10px 12px;
+                font-weight: 800;
+                font-size: 11.5px;
+                letter-spacing: 0.8px;
+                text-align: center;
             }
             QPushButton:hover {
-                background: rgba(255, 26, 38, 0.3);
+                background: rgba(255, 26, 38, 0.32);
                 border-color: #ff1a26;
                 color: #ffffff;
+            }
+            QPushButton:pressed {
+                background: #80000a;
             }
         """)
         self.new_chat_btn.clicked.connect(self.new_chat_requested.emit)
         layout.addWidget(self.new_chat_btn)
 
-        layout.addSpacing(10)
+        layout.addSpacing(6)
 
         # Nav Title
         nav_label = QLabel("PROTOKOL MENÜSÜ")
-        nav_label.setStyleSheet("color: #73575c; font-size: 10px; font-weight: 800; letter-spacing: 1.5px;")
+        nav_label.setStyleSheet("color: #73575c; font-size: 9.5px; font-weight: 800; letter-spacing: 1.5px; padding-left: 2px;")
         layout.addWidget(nav_label)
 
-        # Navigation Buttons
+        # Navigation Buttons (Use '&&' so Qt does not create mnemonic underscores!)
         self.btn_group = QButtonGroup(self)
         self.btn_group.setExclusive(True)
 
         self.nav_items = [
             ("💬 Terminal / Sohbet", 0),
             ("🌌 Ultron Odak Modu", 6),
-            ("🎛️ Mod & Rutin Yöneticisi", 7),
-            ("⏰ Görev & Hatırlatıcı", 1),
+            ("🎛️ Mod && Rutin Yöneticisi", 7),
+            ("⏰ Görev && Hatırlatıcı", 1),
             ("🧠 Veri Hafızası", 2),
-            ("🎭 Duygu & Tehdit Analizi", 3),
+            ("🎭 Duygu && Tehdit Analizi", 3),
             ("📊 Sistem İstatistikleri", 4),
             ("⚙️ Çekirdek Ayarları", 5),
         ]
@@ -128,10 +133,12 @@ class SidebarWidget(QFrame):
         # Bottom Provider Status Badge
         self.status_box = QFrame()
         self.status_box.setStyleSheet("""
-            background: rgba(18, 5, 8, 0.9);
-            border: 1px solid rgba(255, 26, 38, 0.3);
-            border-radius: 8px;
-            padding: 8px;
+            QFrame {
+                background: rgba(18, 5, 8, 0.9);
+                border: 1px solid rgba(255, 26, 38, 0.3);
+                border-radius: 8px;
+                padding: 8px;
+            }
         """)
         sb_layout = QVBoxLayout(self.status_box)
         sb_layout.setContentsMargins(8, 8, 8, 8)

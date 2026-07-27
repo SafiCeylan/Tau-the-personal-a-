@@ -28,6 +28,7 @@ class FloatingMessageBubble(QFrame):
         layout.setContentsMargins(12, 4, 12, 4)
 
         bubble_box = QFrame()
+        bubble_box.setMaximumWidth(720)
         bubble_layout = QVBoxLayout(bubble_box)
         bubble_layout.setContentsMargins(16, 12, 16, 12)
         bubble_layout.setSpacing(6)
@@ -252,7 +253,8 @@ class UltronFocusViewWidget(QWidget):
         # Floating Messages Scroll Area (Floats over the center core!)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.scroll_area.setStyleSheet("QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport { border: none; background: transparent; }")
+        self.scroll_area.viewport().setStyleSheet("background: transparent;")
 
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background: transparent;")
