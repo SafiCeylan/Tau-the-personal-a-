@@ -203,20 +203,11 @@ def indeks_durumu():
 # ---------------------------------------------------------------------------
 # ARAMA
 # ---------------------------------------------------------------------------
-def ara(sorgu: str, tur: str = None, limit: int = 20):
-    """
-    İndekste arar → [{'yol','ad','boyut','degisim','kok'}] (en alakalı önce).
-
-    Sorgudaki her kelime dosya adında geçmelidir (AND). Sıralama:
-      1) adın tam başında eşleşme  2) yeni değişen  3) alfabetik
-    """
-    sayi, _ = indeks_durumu()
-    if not sayi:
-        return []
-
+def _arama_kosullari(sorgu: str, tur: str = None):
+    """Sorguyu SQL koşullarına çevirir → (kosullar, parametreler) veya (None, None)."""
     tokenlar = [t for t in re.findall(r"[\w\-.]+", sadelestir(sorgu)) if len(t) >= 2]
     if not tokenlar and not tur:
-        return []
+        return None, None, []
 
     kosullar, parametreler = [], []
     for t in tokenlar:
@@ -232,11 +223,53 @@ def ara(sorgu: str, tur: str = None, limit: int = 20):
             parametreler.extend(uzantilar)
 
     if not kosullar:
+        return None, None, []
+    return kosullar, parametreler, tokenlar
+
+
+def sonuc_sayisi(sorgu: str, tur: str = None) -> int:
+    """
+    Eşleşen TOPLAM dosya sayısı.
+
+    Neden ayrı fonksiyon: `ara()` limitli döner ve kullanıcıya "10 sonuç" demek
+    yanıltıcıydı — aslında 23 eşleşme varken 13'ünün varlığı gizleniyordu.
+    """
+    sayi, _ = indeks_durumu()
+    if not sayi:
+        return 0
+    kosullar, parametreler, _tok = _arama_kosullari(sorgu, tur)
+    if not kosullar:
+        return 0
+    sql = "SELECT COUNT(*) FROM dosyalar WHERE " + " AND ".join(kosullar)
+    conn = _baglanti()
+    try:
+        return conn.execute(sql, parametreler).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def ara(sorgu: str, tur: str = None, limit: int = 20, offset: int = 0):
+    """
+    İndekste arar → [{'yol','ad','boyut','degisim','kok'}] (en alakalı önce).
+
+    Sorgudaki her kelime dosya adında geçmelidir (AND). Sıralama:
+      1) adın tam başında eşleşme  2) yeni değişen  3) alfabetik
+
+    `offset`: sayfalama için atlanacak sonuç sayısı ("devamını göster").
+    """
+    sayi, _ = indeks_durumu()
+    if not sayi:
+        return []
+
+    kosullar, parametreler, tokenlar = _arama_kosullari(sorgu, tur)
+    if not kosullar:
         return []
 
     sql = ("SELECT yol, ad, boyut, degisim, kok FROM dosyalar WHERE "
-           + " AND ".join(kosullar) + " ORDER BY degisim DESC LIMIT ?")
+           + " AND ".join(kosullar) + " ORDER BY degisim DESC LIMIT ? OFFSET ?")
+    parametreler = list(parametreler)
     parametreler.append(max(1, min(limit, 50)))
+    parametreler.append(max(0, offset))
 
     conn = _baglanti()
     try:
@@ -271,27 +304,55 @@ _SON_SONUCLAR = {}
 _SONUC_OMRU_SN = 900   # 15 dakika
 
 
-def son_sonuclari_kaydet(kanal, sonuclar):
-    _SON_SONUCLAR[str(kanal)] = (list(sonuclar), time.time())
+def son_sonuclari_kaydet(kanal, sonuclar, sorgu=None, tur=None, offset=0, toplam=None):
+    """
+    Son arama sonuçlarını kanal başına saklar.
+
+    Sorgu/offset/toplam da saklanır ki "devamını göster" sonraki sayfayı
+    çekebilsin ve "11'i gönder" ikinci sayfada doğru dosyayı seçebilsin.
+    """
+    _SON_SONUCLAR[str(kanal)] = {
+        'sonuclar': list(sonuclar),
+        'zaman': time.time(),
+        'sorgu': sorgu,
+        'tur': tur,
+        'offset': offset,
+        'toplam': toplam if toplam is not None else offset + len(sonuclar),
+    }
+
+
+def son_arama_bilgisi(kanal):
+    """Taze arama kaydını döner; bayatsa temizler ve None döner."""
+    kayit = _SON_SONUCLAR.get(str(kanal))
+    if not kayit:
+        return None
+    if time.time() - kayit['zaman'] > _SONUC_OMRU_SN:
+        _SON_SONUCLAR.pop(str(kanal), None)
+        return None
+    return kayit
 
 
 def son_sonuclari_al(kanal):
-    kayit = _SON_SONUCLAR.get(str(kanal))
-    if not kayit:
-        return []
-    sonuclar, zaman = kayit
-    if time.time() - zaman > _SONUC_OMRU_SN:
-        _SON_SONUCLAR.pop(str(kanal), None)
-        return []
-    return sonuclar
+    kayit = son_arama_bilgisi(kanal)
+    return kayit['sonuclar'] if kayit else []
 
 
 def sonuctan_sec(kanal, sira: int):
-    """1 tabanlı sıra numarasıyla son arama sonucundan dosya seçer → yol veya None."""
-    sonuclar = son_sonuclari_al(kanal)
-    if not sonuclar or sira < 1 or sira > len(sonuclar):
+    """
+    1 tabanlı sıra numarasıyla son arama sonucundan dosya seçer → yol veya None.
+
+    Numaralar GENEL sıradır: ikinci sayfa 11'den başlar, o yüzden saklanan
+    `offset` düşülür. (Aksi halde "11'i gönder" ikinci sayfada listenin 11.
+    elemanını arar ve bulamaz.)
+    """
+    kayit = son_arama_bilgisi(kanal)
+    if not kayit:
         return None
-    return sonuclar[sira - 1]['yol']
+    yerel = sira - 1 - kayit.get('offset', 0)
+    sonuclar = kayit['sonuclar']
+    if yerel < 0 or yerel >= len(sonuclar):
+        return None
+    return sonuclar[yerel]['yol']
 
 
 # ---------------------------------------------------------------------------
@@ -302,14 +363,38 @@ def boyut_yazi(bayt: int) -> str:
     return f"{mb:.1f} MB" if mb >= 1 else f"{(bayt or 0) / 1024:.0f} KB"
 
 
-def sonuclari_bicimle(sonuclar, baslik: str = "Bulunanlar") -> str:
-    """Numaralı liste — kullanıcı '2'yi gönder' diyebilsin."""
+def sonuclari_bicimle(sonuclar, baslik: str = "Bulunanlar", toplam: int = None,
+                      baslangic: int = 1) -> str:
+    """
+    Numaralı liste — kullanıcı '2'yi gönder' diyebilsin.
+
+    `toplam`: eşleşen TÜM dosyaların sayısı. Verilmezse gösterilen kadar sanılır.
+    Bu ayrım önemli: önceden 23 eşleşme varken "10 sonuç" yazıyordu ve kalan
+    13 dosyanın varlığı kullanıcıdan gizleniyordu.
+
+    `baslangic`: numaralandırmanın başlayacağı sıra (2. sayfada 11'den başlar).
+    """
     if not sonuclar:
         return "🔍 Eşleşen dosya bulunamadı."
+
     satirlar = []
-    for i, s in enumerate(sonuclar, 1):
+    for i, s in enumerate(sonuclar, baslangic):
         tarih = datetime.fromtimestamp(s['degisim']).strftime('%d.%m.%Y %H:%M')
         klasor = os.path.dirname(s['yol'])
         satirlar.append(f"**{i}.** `{s['ad']}`\n     {boyut_yazi(s['boyut'])} · {tarih}\n     📁 {klasor}")
-    return (f"🔍 **{baslik}** ({len(sonuclar)} sonuç):\n\n" + "\n".join(satirlar) +
-            "\n\n➡️ Göndermek için: `1'i bana gönder` · `2'yi anneme mail at`")
+
+    gosterilen = len(sonuclar)
+    son = baslangic + gosterilen - 1
+    toplam = toplam if toplam is not None else son
+
+    if toplam > son:
+        basligi = f"🔍 **{baslik}** — {toplam} dosya bulundu, {baslangic}-{son} arası:"
+        kuyruk = (f"\n\n➡️ `{baslangic}'i bana gönder` · `{baslangic + 1}'i anneme mail at`"
+                  f"\n📄 Kalan {toplam - son} dosya için: `devamını göster`"
+                  f"\n💡 Hangisi olduğunu biliyorsan adını daha net yazabilirsin.")
+    else:
+        sayi_yazi = f"{toplam} sonuç" if baslangic == 1 else f"{baslangic}-{son} arası (son sayfa)"
+        basligi = f"🔍 **{baslik}** ({sayi_yazi}):"
+        kuyruk = f"\n\n➡️ Göndermek için: `{baslangic}'i bana gönder` · `{baslangic + 1}'i anneme mail at`"
+
+    return basligi + "\n\n" + "\n".join(satirlar) + kuyruk

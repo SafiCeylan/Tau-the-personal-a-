@@ -184,6 +184,14 @@ def dosya_niyeti_coz(mesaj: str, kanal=MASAUSTU_KANALI):
     sorulur — eşleşme yoksa None döner ve cümle WhatsApp/e-posta/LLM akışına
     kalır. Karar burada verilir ki güvenlik katmanı doğru niyeti görsün.
     """
+    # "devamını göster" — kendi başına aranacak isim taşımaz; ayrıştırıcı onu
+    # boş sorgulu bir arama sanar. Yalnızca o kanalda TAZE bir arama varsa
+    # dosya komutu sayılır ("devam et" her bağlamda dosya komutu değildir).
+    if _DEVAM_RE.search(file_index.sadelestir(mesaj or '')) \
+            and file_index.son_arama_bilgisi(kanal):
+        return {'islem': 'devam', 'sorgu': None, 'secim': None, 'hedef': None,
+                'alici': None, 'tur': None, 'zayif': False}
+
     plan = dosya_komutu_ayristir(mesaj)
     if not plan:
         return None
@@ -390,6 +398,47 @@ def hedef_dosyayi_coz(plan: dict, kanal=MASAUSTU_KANALI):
     return None
 
 
+# "devamını göster" — önceki aramanın sonraki sayfası
+_DEVAM_RE = re.compile(
+    r'\b(devam|devamini|digerleri|digerlerini|gerisini|kalanlari?|kalanini'
+    r'|daha fazla|sonraki|devamini goster|hepsini)\b')
+
+SAYFA_BOYU = 10
+
+
+def sayfa_komutu_algila(mesaj: str, kanal=MASAUSTU_KANALI):
+    """
+    "devamını göster" / "diğerlerini göster" → (işlendi_mi, yanıt).
+
+    Yalnızca o kanalda TAZE bir arama varsa çalışır; yoksa üstlenmez ve cümle
+    normal akışa kalır ("devam et" her bağlamda dosya komutu değildir).
+    """
+    ml = file_index.sadelestir(mesaj or '')
+    if not _DEVAM_RE.search(ml):
+        return False, None
+
+    kayit = file_index.son_arama_bilgisi(kanal)
+    if not kayit or not kayit.get('sorgu'):
+        return False, None
+
+    yeni_offset = kayit['offset'] + len(kayit['sonuclar'])
+    toplam = kayit.get('toplam') or 0
+    if yeni_offset >= toplam:
+        return True, (f"📄 Hepsi bu kadar — `{kayit['sorgu']}` için toplam "
+                      f"{toplam} dosya vardı, tamamını gösterdim.")
+
+    sonuclar = file_index.ara(kayit['sorgu'], tur=kayit.get('tur'),
+                              limit=SAYFA_BOYU, offset=yeni_offset)
+    if not sonuclar:
+        return True, "📄 Gösterilecek başka dosya kalmadı."
+
+    file_index.son_sonuclari_kaydet(kanal, sonuclar, sorgu=kayit['sorgu'],
+                                    tur=kayit.get('tur'), offset=yeni_offset,
+                                    toplam=toplam)
+    return True, file_index.sonuclari_bicimle(
+        sonuclar, "Devamı", toplam=toplam, baslangic=yeni_offset + 1)
+
+
 def _dosyayi_ac(plan: dict, kanal, onaylandi: bool = False):
     """
     İndeksteki dosyayı sistemin varsayılan uygulamasıyla açar → (işlendi_mi, yanıt).
@@ -401,13 +450,17 @@ def _dosyayi_ac(plan: dict, kanal, onaylandi: bool = False):
     yol = hedef_dosyayi_coz(plan, kanal)
 
     if not yol:
-        sonuclar = file_index.ara(plan.get('sorgu') or '', tur=plan.get('tur'), limit=10)
+        sorgu = plan.get('sorgu') or ''
+        toplam = file_index.sonuc_sayisi(sorgu, tur=plan.get('tur'))
+        sonuclar = file_index.ara(sorgu, tur=plan.get('tur'), limit=SAYFA_BOYU)
         if not sonuclar:
             if plan.get('zayif'):
                 return False, None      # dosya komutu değilmiş — çağıran devam etsin
-            return True, f"🔍 `{plan.get('sorgu') or plan.get('tur')}` için dosya bulunamadı."
-        file_index.son_sonuclari_kaydet(kanal, sonuclar)
-        liste = file_index.sonuclari_bicimle(sonuclar, "Birden fazla eşleşme")
+            return True, f"🔍 `{sorgu or plan.get('tur')}` için dosya bulunamadı."
+        file_index.son_sonuclari_kaydet(kanal, sonuclar, sorgu=sorgu,
+                                        tur=plan.get('tur'), offset=0, toplam=toplam)
+        liste = file_index.sonuclari_bicimle(sonuclar, "Birden fazla eşleşme",
+                                             toplam=toplam)
         return True, liste + "\n\n❓ Hangisini açayım? (`1'i aç` gibi)"
 
     if not os.path.exists(yol):
@@ -435,6 +488,12 @@ def dosya_komutu_isle(mesaj: str, kanal=MASAUSTU_KANALI, plan: dict = None,
     `plan`: niyet katmanında zaten ayrıştırıldıysa tekrar ayrıştırma.
     `onaylandi`: kullanıcı onay kartını geçtiyse True (çalıştırılabilir dosya).
     """
+    # "devamını göster" — plan ayrıştırmadan ÖNCE bakılır; bu cümlede aranacak
+    # bir isim yok, ayrıştırıcı onu boş sorgulu bir arama sanardı.
+    sayfa_islendi, sayfa_cevabi = sayfa_komutu_algila(mesaj, kanal)
+    if sayfa_islendi:
+        return True, sayfa_cevabi
+
     plan = plan or dosya_komutu_ayristir(mesaj)
     if not plan:
         return False, None
@@ -465,7 +524,8 @@ def dosya_komutu_isle(mesaj: str, kanal=MASAUSTU_KANALI, plan: dict = None,
         return True, ("📇 Dosya indeksi henüz kurulmamış. `dosya indeksini güncelle` "
                       "dersen bilgisayarını tarayıp hangi dosyanın nerede olduğunu öğrenirim.")
 
-    sonuclar = file_index.ara(sorgu or '', tur=plan['tur'], limit=10)
+    toplam = file_index.sonuc_sayisi(sorgu or '', tur=plan['tur'])
+    sonuclar = file_index.ara(sorgu or '', tur=plan['tur'], limit=SAYFA_BOYU)
     if not sonuclar:
         # Zayıf sinyalli cümlede eşleşme yoksa bu bir dosya komutu değildi —
         # WhatsApp mesajı / web araması / LLM devralsın.
@@ -475,20 +535,23 @@ def dosya_komutu_isle(mesaj: str, kanal=MASAUSTU_KANALI, plan: dict = None,
                       f"(İndekste {sayi:,} dosya var — son tarama: {son_tarama})\n"
                       f"Dosya yeniyse `dosya indeksini güncelle` diyebilirsin.")
 
-    file_index.son_sonuclari_kaydet(kanal, sonuclar)
+    file_index.son_sonuclari_kaydet(kanal, sonuclar, sorgu=sorgu or '',
+                                    tur=plan['tur'], offset=0, toplam=toplam)
 
     # Tek sonuç + hedef belliyse doğrudan gönder
     if plan['hedef'] and len(sonuclar) == 1:
         return True, _hedefe_gonder(sonuclar[0]['yol'], plan)
 
     if plan['hedef']:
-        liste = file_index.sonuclari_bicimle(sonuclar, "Birden fazla eşleşme")
+        liste = file_index.sonuclari_bicimle(sonuclar, "Birden fazla eşleşme",
+                                             toplam=toplam)
         hedef_ad = {'telegram': 'sana', 'email': f"{plan['alici']}'e mail ile",
                     'whatsapp': f"{plan['alici']}'e WhatsApp'tan"}.get(plan['hedef'], '')
         return True, (liste + f"\n\n❓ Hangisini göndereyim {hedef_ad}? "
                               f"Numarasını söyle (örn. `1'i gönder`).")
 
-    return True, file_index.sonuclari_bicimle(sonuclar, "Bulunan dosyalar")
+    return True, file_index.sonuclari_bicimle(sonuclar, "Bulunan dosyalar",
+                                              toplam=toplam)
 
 
 def _hedefe_gonder(yol: str, plan: dict):

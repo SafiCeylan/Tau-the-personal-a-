@@ -145,6 +145,12 @@ sunum dosyası nerede
 2'yi anneme mail at                       ← e-posta EKİ olarak gider (onay ister)
 3'ü patrona whatsapp'tan gönder           ← WhatsApp'a ekler (onay ister)
 ```
+> **Çok sonuç varsa:** kaç dosya bulunduğunu söyler, ilk 10'unu gösterir.
+```
+devamını göster                           ← sonraki 10 (numaralar 11'den devam eder)
+diğerlerini göster · gerisini göster · daha fazla
+```
+> Numaralar genel sıradır: 2. sayfada `12'yi bana gönder` diyebilirsin.
 > Tek adımda da olur: `staj raporunu anneme mail at`
 > — tek eşleşme varsa direkt gönderir, birden fazlaysa "hangisi?" diye sorar.
 

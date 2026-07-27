@@ -116,14 +116,17 @@ def indeks_ara(metin="", sorgu=None, tur=None, kanal="desktop", **_):
     güvenli aracı kullanır.
     """
     hedef = sorgu or metin
+    toplam = file_index.sonuc_sayisi(hedef or '', tur=tur)
     sonuclar = file_index.ara(hedef or '', tur=tur, limit=10)
     if not sonuclar:
         return AracSonuc.ok(
             f"🔍 `{hedef or tur}` için eşleşen dosya bulunamadı.",
             hata_tipi=BULUNAMADI,
         )
-    file_index.son_sonuclari_kaydet(kanal, sonuclar)
-    return AracSonuc.ok(file_index.sonuclari_bicimle(sonuclar, "Bulunan dosyalar"))
+    file_index.son_sonuclari_kaydet(kanal, sonuclar, sorgu=hedef or '', tur=tur,
+                                    offset=0, toplam=toplam)
+    return AracSonuc.ok(file_index.sonuclari_bicimle(
+        sonuclar, "Bulunan dosyalar", toplam=toplam))
 
 
 @arac_kaydet(
