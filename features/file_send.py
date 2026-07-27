@@ -439,6 +439,53 @@ def sayfa_komutu_algila(mesaj: str, kanal=MASAUSTU_KANALI):
         sonuclar, "Devamı", toplam=toplam, baslangic=yeni_offset + 1)
 
 
+# Daraltma cümlesinde bulunabilecek en fazla kelime. Uzun cümle yeni bir
+# konudur, arama terimi değil.
+DARALTMA_MAKS_KELIME = 4
+
+
+def daraltma_denemesi(mesaj: str, kanal=MASAUSTU_KANALI):
+    """
+    "26 dosya buldum, hangisi?" sorusuna gelen cevabı arama daraltması olarak
+    dener → (işlendi_mi, yanıt).
+
+    ⚠️ EN ÖNEMLİ KURAL: cümle ancak GERÇEKTEN dosya bulursa sahiplenilir.
+    Aksi halde "teşekkürler" gibi masum bir mesaj arama sanılır ve kullanıcı
+    sohbet edemez hale gelir. Sonuç yoksa `False` döner, cümle normal akışa
+    (LLM'e) kalır.
+
+    Ayrıca daraltma BİR KEZ denenir (bayrak düşürülür): yoksa konuşma boyunca
+    her kısa cümle arama terimi sanılır.
+    """
+    kayit = file_index.son_arama_bilgisi(kanal)
+    if not kayit or not kayit.get('daraltma_bekliyor') or not kayit.get('sorgu'):
+        return False, None
+
+    terim = (mesaj or '').strip()
+    if not terim or len(terim.split()) > DARALTMA_MAKS_KELIME:
+        return False, None
+
+    # Bayrağı hemen düşür — deneme başarısız olsa da tekrar denenmesin.
+    file_index.daraltma_bayragini_dusur(kanal)
+
+    yeni_sorgu = f"{kayit['sorgu']} {terim}".strip()
+    toplam = file_index.sonuc_sayisi(yeni_sorgu, tur=kayit.get('tur'))
+    if not toplam:
+        return False, None          # daraltma tutmadı — cümle bize ait değil
+
+    sonuclar = file_index.ara(yeni_sorgu, tur=kayit.get('tur'), limit=SAYFA_BOYU)
+    if not sonuclar:
+        return False, None
+
+    file_index.son_sonuclari_kaydet(
+        kanal, sonuclar, sorgu=yeni_sorgu, tur=kayit.get('tur'), offset=0,
+        toplam=toplam, daraltma_bekliyor=(toplam > len(sonuclar)),
+    )
+    baslik = f"`{kayit['sorgu']}` + `{terim}`"
+    return True, (f"🎯 Aramayı daralttım: {baslik}\n\n"
+                  + file_index.sonuclari_bicimle(sonuclar, "Sonuçlar", toplam=toplam))
+
+
 def _dosyayi_ac(plan: dict, kanal, onaylandi: bool = False):
     """
     İndeksteki dosyayı sistemin varsayılan uygulamasıyla açar → (işlendi_mi, yanıt).
@@ -535,8 +582,13 @@ def dosya_komutu_isle(mesaj: str, kanal=MASAUSTU_KANALI, plan: dict = None,
                       f"(İndekste {sayi:,} dosya var — son tarama: {son_tarama})\n"
                       f"Dosya yeniyse `dosya indeksini güncelle` diyebilirsin.")
 
-    file_index.son_sonuclari_kaydet(kanal, sonuclar, sorgu=sorgu or '',
-                                    tur=plan['tur'], offset=0, toplam=toplam)
+    file_index.son_sonuclari_kaydet(
+        kanal, sonuclar, sorgu=sorgu or '', tur=plan['tur'], offset=0,
+        toplam=toplam,
+        # Gösterilenden fazlası varsa "hangisi?" diye sorduk — sonraki kısa
+        # mesaj arama terimi olarak denenecek.
+        daraltma_bekliyor=(toplam > len(sonuclar)),
+    )
 
     # Tek sonuç + hedef belliyse doğrudan gönder
     if plan['hedef'] and len(sonuclar) == 1:

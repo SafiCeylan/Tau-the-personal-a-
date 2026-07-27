@@ -151,6 +151,13 @@ devamını göster                           ← sonraki 10 (numaralar 11'den de
 diğerlerini göster · gerisini göster · daha fazla
 ```
 > Numaralar genel sıradır: 2. sayfada `12'yi bana gönder` diyebilirsin.
+> **Ya da daralt:** "hangisi?" diye sorduğunda adından bir parça yaz —
+```
+rapor dosyalarını bul        → 26 dosya bulundu, hangisi?
+haftalık                     → aramayı daralttım: rapor + haftalık (18 dosya)
+staj                         → rapor + haftalık + staj (3 dosya)
+```
+> Alakasız bir şey yazarsan (`teşekkürler`) arama sanmaz, normal sohbete döner.
 > Tek adımda da olur: `staj raporunu anneme mail at`
 > — tek eşleşme varsa direkt gönderir, birden fazlaysa "hangisi?" diye sorar.
 

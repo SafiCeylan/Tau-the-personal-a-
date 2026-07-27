@@ -186,6 +186,12 @@ class UltronCoreEngine:
             ):
                 ctx = self._kurtarmayi_dene(ctx, cursor, conn)
 
+            # 12.7 ARAMA DARALTMA — "26 dosya buldum, hangisi?" sorusuna gelen
+            #      cevabı yakala. LLM'e düşmeden ÖNCEKİ SON DURAK: hiçbir intent
+            #      üstlenmediyse ve daraltma gerçekten dosya buluyorsa devral.
+            if not ctx.execution_success and not ctx.execution_result:
+                ctx = self._aramayi_daralt(ctx)
+
         # Self-Reflection Check (Auto-Correction & Self-Retry on failure)
         if not ctx.execution_success and ctx.intent == "FILE_OPERATION":
             reflected, corrected_output = self.self_reflection.reflect_and_retry(ctx)
@@ -246,6 +252,26 @@ class UltronCoreEngine:
         # kurtarma başarısız diye False yaparsak arayüz mesajı göstermeyi
         # bırakır ve cevabı LLM üretir → Ultron olmayan dosyayı anlatır.
         ctx.execution_success = kurtarma.basarili or ctx.execution_success
+        return ctx
+
+    def _aramayi_daralt(self, ctx):
+        """
+        Çok sonuçlu aramadan sonra gelen kısa cevabı arama terimi olarak dener.
+
+        Cümle ancak GERÇEKTEN dosya bulunursa sahiplenilir; aksi halde
+        "teşekkürler" gibi masum mesajlar arama sanılır ve kullanıcı sohbet
+        edemez hale gelir.
+        """
+        try:
+            from features.file_send import daraltma_denemesi
+            islendi, cevap = daraltma_denemesi(ctx.normalized_input, ctx.kanal)
+        except Exception as e:
+            print(f"[Ultron Daraltma] {e}")
+            return ctx
+        if islendi:
+            ctx.intent = "FILE_TRANSFER"
+            ctx.execution_success = True
+            ctx.execution_result = cevap
         return ctx
 
     # =====================================================================

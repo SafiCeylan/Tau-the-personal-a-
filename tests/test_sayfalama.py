@@ -195,3 +195,89 @@ class NiyetTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DaraltmaTest(unittest.TestCase):
+    """
+    "26 dosya buldum, hangisi?" → kullanıcı `haftalık` yazar → arama daralır.
+
+    EN ÖNEMLİ KURAL: cümle ancak GERÇEKTEN dosya bulunursa sahiplenilir.
+    Aksi halde "teşekkürler" gibi masum mesajlar arama sanılır ve kullanıcı
+    sohbet edemez hale gelir.
+    """
+
+    def setUp(self):
+        file_index._SON_SONUCLAR.clear()
+
+    def tearDown(self):
+        file_index._SON_SONUCLAR.clear()
+
+    def _bekleyen_arama(self, toplam=26):
+        file_index.son_sonuclari_kaydet(
+            'desktop', [_dosya(f'{i}.pdf') for i in range(10)],
+            sorgu='rapor', offset=0, toplam=toplam, daraltma_bekliyor=True)
+
+    def test_soru_sorulmadiysa_daraltma_yok(self):
+        file_index.son_sonuclari_kaydet('desktop', [_dosya('a.pdf')], sorgu='rapor',
+                                        toplam=1, daraltma_bekliyor=False)
+        islendi, _ = file_send.daraltma_denemesi("haftalık", 'desktop')
+        self.assertFalse(islendi)
+
+    def test_terim_sorguya_eklenir(self):
+        self._bekleyen_arama()
+        with mock.patch.object(file_index, 'sonuc_sayisi', return_value=18) as say, \
+             mock.patch.object(file_index, 'ara',
+                               return_value=[_dosya('haftalik.pdf')]):
+            islendi, cevap = file_send.daraltma_denemesi("haftalık", 'desktop')
+        self.assertTrue(islendi)
+        self.assertEqual(say.call_args[0][0], "rapor haftalık")
+        self.assertIn("daralttım", cevap)
+
+    def test_sonuc_yoksa_cumle_sahiplenilmez(self):
+        """'teşekkürler' arama sanılmamalı — LLM cevaplasın."""
+        self._bekleyen_arama()
+        with mock.patch.object(file_index, 'sonuc_sayisi', return_value=0):
+            islendi, cevap = file_send.daraltma_denemesi("teşekkürler", 'desktop')
+        self.assertFalse(islendi)
+        self.assertIsNone(cevap)
+
+    def test_uzun_cumle_daraltma_sayilmaz(self):
+        """Uzun cümle yeni bir konudur, arama terimi değil."""
+        self._bekleyen_arama()
+        islendi, _ = file_send.daraltma_denemesi(
+            "bu arada yarınki hava durumu nasıl olacak acaba", 'desktop')
+        self.assertFalse(islendi)
+
+    def test_daraltma_bir_kez_denenir(self):
+        """
+        Bayrak düşmezse konuşma boyunca her kısa cümle arama terimi sanılır.
+        Başarısız deneme de bayrağı düşürmeli.
+        """
+        self._bekleyen_arama()
+        with mock.patch.object(file_index, 'sonuc_sayisi', return_value=0):
+            file_send.daraltma_denemesi("alakasız", 'desktop')
+        self.assertFalse(file_index.son_arama_bilgisi('desktop')['daraltma_bekliyor'])
+
+    def test_daraltma_sonrasi_hala_coksa_tekrar_sorulur(self):
+        self._bekleyen_arama()
+        with mock.patch.object(file_index, 'sonuc_sayisi', return_value=18), \
+             mock.patch.object(file_index, 'ara',
+                               return_value=[_dosya(f'{i}.pdf') for i in range(10)]):
+            file_send.daraltma_denemesi("haftalık", 'desktop')
+        self.assertTrue(file_index.son_arama_bilgisi('desktop')['daraltma_bekliyor'])
+
+    def test_daraltma_teke_dustuyse_soru_sorulmaz(self):
+        self._bekleyen_arama()
+        with mock.patch.object(file_index, 'sonuc_sayisi', return_value=1), \
+             mock.patch.object(file_index, 'ara', return_value=[_dosya('tek.pdf')]):
+            file_send.daraltma_denemesi("haftalık", 'desktop')
+        self.assertFalse(file_index.son_arama_bilgisi('desktop')['daraltma_bekliyor'])
+
+    def test_bos_mesaj_cokmez(self):
+        self._bekleyen_arama()
+        self.assertEqual(file_send.daraltma_denemesi("", 'desktop'), (False, None))
+
+    def test_baska_kanal_daraltmayi_devralmaz(self):
+        self._bekleyen_arama()
+        islendi, _ = file_send.daraltma_denemesi("haftalık", '12345')
+        self.assertFalse(islendi)

@@ -304,12 +304,16 @@ _SON_SONUCLAR = {}
 _SONUC_OMRU_SN = 900   # 15 dakika
 
 
-def son_sonuclari_kaydet(kanal, sonuclar, sorgu=None, tur=None, offset=0, toplam=None):
+def son_sonuclari_kaydet(kanal, sonuclar, sorgu=None, tur=None, offset=0,
+                         toplam=None, daraltma_bekliyor=False):
     """
     Son arama sonuçlarını kanal başına saklar.
 
     Sorgu/offset/toplam da saklanır ki "devamını göster" sonraki sayfayı
     çekebilsin ve "11'i gönder" ikinci sayfada doğru dosyayı seçebilsin.
+
+    `daraltma_bekliyor`: kullanıcıya "hangisi?" diye soruldu mu. Sorulduysa
+    bir sonraki kısa mesaj arama terimi olarak denenir.
     """
     _SON_SONUCLAR[str(kanal)] = {
         'sonuclar': list(sonuclar),
@@ -318,7 +322,20 @@ def son_sonuclari_kaydet(kanal, sonuclar, sorgu=None, tur=None, offset=0, toplam
         'tur': tur,
         'offset': offset,
         'toplam': toplam if toplam is not None else offset + len(sonuclar),
+        'daraltma_bekliyor': daraltma_bekliyor,
     }
+
+
+def daraltma_bayragini_dusur(kanal):
+    """
+    Daraltma bir kez denenir.
+
+    Bayrak düşmezse konuşma boyunca her kısa cümle arama terimi sanılır —
+    kullanıcı "tamam" dediğinde Ultron dosya aramaya kalkar.
+    """
+    kayit = _SON_SONUCLAR.get(str(kanal))
+    if kayit:
+        kayit['daraltma_bekliyor'] = False
 
 
 def son_arama_bilgisi(kanal):
@@ -391,7 +408,8 @@ def sonuclari_bicimle(sonuclar, baslik: str = "Bulunanlar", toplam: int = None,
         basligi = f"🔍 **{baslik}** — {toplam} dosya bulundu, {baslangic}-{son} arası:"
         kuyruk = (f"\n\n➡️ `{baslangic}'i bana gönder` · `{baslangic + 1}'i anneme mail at`"
                   f"\n📄 Kalan {toplam - son} dosya için: `devamını göster`"
-                  f"\n💡 Hangisi olduğunu biliyorsan adını daha net yazabilirsin.")
+                  f"\n❓ **Hangisi?** Adından bir parça yazman yeter (`haftalık` gibi) —"
+                  f" aramayı ona göre daraltırım.")
     else:
         sayi_yazi = f"{toplam} sonuç" if baslangic == 1 else f"{baslangic}-{son} arası (son sayfa)"
         basligi = f"🔍 **{baslik}** ({sayi_yazi}):"
