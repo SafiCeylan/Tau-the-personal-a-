@@ -16,6 +16,7 @@ from core.layers.self_reflection import SelfReflectionEngine
 from core.context_manager import BAGLAM
 from core.plan_executor import PlanYurutucu
 from core.planner import BEKLIYOR, ONAY_BEKLIYOR, cok_adimli_olabilir, plan_uret
+from core.reflection import yansit
 
 
 # Onay bekleyen planlar kanal başına tutulur. Telefondan başlatılan bir planın
@@ -208,6 +209,16 @@ class UltronCoreEngine:
 
         # 11. Action Planner
         ctx = self.l11_action.process(ctx)
+
+        # 12.9 REFLECTION (Faz 8) — "gerçekten oldu mu?"
+        #      LLM'e sorulmaz (eylemi uyduran model kontrolü de uydurur);
+        #      kanıt aranır: ekran görüntüsü diskte mi, kayıt DB'de mi.
+        #      Ayrıca hiçbir araç çalışmamışken LLM "açtım/gönderdim" diyorsa
+        #      kullanıcı uyarılır.
+        try:
+            ctx = yansit(ctx, cursor)
+        except Exception as e:
+            print(f"[Ultron Yansıma] {e}")
 
         # 13. Result Checker
         ctx = self.l13_checker.process(ctx)
