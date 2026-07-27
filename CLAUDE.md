@@ -174,10 +174,11 @@ streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi
 
 ### 🔨 Eksik kalanlar
 1. **Dosya gönderiminin testleri yazılmadı** (kullanıcı "sonra" dedi, 27 Tem). Yazılacaklar:
-   parser kalıpları, zayıf-sinyal devretme, gizli dosya filtresi, kanal ayrımı, onay akışı.
-2. **Canlı doğrulama bekliyor:** telefondan `bul → 1'i bana gönder` ve `mail at` akışı;
-   özellikle **WhatsApp dosya gönderimi** (pano CF_HDROP + Ctrl+V) hiç canlı denenmedi.
-3. **exe eski kaldı** — dosya gönderimi exe'de yok, yeniden derlenmeli.
+   parser kalıpları, zayıf-sinyal devretme (`dosya_niyeti_coz`), gizli dosya filtresi,
+   kanal ayrımı, onay akışı. Zırh (`tests/safety.py`) burada da kurulmalı — gönderim
+   gerçek mail/Telegram trafiği üretir.
+2. **exe eski kaldı** — dosya gönderimi exe'de yok, yeniden derlenmeli.
+3. **Push bekliyor** — `5c44597` yerelde.
 4. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
 5. `ui/tau_window.py` ~72 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
 
@@ -195,7 +196,7 @@ Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
 | 24–25 Tem | `llm_gateway` (LLM UI'dan söküldü — Telegram/görevler artık LLM cevabı alıyor), `llm_intent` (LLM niyet sınıflandırıcı), `memory_rag` (alakaya göre hafıza), `confirmed_executor` (onaylı WA/mail gönderilmiyordu — fix), `quick_tools` (hesap/saat/sayaç/not), `mood.py` yeniden yazıldı, engine'e canlı config, chat_view (girdi geçmişi, kod bloğu, hızlı öneriler, medya butonları) | ⚠️ **Commit edilmedi** |
 | 27 Tem | CLAUDE.md yazıldı · 24–25 Tem'in işi commit edildi (`43e0103`) · KOMUTLAR.md'ye 5 yeni bölüm · **`tests/safety.py` güvenlik zırhı** — testler artık Chrome kapatmıyor/ses değiştirmiyor, zırhı kilitleyen 3 test eklendi | ✅ 52 test yeşil (2.9 sn) |
-| 27 Tem (2) | **📎 Telefondan dosya bul & gönder:** `file_index.py` (134k dosya, 12 sn, alt klasörler dahil, sır filtresi), `file_send.py` (ayrıştırma + Telegram/mail/WhatsApp), `sendDocument`, mail eki (MIMEMultipart), WhatsApp'a pano CF_HDROP + odak korumalı Ctrl+V, `FILE_TRANSFER`/`FILE_INDEX` intent'leri, başkasına gönderimde onay kartı, kanal ayrımı (`ctx.kanal`), 6 saatlik otomatik indeks tazeleme | ✅ uçtan uca çalışıyor · ⏳ testler ve canlı WhatsApp denemesi sonraya |
+| 27 Tem (2) | **📎 Telefondan dosya bul & gönder:** `file_index.py` (134k dosya, 12 sn, alt klasörler dahil, sır filtresi), `file_send.py` (ayrıştırma + Telegram/mail/WhatsApp), `sendDocument`, mail eki (MIMEMultipart), WhatsApp'a pano CF_HDROP + odak korumalı Ctrl+V, `FILE_TRANSFER`/`FILE_INDEX` intent'leri, başkasına gönderimde onay kartı, kanal ayrımı (`ctx.kanal`), 6 saatlik otomatik indeks tazeleme | ✅ **Kullanıcı canlıda doğruladı — "hepsi mis gibi çalışıyor"** (WhatsApp pano yolu dahil). Testler sonraya. |
 
 ---
 
