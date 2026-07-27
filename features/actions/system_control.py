@@ -245,7 +245,35 @@ def _launch_appid(app_id: str):
     subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
 
 
+def _zaten_acik_mi(app_name_clean: str) -> bool:
+    """World State'e sorar (Faz 6). Hata olursa False — şüphedeysek işi yaparız."""
+    try:
+        from core.world_state import uygulama_calisiyor_mu
+        return uygulama_calisiyor_mu(app_name_clean)
+    except Exception as e:
+        print(f"[Ultron WorldState] Durum sorulamadı: {e}")
+        return False
+
+
 def uyg_bul_ve_ac(app_name: str):
+    """
+    Uygulamayı açar. World State (Faz 6) ile zenginleştirilmiş sarmalayıcı.
+
+    ⚠️ Uygulama ZATEN AÇIKSA komut İPTAL EDİLMEZ — başlatıcı yine çağrılır
+    (Windows'ta bu mevcut pencereyi öne getirir), sadece mesaj farklı olur.
+    "Zaten açık" deyip hiçbir şey yapmamak, kullanıcının komutunu sessizce
+    yutmaktır; yanlış tespitte Ultron bozulmuş gibi görünür.
+    """
+    zaten_acik = _zaten_acik_mi(app_name.lower().strip())
+    basarili, mesaj = _uyg_bul_ve_ac(app_name)
+
+    if basarili and zaten_acik and mesaj and 'başlatılıyor' in mesaj:
+        mesaj = mesaj.replace('başlatılıyor', 'zaten açıktı, öne getiriyorum')
+        mesaj = mesaj.replace('🚀', 'ℹ️')
+    return basarili, mesaj
+
+
+def _uyg_bul_ve_ac(app_name: str):
     """
     Uygulama bulma sırası:
       0. Cache (önceden bulunanlar — anında açılış)
