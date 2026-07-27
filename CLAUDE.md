@@ -61,6 +61,8 @@ core/
   paths.py                   📁 TEK veri dizini (%APPDATA%\ULTRON) + eski konumdan göç
   tools.py                   🧰 ARAÇ DEFTERİ — Arac / AracSonuc / DEFTER (Faz 0)
   builtin_tools.py           24 yeteneğin araç kaydı (eski if/elif zinciri buraya taşındı)
+  planner.py                 🧠 PLANNER (Faz 1) — cümleyi göreve böler, YÜRÜTMEZ
+  plan_executor.py           ▶️ Görev kuyruğunu işler, koşulları çözer, onay bekletir
   layers/pipeline_layers.py  14 katmanın tamamı (intent regex'leri burada; execution
                              artık deftere dağıtım yapıyor, ~260 satır zincir kalktı)
   layers/routine_engine.py   Modlar/rutinler (çalışma modu, dinlenme modu…)
@@ -157,6 +159,9 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 | **Tek kopya** | Tray'de yaşayan eski kopya + yeni kopya aynı Telegram botunu dinleyince "Conflict: terminated by other getUpdates". Kilit `main.py`'de. |
 | **PowerShell commit** | Çok satırlı commit mesajında here-string bozulur → `git commit -F dosya` kullan. |
 | **Küçük model** | qwen2.5:3b eylemi yapmış gibi rol yapar. PromptGenerator'daki katı kurallar ("ASLA yapmış gibi anlatma") silinmemeli. |
+| **Planner sırası** | Planner, ExecutionEngine'den **ÖNCE** çalışır. Sonraya koymak işe yaramaz: canlı testte "önce hava durumuna bak, sonra dövizi söyle, **en son not al**" cümlesini regex `NOTE_TAKE` sanıp içeriği "al" olan saçma bir not kaydetti ve "başarılı" saydığı için planner kapısı hiç açılmadı. **Çok adımlı cümlede tek intent'in kazanması zaten hatadır.** |
+| **Planner gecikmesi** | qwen2.5:7b bir plan için ~25 sn harcıyor. Kapı (`cok_adimli_olabilir`) yalnızca açık sıralama/koşul ifadesinde ("sonra", "bulamazsan", "önce") açılır. **Virgülü tetikleyici yapma** — "iyi günler, nasılsın" planlamaya girer. Plan BİR KEZ üretilir; her adımdan sonra LLM'e dönülmez (4 adım = 2 dakika olurdu). |
+| **Planner JSON** | `ollama_json` `format` alanına şema verir (grammar-constrained). Şemasız serbest metinden JSON ayıklamaya DÖNME — "plan üretti ama JSON bozuk" hata sınıfı geri gelir. Sağlayıcı Ollama değilse planner kendini kapatır. |
 
 ---
 
@@ -211,6 +216,7 @@ Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
 | 24–25 Tem | `llm_gateway` (LLM UI'dan söküldü — Telegram/görevler artık LLM cevabı alıyor), `llm_intent` (LLM niyet sınıflandırıcı), `memory_rag` (alakaya göre hafıza), `confirmed_executor` (onaylı WA/mail gönderilmiyordu — fix), `quick_tools` (hesap/saat/sayaç/not), `mood.py` yeniden yazıldı, engine'e canlı config, chat_view (girdi geçmişi, kod bloğu, hızlı öneriler, medya butonları) | ⚠️ **Commit edilmedi** |
 | 27 Tem | CLAUDE.md yazıldı · 24–25 Tem'in işi commit edildi (`43e0103`) · KOMUTLAR.md'ye 5 yeni bölüm · **`tests/safety.py` güvenlik zırhı** — testler artık Chrome kapatmıyor/ses değiştirmiyor, zırhı kilitleyen 3 test eklendi | ✅ 52 test yeşil (2.9 sn) |
+| 27 Tem (5) | **🧠 Faz 1 — PLANNER:** `core/planner.py` (şemaya zorlanmış plan üretimi, doğrulama, kapı) + `core/plan_executor.py` (görev kuyruğu, koşullar, onay bekletme) + `ollama_json` (grammar-constrained JSON). Motor entegrasyonu: planner yürütmeden ÖNCE, sadece çok adımlı cümlede. Kanal başına onay akışı (evet/iptal/konu değişince düş). `tests/test_planner.py` (38 test) | ✅ **138 test yeşil** + canlı 7b testi: "önce hava, sonra döviz" → 2 adımlı plan, ikisi de yürüdü (24.5 sn); "chrome aç" planner'ı görmedi (2.5 sn) |
 | 27 Tem (4) | **🧰 Faz 0 — ARAÇ DEFTERİ:** `core/tools.py` + `core/builtin_tools.py`. `ExecutionEngineLayer`'ın ~260 satırlık if/elif zinciri 24 isimli araca bölündü; katman artık sadece intent→araç dağıtımı yapıyor. Üç durumlu `AracSonuc` (islenmedi / hata / ok) eski zincirin iki ayrı başarısızlık anlamını koruyor. `tests/test_tools.py` (37 test) | ✅ **98 test yeşil** + uçtan uca duman testi (saat, hesap, not, odak, chrome aç, ses kıs) |
 | 27 Tem (3) | **🖥️ Gerçek uygulama haline getirildi:** exe yeniden derlendi (dosya gönderimi dahil), `main.py`'ye `--tray` bayrağı (açılışta pencere değil tepsi), uygulama OneDrive dışına `C:\Users\memoc\UltronApp\ULTRON`'a taşındı, **3 kısayol** kuruldu (Masaüstü / Başlat menüsü / Başlangıç klasörü), veri dosyaları exe tarafına kopyalandı | ✅ Tepsi modunda çalıştığı doğrulandı (PID canlı, pencere açılmadı) |
 | 27 Tem (2) | **📎 Telefondan dosya bul & gönder:** `file_index.py` (134k dosya, 12 sn, alt klasörler dahil, sır filtresi), `file_send.py` (ayrıştırma + Telegram/mail/WhatsApp), `sendDocument`, mail eki (MIMEMultipart), WhatsApp'a pano CF_HDROP + odak korumalı Ctrl+V, `FILE_TRANSFER`/`FILE_INDEX` intent'leri, başkasına gönderimde onay kartı, kanal ayrımı (`ctx.kanal`), 6 saatlik otomatik indeks tazeleme | ✅ **Kullanıcı canlıda doğruladı — "hepsi mis gibi çalışıyor"** (WhatsApp pano yolu dahil). Testler sonraya. |

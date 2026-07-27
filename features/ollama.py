@@ -46,6 +46,53 @@ def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
                 break
     return ''.join(parcalar)
 
+def ollama_json(prompt, sema, ollama_url='http://127.0.0.1:11434',
+                model='qwen2.5:7b', timeout=180):
+    """
+    ŞEMAYA ZORLANMIŞ JSON üretimi (planner'ın omurgası).
+
+    Ollama'nın `format` alanına bir JSON şeması verilirse model çıktıyı o şemaya
+    UYMAYA ZORLANIR (grammar-constrained decoding). Serbest metin isteyip sonra
+    JSON ayıklamaya çalışmaktan çok daha güvenilirdir: "plan üretti ama JSON
+    bozuk" hata sınıfının tamamı ortadan kalkar.
+
+    Sıcaklık 0: plan üretimi yaratıcılık değil, ayrıştırma işidir.
+
+    Zaman aşımı sohbetten UZUN tutulur — 7B model soğuk başlangıçta uzun bir
+    planı 60 saniyede yetiştiremeyebilir.
+
+    Dönüş: (sozluk, hata_mesaji). Başarıda hata None'dır.
+    """
+    if requests is None:
+        return None, "'requests' kütüphanesi eksik."
+
+    url = f"{ollama_url.rstrip('/')}/api/generate"
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "format": sema,
+        "options": {"temperature": 0},
+    }
+
+    try:
+        cevap = requests.post(url, json=payload, timeout=timeout)
+        cevap.raise_for_status()
+        ham = cevap.json().get('response', '')
+    except requests.exceptions.ConnectionError:
+        return None, "Ollama'ya bağlanılamadı (çalışıyor mu?)."
+    except requests.exceptions.Timeout:
+        return None, f"Ollama {timeout} saniyede cevap vermedi."
+    except Exception as e:
+        return None, f"Ollama hatası: {e}"
+
+    try:
+        return json.loads(ham), None
+    except Exception as e:
+        # Şema zorlamasına rağmen bozuk çıktı — model şemayı desteklemiyor olabilir
+        return None, f"JSON ayrıştırılamadı: {e} — ham çıktı: {ham[:200]}"
+
+
 def ollama_generate(prompt, ollama_url='http://127.0.0.1:11434', model='gemma3:4b',
                     context=None, temperature=0.5):
     """
