@@ -107,6 +107,36 @@ def send_photo(token: str, chat_id, photo_path: str, caption: str = '') -> bool:
         return False
 
 
+def send_document(token: str, chat_id, dosya_yolu: str, caption: str = ''):
+    """
+    PC'deki dosyayı telefona gönderir (multipart upload).
+    Dönüş: (başarılı_mı, mesaj). Bot API yükleme sınırı 50 MB.
+    """
+    if requests is None:
+        return False, "requests kütüphanesi yok."
+    if not os.path.isfile(dosya_yolu):
+        return False, "Dosya bulunamadı."
+
+    boyut = os.path.getsize(dosya_yolu)
+    if boyut > 50 * 1024 * 1024:
+        return False, (f"Dosya {boyut / 1024 / 1024:.0f} MB — Telegram bot sınırı 50 MB. "
+                       f"Mail ile göndermeyi deneyebilirsin.")
+    try:
+        with open(dosya_yolu, 'rb') as f:
+            r = requests.post(
+                _url(token, 'sendDocument'),
+                data={'chat_id': chat_id, 'caption': (caption or '')[:1000]},
+                files={'document': (os.path.basename(dosya_yolu), f)},
+                timeout=180,
+            )
+        data = r.json()
+        if data.get('ok'):
+            return True, "gönderildi"
+        return False, str(data.get('description') or 'Telegram reddetti')
+    except Exception as e:
+        return False, f"{type(e).__name__}"
+
+
 def get_file_path(token: str, file_id: str):
     """file_id → sunucudaki dosya yolu (indirme için)."""
     res = api_call(token, 'getFile', http_timeout=15, file_id=file_id)

@@ -49,13 +49,17 @@ class UltronCoreEngine:
         self.l10_llm.config = self.config
 
     def process(self, raw_input: str, input_type: str = "text", recent_context: list = None,
-                allow_llm: bool = False) -> UltronContext:
+                allow_llm: bool = False, kanal: str = "desktop") -> UltronContext:
         """
         Executes the 14-layer pipeline sequentially for every user prompt.
 
         allow_llm: True ise LLM cevabı da engine İÇİNDE üretilir (final_output hazır
         gelir) — zamanlanmış görevler ve Telegram bunu kullanır. False ise (masaüstü)
         enriched_prompt bırakılır; UI streaming worker'ıyla cevabı kendisi akıtır.
+
+        kanal: komutun geldiği yer ("desktop" veya Telegram chat_id). Dosya arama
+        sonuçları kanal başına tutulur — telefondaki "2'yi gönder" masaüstünde
+        yapılmış aramanın dosyasını göndermesin.
 
         SQLite bağlantıları thread'ler arasında paylaşılamadığı için her çağrıda
         (worker thread'de çalışsa bile güvenli olacak şekilde) kendi bağlantısını açar.
@@ -72,7 +76,8 @@ class UltronCoreEngine:
                 own_conn = None
 
         try:
-            return self._run_pipeline(raw_input, input_type, recent_context, cursor, conn, allow_llm)
+            return self._run_pipeline(raw_input, input_type, recent_context, cursor, conn,
+                                      allow_llm, kanal)
         finally:
             if own_conn is not None:
                 try:
@@ -80,9 +85,11 @@ class UltronCoreEngine:
                 except Exception:
                     pass
 
-    def _run_pipeline(self, raw_input, input_type, recent_context, cursor, conn, allow_llm=False) -> UltronContext:
+    def _run_pipeline(self, raw_input, input_type, recent_context, cursor, conn,
+                      allow_llm=False, kanal="desktop") -> UltronContext:
         # 1. Input Capture
         ctx = self.l1_capture.process(raw_input, input_type)
+        ctx.kanal = kanal or "desktop"
         if recent_context:
             ctx.recent_context = recent_context
 

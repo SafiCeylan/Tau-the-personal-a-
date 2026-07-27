@@ -132,6 +132,32 @@ müziği durdur
 ```
 > Sohbet penceresinin altındaki ⏮ ⏯ ⏭ butonları da aynı işi yapar (mesaj yazmadan).
 
+## 🔎 DOSYA BUL & GÖNDER (telefondan da çalışır)
+```
+staj raporunu bul                         ← alt klasörler dahil TÜM PC'de arar
+bilgisayarımda cv ara
+son pdf dosyalarını listele
+sunum dosyası nerede
+```
+> Sonuçlar numaralı gelir. Sonra:
+```
+1'i bana gönder                           ← dosya Telegram'a düşer 📤
+2'yi anneme mail at                       ← e-posta EKİ olarak gider (onay ister)
+3'ü patrona whatsapp'tan gönder           ← WhatsApp'a ekler (onay ister)
+```
+> Tek adımda da olur: `staj raporunu anneme mail at`
+> — tek eşleşme varsa direkt gönderir, birden fazlaysa "hangisi?" diye sorar.
+
+### İndeks yönetimi
+```
+dosya indeksi durumu                      ← kaç dosya, son tarama ne zaman
+dosya indeksini güncelle                  ← yeniden tarar (~15 sn)
+```
+> İndeks açılışta kurulur, sonra 6 saatte bir kendini yeniler.
+> **Güvenlik:** `.env`, `*.pem`, `*.kdbx`, `id_rsa`, `config.json` gibi sır taşıyan
+> dosyalar indekse HİÇ girmez — telefondan bulunamaz, gönderilemez.
+> Başkasına gönderim her zaman onay kartı ister; "bana gönder" istemez.
+
 ## 📋 PANO
 ```
 panoyu oku

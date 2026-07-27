@@ -79,7 +79,9 @@ features/
   briefing.py                Sabah brifingi (hava + döviz + hatırlatmalar)
   scheduler.py               zamanli_gorevler tablosu + akşam raporu
   auto_memory.py             "en sevdiğim dizi Dark" gibi cümlelerden otomatik hafıza
-  file_finder.py             Klasör+tür+isim ile dosya bulma (registry'den gerçek klasör yolları)
+  file_finder.py             Klasör+tür+isim ile dosya bulma (SADECE üst seviye, os.listdir)
+  file_index.py              📇 Tüm PC'yi indeksler (alt klasörler dahil, ayrı file_index.db)
+  file_send.py               📎 "bul ve gönder" beyni: ayrıştırma + Telegram/mail/WhatsApp hedefleri
   clipboard_tools.py         Pano oku/özetle/çevir/açıkla
   web_search.py              Wikipedia + DDG Instant Answer + Google News RSS
   screenshot_tool.py         mss ile ekran görüntüsü
@@ -102,12 +104,18 @@ archive/                     Ölü modüller ve eski web-view arayüzler (kullan
 ## 🎯 Intent Listesi (`pipeline_layers.py`)
 
 `PLAY_MUSIC` · `MEDIA_CONTROL` · `SYSTEM_CONTROL` · `WEB_SEARCH` · `WEATHER` · `CURRENCY` ·
-`CREATE_REMINDER` · `SCHEDULE_TASK` · `WHATSAPP_MESSAGE` · `EMAIL_MESSAGE` · `FILE_SEARCH` ·
-`FILE_OPERATION` · `SCREENSHOT` · `CLIPBOARD` · `FOCUS_MODE` · `NOTE_TAKE` · `TIMER` ·
-`CALCULATOR` · `TIME_DATE` · `MORNING_BRIEFING` · `EVENING_REPORT` · `ANALYSIS_REPORT` ·
-`GENERAL_CONVERSATION`
+`CREATE_REMINDER` · `SCHEDULE_TASK` · `WHATSAPP_MESSAGE` · `EMAIL_MESSAGE` · `FILE_TRANSFER` ·
+`FILE_INDEX` · `FILE_SEARCH` · `FILE_OPERATION` · `SCREENSHOT` · `CLIPBOARD` · `FOCUS_MODE` ·
+`NOTE_TAKE` · `TIMER` · `CALCULATOR` · `TIME_DATE` · `MORNING_BRIEFING` · `EVENING_REPORT` ·
+`ANALYSIS_REPORT` · `GENERAL_CONVERSATION`
 
-> **Sıra önemlidir.** `FILE_SEARCH`, `SYSTEM_CONTROL`'dan ÖNCE gelmeli (yoksa "pdf aç" uygulama açmaya çalışır).
+> **Sıra önemlidir.**
+> • `FILE_SEARCH`, `SYSTEM_CONTROL`'dan ÖNCE gelmeli (yoksa "pdf aç" uygulama açmaya çalışır).
+> • `FILE_TRANSFER`, `WHATSAPP_MESSAGE`/`EMAIL_MESSAGE`'dan ÖNCE bakılır — "staj raporunu
+>   anneme mail at" ikisine birden benziyor. Çakışmayı `dosya_niyeti_coz` çözer: cümlede
+>   güçlü dosya sinyali yoksa (dosya/tür/numara/klasör kelimesi) karar **indekse** sorulur;
+>   eşleşme yoksa niyet ALINMAZ ve mesaj akışı bozulmaz. `:` veya "mesaj" geçen cümleler
+>   zaten dosya komutu sayılmaz.
 
 ---
 
@@ -130,6 +138,8 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 | **Testler** | Artık `tests/safety.py` zırhı var (27 Tem): OS'a dokunan son adım (subprocess, pycaw, keybd_event, psutil.kill, startfile, webbrowser) taklitle değiştirilir. **Yeni test modülü açarken `setUpModule`'de zırhı kurmayı unutma** — yoksa test gerçekten Chrome kapatır, ses değiştirir. |
 | **PyInstaller** | 23 Tem'de OneDrive içindeki `dist` kilitlenip PermissionError verdi → `--distpath C:\Users\memoc\UltronApp --workpath C:\Users\memoc\ultron_build_tmp` ile dışarı alınmıştı. 25 Tem'de tekrar proje içi `dist/`'e derlendi ve sorun çıkmadı. Kilit hatası alırsan yolu yine dışarı taşı. |
 | **dist boyutu** | `dist/` ~375 MB ve OneDrive klasörünün içinde — senkron trafiği yaratır. Git'te değil (`.gitignore`). |
+| **Dosya indeksi** | `file_index.db` (~47 MB, 134k dosya) telefondan erişilebilir. Sır taşıyan dosyalar (`GIZLI_ADLAR`/`GIZLI_UZANTILAR`/`GIZLI_KALIPLAR`) indekse HİÇ girmez — bu listeyi zayıflatma. Yeni kök klasör eklerken AppData/Program Files'ı asla ekleme. |
+| **Kanal ayrımı** | Dosya arama sonuçları `kanal` başına tutulur (`desktop` / Telegram chat_id). `engine.process(..., kanal=)` geçilmezse telefondaki "2'yi gönder" masaüstünde yapılmış aramanın dosyasını gönderir. |
 | **PyInstaller excludes** | sklearn/scipy/pandas/networkx ortamdan sızıp 1GB yapıyordu → excludes. Ama **setuptools DIŞLANAMAZ** (pygame pkg_resources → jaraco çöker). |
 | **exe verisi** | exe kendi `_internal` klasöründe yaşar — config/DB python sürümüyle **paylaşılmaz**. |
 | **aiodns** | `aiodns 4.0.0` Windows'ta "Could not contact DNS servers" ile edge-tts'i kırar. **requirements'a EKLEME.** |
@@ -163,10 +173,13 @@ zamanlanmış görevler · otomatik hafıza · dosya bulucu · pano sihirbazı �
 streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi · installer/exe.
 
 ### 🔨 Eksik kalanlar
-1. **Push yok** — `origin` (github.com/SafiCeylan/Tau-the-personal-a-) yerelin gerisinde; commit'ler local.
-2. **exe GUI testi** — `dist/ULTRON/ULTRON.exe` 25 Tem 22:17 derlemesi, kodun son hâlini içeriyor; kullanıcı tam GUI turunu yapmadı.
-3. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
-4. `ui/tau_window.py` ~70 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
+1. **Dosya gönderiminin testleri yazılmadı** (kullanıcı "sonra" dedi, 27 Tem). Yazılacaklar:
+   parser kalıpları, zayıf-sinyal devretme, gizli dosya filtresi, kanal ayrımı, onay akışı.
+2. **Canlı doğrulama bekliyor:** telefondan `bul → 1'i bana gönder` ve `mail at` akışı;
+   özellikle **WhatsApp dosya gönderimi** (pano CF_HDROP + Ctrl+V) hiç canlı denenmedi.
+3. **exe eski kaldı** — dosya gönderimi exe'de yok, yeniden derlenmeli.
+4. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
+5. `ui/tau_window.py` ~72 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
 
 ### ✔️ 27 Tem'de kapatılanlar
 Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/sayaç/medya bölümleri ·
@@ -182,6 +195,7 @@ Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
 | 24–25 Tem | `llm_gateway` (LLM UI'dan söküldü — Telegram/görevler artık LLM cevabı alıyor), `llm_intent` (LLM niyet sınıflandırıcı), `memory_rag` (alakaya göre hafıza), `confirmed_executor` (onaylı WA/mail gönderilmiyordu — fix), `quick_tools` (hesap/saat/sayaç/not), `mood.py` yeniden yazıldı, engine'e canlı config, chat_view (girdi geçmişi, kod bloğu, hızlı öneriler, medya butonları) | ⚠️ **Commit edilmedi** |
 | 27 Tem | CLAUDE.md yazıldı · 24–25 Tem'in işi commit edildi (`43e0103`) · KOMUTLAR.md'ye 5 yeni bölüm · **`tests/safety.py` güvenlik zırhı** — testler artık Chrome kapatmıyor/ses değiştirmiyor, zırhı kilitleyen 3 test eklendi | ✅ 52 test yeşil (2.9 sn) |
+| 27 Tem (2) | **📎 Telefondan dosya bul & gönder:** `file_index.py` (134k dosya, 12 sn, alt klasörler dahil, sır filtresi), `file_send.py` (ayrıştırma + Telegram/mail/WhatsApp), `sendDocument`, mail eki (MIMEMultipart), WhatsApp'a pano CF_HDROP + odak korumalı Ctrl+V, `FILE_TRANSFER`/`FILE_INDEX` intent'leri, başkasına gönderimde onay kartı, kanal ayrımı (`ctx.kanal`), 6 saatlik otomatik indeks tazeleme | ✅ uçtan uca çalışıyor · ⏳ testler ve canlı WhatsApp denemesi sonraya |
 
 ---
 

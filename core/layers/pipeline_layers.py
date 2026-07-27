@@ -27,6 +27,9 @@ from features.email_control import email_komutu_algila, email_gonderim_ayristir,
 from features.scheduler import zamanlama_komutu_algila
 from features.auto_memory import hafiza_ogren
 from features.file_finder import dosya_arama_niyeti, dosya_bul_ve_islet
+from features.file_send import (
+    dosya_niyeti_coz, dosya_komutu_isle, hedef_dosyayi_coz, indeks_komutu_algila,
+)
 from features.clipboard_tools import pano_komutu
 from features.quick_tools import (
     hesapla, hesap_niyeti_algila, saat_tarih_raporu, saat_tarih_niyeti_algila,
@@ -78,6 +81,24 @@ class IntentAnalyzerLayer:
 
     def process(self, ctx: UltronContext) -> UltronContext:
         msg = ctx.normalized_input.lower()
+
+        # 📇 Dosya indeksi yönetimi ("dosya indeksini güncelle")
+        if re.search(r'\b(indeks|index)', msg) and 'dosya' in msg:
+            ctx.intent = "FILE_INDEX"
+            ctx.confidence = 0.95
+            return ctx
+
+        # 📎 Dosya bul & gönder — WhatsApp/e-posta niyetlerinden ÖNCE bakılır,
+        # çünkü "staj raporunu anneme mail at" cümlesi ikisine birden benziyor.
+        # Karar `dosya_niyeti_coz` içinde veriliyor: zayıf sinyalli cümlelerde
+        # indekste eşleşme yoksa niyet ALINMAZ, mesaj akışı bozulmaz.
+        dosya_plani = dosya_niyeti_coz(ctx.normalized_input, getattr(ctx, 'kanal', 'desktop'))
+        if dosya_plani:
+            ctx.intent = "FILE_TRANSFER"
+            ctx.confidence = 0.92
+            ctx.entities = ctx.entities or {}
+            ctx.entities['dosya_plani'] = dosya_plani
+            return ctx
 
         # WhatsApp mesaj/rehber komutları ("whatsapp aç" DEĞİL — o SYSTEM_CONTROL kalır)
         if ('whatsapp' in msg or re.search(r'\bwp\b', msg)) and \
@@ -200,9 +221,11 @@ class IntentAnalyzerLayer:
 class EntityExtractionLayer:
     def process(self, ctx: UltronContext) -> UltronContext:
         msg = ctx.normalized_input
-        # LLM niyet çözücünün çıkardığı kanonik parametrelerle başla; aşağıdaki
-        # regex çıkarımları yalnızca boş alanları doldurur, LLM değerini ezmez.
-        entities = dict(ctx.llm_entities)
+        # Niyet katmanının bıraktığı verilerle başla (ör. FILE_TRANSFER'in
+        # 'dosya_plani'), üzerine LLM niyet çözücünün kanonik parametrelerini yaz;
+        # aşağıdaki regex çıkarımları yalnızca boş alanları doldurur.
+        entities = dict(ctx.entities or {})
+        entities.update(ctx.llm_entities)
 
         # 1. Volume % Extractor
         pct_match = re.search(r'(?:%|yüzde)\s*(\d+)|(\d+)\s*(?:%|kadar)', msg, re.IGNORECASE)
@@ -292,6 +315,33 @@ class SecurityAnalyzerLayer:
             ctx.security_score = 105
             ctx.security_level = "FORBIDDEN"
             ctx.security_message = "⛔ **[GÜVENLİK SKORU: 105/100 — MANUEL ONAY GEREKLİ]**\nBilgisayarı kapatma işlemi kritik risk taşımaktadır. Bilgisayarı kapatmak istediğinizden %100 eminseniz mesaj kutusuna tam olarak **'evet bilgisayarı kapat'** yazınız."
+            return ctx
+
+        # 1.4 📎 DOSYA GÖNDERİMİ.
+        #     Kullanıcının KENDİ telefonuna (Telegram) göndermek onay istemez —
+        #     dosya zaten sahibine gidiyor. BAŞKASINA gönderim (mail/WhatsApp)
+        #     geri alınamaz bir dış eylemdir: her zaman onay kartı.
+        if ctx.intent == "FILE_TRANSFER":
+            plan = (ctx.entities or {}).get('dosya_plani') or {}
+            if plan.get('islem') == 'gonder' and plan.get('hedef') in ('email', 'whatsapp'):
+                yol = hedef_dosyayi_coz(plan, getattr(ctx, 'kanal', 'desktop'))
+                if yol:
+                    kanal_adi = 'E-posta' if plan['hedef'] == 'email' else 'WhatsApp'
+                    boyut = os.path.getsize(yol) / (1024 * 1024)
+                    ctx.entities['dosya_yolu'] = yol
+                    ctx.security_score = 75
+                    ctx.security_level = "CONFIRM"
+                    ctx.security_message = (
+                        f"📎 **[DOSYA GÖNDERİM ONAYI — SKOR 75/100]**\n"
+                        f"• Dosya: **{os.path.basename(yol)}** ({boyut:.1f} MB)\n"
+                        f"• 📁 {os.path.dirname(yol)}\n"
+                        f"• Alıcı: **{plan.get('alici') or '?'}** ({kanal_adi})\n\n"
+                        f"Onaylarsanız dosya **bilgisayarınızdan çıkıp alıcıya gönderilecektir.**"
+                    )
+                    return ctx
+            ctx.security_score = 10
+            ctx.security_level = "SAFE"
+            ctx.security_message = "✅ **[GÜVENLİ]** Dosya araması yürütülüyor."
             return ctx
 
         # 1.5 WhatsApp mesaj gönderimi: alıcı çözülüyorsa ONAY kartı göster.
@@ -433,6 +483,28 @@ class ExecutionEngineLayer:
         # 0.2 ⏰ Zamanlama yönetimi
         if ctx.intent == "SCHEDULE_TASK" and db_cursor and db_conn:
             handled, resp = zamanlama_komutu_algila(ctx.normalized_input, db_cursor, db_conn)
+            if handled:
+                ctx.execution_success = True
+                ctx.execution_result = resp
+                return ctx
+
+        # 0.25 📇 Dosya indeksi yönetimi
+        if ctx.intent == "FILE_INDEX":
+            handled, resp = indeks_komutu_algila(ctx.normalized_input)
+            if handled:
+                ctx.execution_success = True
+                ctx.execution_result = resp
+                return ctx
+
+        # 0.26 📎 Dosya bul & gönder (indeks üzerinden — alt klasörler dahil).
+        #      Başkasına gönderim buraya ULAŞMAZ; güvenlik katmanı CONFIRM ile keser,
+        #      onay sonrası confirmed_executor yürütür.
+        if ctx.intent == "FILE_TRANSFER":
+            handled, resp = dosya_komutu_isle(
+                ctx.normalized_input,
+                kanal=getattr(ctx, 'kanal', 'desktop'),
+                plan=(ctx.entities or {}).get('dosya_plani'),
+            )
             if handled:
                 ctx.execution_success = True
                 ctx.execution_result = resp

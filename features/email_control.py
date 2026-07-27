@@ -19,6 +19,8 @@ import os
 import re
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from email.header import Header
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -174,7 +176,8 @@ def email_gonderim_ayristir(mesaj: str):
 # ---------------------------------------------------------------------------
 # Gönderim (Level 1 — Native SMTP, arayüz yok, fare yok)
 # ---------------------------------------------------------------------------
-def email_gonder(alici: str, konu: str, icerik: str):
+def email_gonder(alici: str, konu: str, icerik: str, ek_dosya: str = None):
+    """Mail gönderir. `ek_dosya` verilirse dosyayı ek olarak iliştirir (Gmail sınırı 25 MB)."""
     adres = email_coz(alici)
     if not adres:
         kisiler = email_kisiler()
@@ -189,19 +192,40 @@ def email_gonder(alici: str, konu: str, icerik: str):
                       "Uygulama şifresi almak için: Google Hesabı → Güvenlik → 2 Adımlı Doğrulama → "
                       "Uygulama şifreleri")
 
+    ek_notu = ""
     try:
-        msg = MIMEText(icerik, 'plain', 'utf-8')
+        if ek_dosya:
+            if not os.path.isfile(ek_dosya):
+                return True, f"⚠️ Ek dosya bulunamadı: `{ek_dosya}`"
+            boyut = os.path.getsize(ek_dosya)
+            if boyut > 24 * 1024 * 1024:
+                return True, (f"⚠️ Dosya {boyut / 1024 / 1024:.0f} MB — Gmail eki 25 MB ile sınırlı. "
+                              f"Daha küçük bir dosya seç ya da bulut bağlantısı gönder.")
+
+            msg = MIMEMultipart()
+            msg.attach(MIMEText(icerik, 'plain', 'utf-8'))
+            with open(ek_dosya, 'rb') as f:
+                parca = MIMEApplication(f.read(), Name=os.path.basename(ek_dosya))
+            # Türkçe/boşluklu dosya adları bozulmasın diye RFC2231 kodlaması
+            parca.add_header('Content-Disposition', 'attachment',
+                             filename=('utf-8', '', os.path.basename(ek_dosya)))
+            msg.attach(parca)
+            ek_notu = (f"\n• Ek: `{os.path.basename(ek_dosya)}` "
+                       f"({boyut / 1024 / 1024:.1f} MB)")
+        else:
+            msg = MIMEText(icerik, 'plain', 'utf-8')
+
         msg['Subject'] = Header(konu, 'utf-8')
         msg['From'] = smtp_user
         msg['To'] = adres
 
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=60) as server:
             server.login(smtp_user, smtp_pass)
             server.sendmail(smtp_user, [adres], msg.as_string())
 
         return True, (f"📧 **E-POSTA GÖNDERİLDİ**\n"
                       f"• Alıcı: **{alici}** (`{adres}`)\n"
-                      f"• Konu: {konu}\n"
+                      f"• Konu: {konu}{ek_notu}\n"
                       f"• Yöntem: SMTP (Level 1 — Native API)")
     except smtplib.SMTPAuthenticationError:
         return True, ("❌ **SMTP giriş hatası:** Gmail adresi veya uygulama şifresi yanlış.\n"

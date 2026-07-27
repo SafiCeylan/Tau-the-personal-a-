@@ -11,6 +11,10 @@ class UltronContext:
     # 1. Input Capture
     raw_input: str
     input_type: str = "text"  # text, voice, file, image
+    # Komutun geldiği kanal: "desktop" veya Telegram chat_id. Dosya arama
+    # sonuçları kanal başına tutulur — telefondaki "2'yi gönder", masaüstünde
+    # yapılan aramanın 2. dosyasını göndermesin.
+    kanal: str = "desktop"
     
     # 2. Input Normalization
     normalized_input: str = ""

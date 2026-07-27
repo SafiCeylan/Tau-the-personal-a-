@@ -11,6 +11,8 @@ import sys
 import time
 
 VK_RETURN = 0x0D
+VK_CONTROL = 0x11
+VK_V = 0x56
 KEYEVENTF_KEYUP = 0x0002
 
 
@@ -52,4 +54,23 @@ def press_enter(require_title_contains: str = None, timeout: float = 10.0) -> bo
             return False
     ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
     ctypes.windll.user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+    return True
+
+
+def press_paste(require_title_contains: str = None, timeout: float = 10.0) -> bool:
+    """
+    Odak korumalı Ctrl+V. Panoya konan DOSYAYI hedef uygulamaya yapıştırmak için
+    kullanılır (WhatsApp'a dosya ekleme). Enter ile aynı koruma: hedef pencere
+    önde değilse tuş GÖNDERİLMEZ — yanlış pencereye yapıştırmak veri sızdırabilir.
+    """
+    if sys.platform != 'win32':
+        return False
+    if require_title_contains:
+        if not wait_for_foreground(require_title_contains, timeout):
+            print(f"[AIP L4] Odak koruması: '{require_title_contains}' önde değil, Ctrl+V iptal.")
+            return False
+    ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 0, 0)
+    ctypes.windll.user32.keybd_event(VK_V, 0, 0, 0)
+    ctypes.windll.user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+    ctypes.windll.user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
     return True

@@ -444,6 +444,9 @@ class TelegramWorkerThread(QThread):
                 "• `yarın 14:00 toplantıyı hatırlat`\n"
                 "• `annem'e whatsapp'tan mesaj gönder: naber`\n"
                 "• `ekran görüntüsü al` — PC ekranı fotoğraf olarak gelir 📸\n"
+                "• `staj raporunu bul` — PC'ndeki dosyayı arar, nerede olduğunu söyler 🔍\n"
+                "• `1'i bana gönder` — bulduğu dosyayı telefonuna yollar 📤\n"
+                "• `2'yi anneme mail at` — dosyayı e-posta eki olarak gönderir (onay ister)\n"
                 "• 🎙️ **Sesli mesaj** at — yazıya çevirip komut olarak işlerim\n"
                 "• 📎 **Dosya/fotoğraf** gönder — PC'nin İndirilenler'ine kaydederim\n"
                 "• `hava durumu nedir` / herhangi bir soru (LLM)\n\n"
@@ -475,9 +478,12 @@ class TelegramWorkerThread(QThread):
     def _process_command(self, tg, token, chat_id, text):
         """Engine → (onay | doğrudan sonuç | LLM) akışı. None dönerse onay bekleniyor.
         allow_llm=True: LLM cevabı artık engine İÇİNDE üretilir (elle çağrı yok)."""
-        # Çok-turlu bağlam: önceki turları engine'e geçir (masaüstüyle aynı davranış)
+        # Çok-turlu bağlam: önceki turları engine'e geçir (masaüstüyle aynı davranış).
+        # kanal=chat_id → dosya arama sonuçları telefona özel tutulur ("2'yi gönder"
+        # masaüstünde yapılmış aramanın dosyasını göndermesin).
         engine_ctx = self.controller.engine.process(
-            text, recent_context=self.history.get(chat_id), allow_llm=True)
+            text, recent_context=self.history.get(chat_id), allow_llm=True,
+            kanal=str(chat_id))
 
         if engine_ctx.security_level == "FORBIDDEN":
             return engine_ctx.security_message
@@ -590,9 +596,11 @@ class TelegramWorkerThread(QThread):
             self.activity_signal.emit(cmd, "(Telegram'dan iptal edildi)")
             return
 
-        # WhatsApp/e-posta gönderimi sistem_komutu_algila'da değil — birleşik yürütücü.
+        # WhatsApp/e-posta/dosya gönderimi sistem_komutu_algila'da değil — birleşik
+        # yürütücü. kanal=chat_id: "2'yi anneme mail at" seçimini telefonun kendi
+        # arama listesinden çözer.
         from features.confirmed_executor import onayli_komut_yurut
-        is_action, resp = onayli_komut_yurut(cmd)
+        is_action, resp = onayli_komut_yurut(cmd, kanal=str(chat_id))
         final_msg = resp if (is_action and resp) else f"'{cmd}' komutu onaylandı ve yürütüldü."
         tg.send_message(token, chat_id, f"✅ **ONAYLANDI:** {final_msg}")
         self.activity_signal.emit(cmd, final_msg)
@@ -1345,6 +1353,46 @@ class TauMainWindow(QMainWindow):
         self.check_upcoming_reminders()   # önce "yaklaşıyor" uyarısı
         self.check_due_reminders()
         self.check_scheduled_tasks()
+        self.check_file_index()
+
+    def check_file_index(self):
+        """
+        📇 Dosya indeksini taze tutar: ilk açılışta kurar, sonra 6 saatte bir yeniler.
+        Tarama arka planda çalışır (UI donmaz) ve aynı anda yalnızca bir kez döner.
+        """
+        if getattr(self, '_indeks_calisiyor', False):
+            return
+        try:
+            from features import file_index
+            sayi, son = file_index.indeks_durumu()
+            if sayi:
+                if not son:
+                    return
+                yas = (datetime.now() - datetime.fromisoformat(son)).total_seconds()
+                if yas < 6 * 3600:
+                    return
+        except Exception as e:
+            print(f"[Dosya İndeksi] Durum okunamadı: {e}")
+            return
+
+        self._indeks_calisiyor = True
+
+        def _tara():
+            from features import file_index
+            return file_index.indeksi_yenile()
+
+        self._indeks_worker = FuncWorkerThread(_tara)
+        self._indeks_worker.finished_signal.connect(self._on_indeks_bitti)
+        self._indeks_worker.error_signal.connect(lambda e: setattr(self, '_indeks_calisiyor', False))
+        self._indeks_worker.start()
+
+    def _on_indeks_bitti(self, sonuc):
+        self._indeks_calisiyor = False
+        try:
+            sayi, sure, _gizli = sonuc
+            print(f"[Dosya İndeksi] {sayi:,} dosya indekslendi ({sure} sn)")
+        except Exception:
+            pass
 
     def check_upcoming_reminders(self):
         """Yaklaşan hatırlatmalar için PROAKTİF ön-uyarı ("toplantıya 10 dk kaldı").
