@@ -100,34 +100,78 @@ class KurtarmaSonucu:
 # =========================================================================
 _DOSYA_ARACLARI = ("dosya_ara", "dosya_gonder", "dosya_ac")
 
-# Sorgudan atılabilecek zayıf kelimeler — daralttıkça eşleşme ihtimali artar
+# Sorgudan atılabilecek zayıf kelimeler.
+#
+# ⚠️ HEPSİ SADELEŞTİRİLMİŞ (ASCII) BİÇİMDE YAZILIR ve karşılaştırma da
+# `file_index.sadelestir()` çıktısı üzerinde yapılır. Aksi halde "dosyasını"
+# (noktasız ı) listedeki "dosyasini" ile eşleşmez, gürültü kelime elenmez ve
+# "en uzun kelime" kuralı onu seçer — canlıda tam olarak bu oldu: kurtarma
+# `dosyasını` diye arama yaptı.
 _ZAYIF_TOKENLAR = {
-    'dosya', 'dosyayi', 'dosyasini', 'son', 'yeni', 'eski', 'bir', 'tane',
-    'benim', 'bizim', 'raporu', 'rapor', 'belge', 'belgesi',
+    'dosya', 'dosyayi', 'dosyasi', 'dosyasini', 'dosyalari', 'dosyalarini',
+    'son', 'yeni', 'eski', 'bir', 'tane', 'benim', 'bizim', 'diye', 'adli',
+    'isimli', 'rapor', 'raporu', 'raporunu', 'belge', 'belgesi', 'belgeyi',
+    'bul', 'ara', 'goster', 'listele', 'nerede',
+    # Dolgu kelimeleri — canlıda "falan" seçilip anlamsız arama yapıldı
+    'falan', 'filan', 'gibi', 'herhangi', 'seyler', 'sey',
 }
+
+
+def _gevsetme_adaylari(sorgu: str) -> List[str]:
+    """
+    Gevşetilmiş sorgu adaylarını sırayla döner (en umut verici önce).
+
+    `file_index.ara` tüm kelimeleri AND'liyor; kelime sayısı azaldıkça eşleşme
+    ihtimali artar. Tek kelimeye inip hangisinin işe yaradığını İNDEKSE sorarız.
+    """
+    if not sorgu:
+        return []
+
+    # Türkçe harfleri sadeleştir — zayıf kelime listesi ASCII biçimde tutulur
+    # ve `file_index.ara` da aramayı sadeleştirilmiş metinde yapar.
+    try:
+        from features.file_index import sadelestir
+        sade = sadelestir(sorgu)
+    except Exception:
+        sade = sorgu.lower()
+
+    tokenlar = [t for t in re.findall(r"[\w\-.]+", sade) if len(t) >= 3]
+    if len(tokenlar) < 2:
+        return []                      # tek kelime zaten en gevşek hali
+
+    anlamli = [t for t in tokenlar if t not in _ZAYIF_TOKENLAR]
+    havuz = anlamli or tokenlar
+    # Uzun kelime genelde daha ayırt edicidir; ama tek başına GÜVENİLMEZ —
+    # canlıda "falan" (5 harf) "staj"ı (4 harf) yendi. Sıra sadece deneme
+    # önceliğidir, kararı indeks verir.
+    return sorted(dict.fromkeys(havuz), key=len, reverse=True)
 
 
 def _sorguyu_gevset(sorgu: str) -> Optional[str]:
     """
-    "staj raporu 2026 final" → "staj"
+    İndekste GERÇEKTEN eşleşen bir gevşetme bulur.
 
-    `file_index.ara` tüm kelimeleri AND'liyor; kelime sayısı azaldıkça eşleşme
-    ihtimali artar. En uzun (en ayırt edici) kelimeyi bırakırız.
+    Neden indekse soruyoruz: saf metin sezgisi ("en uzun kelime") canlıda iki
+    kez yanlış seçti — önce `dosyasını`, sonra `falan`. 134 bin dosyalık bir
+    indeks varken tahmin etmek gereksiz; adayları tek tek sorup sonuç vereni
+    seçmek hem doğru hem milisaniyeler sürüyor.
     """
-    if not sorgu:
-        return None
-    tokenlar = [t for t in re.findall(r"[\w\-.]+", sorgu.lower()) if len(t) >= 3]
-
-    # Tek kelimelik sorgu zaten en gevşek hali — daraltacak bir şey yok.
-    if len(tokenlar) < 2:
+    adaylar = _gevsetme_adaylari(sorgu)
+    if not adaylar:
         return None
 
-    # Zayıf kelimeleri eledikten sonra TEK kelime kalması bir sorun değil,
-    # aksine hedeftir: 3 kelimelik AND sorgusundan 1 kelimeye inmek eşleşme
-    # ihtimalini artırır. (Havuzun boyutuna değil, ORİJİNAL kelime sayısına bak.)
-    anlamli = [t for t in tokenlar if t not in _ZAYIF_TOKENLAR]
-    havuz = anlamli or tokenlar
-    return max(havuz, key=len)
+    try:
+        from features import file_index
+        for aday in adaylar:
+            if file_index.ara(aday, limit=1):
+                return aday
+    except Exception as e:
+        print(f"[Ultron Kurtarma] İndeks sorgulanamadı: {e}")
+        return adaylar[0]
+
+    # Hiçbiri eşleşmedi: yine de en umut verici adayı dene ki kullanıcı
+    # neyin denendiğini görsün ("falan diye aradım" gibi anlamsız bir şey değil).
+    return adaylar[0]
 
 
 def _indeks_bayat_mi() -> bool:

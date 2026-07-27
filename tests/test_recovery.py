@@ -16,7 +16,7 @@ from tests.safety import guvenlik_zirhi_kur, guvenlik_zirhi_kaldir
 
 from core.recovery import (
     BULUNAMADI, ERISILEMEDI, BILINMIYOR, MAKS_DENEME,
-    _sorguyu_gevset, hata_tipini_coz, kurtar, kurtarma_denemeleri, kurtarma_raporu,
+    _gevsetme_adaylari, _sorguyu_gevset, hata_tipini_coz, kurtar, kurtarma_denemeleri, kurtarma_raporu,
 )
 from core.tools import DEFTER, AracSonuc, RISK_GUVENLI, RISK_ONAY
 import core.builtin_tools  # noqa: F401
@@ -51,14 +51,59 @@ class HataTipiTest(unittest.TestCase):
         self.assertEqual(hata_tipini_coz(sonuc), BULUNAMADI)
 
 
-class SorguGevsetmeTest(unittest.TestCase):
-
-    def test_en_ayirt_edici_kelime_secilir(self):
-        self.assertEqual(_sorguyu_gevset("staj raporu 2026 final"), "final")
+class GevsetmeAdaylariTest(unittest.TestCase):
+    """Aday üretimi — saf metin işi, indekse dokunmaz."""
 
     def test_zayif_kelimeler_elenir(self):
-        """'dosya', 'son', 'rapor' ayırt edici değil."""
-        self.assertEqual(_sorguyu_gevset("son maliyet dosya"), "maliyet")
+        self.assertEqual(_gevsetme_adaylari("son maliyet dosya"), ["maliyet"])
+
+    def test_dolgu_kelimeleri_elenir(self):
+        """Canlıda 'falan' seçilip anlamsız arama yapıldı."""
+        self.assertNotIn("falan", _gevsetme_adaylari("staj raporu 2026 falan"))
+
+    def test_turkce_gurultu_elenir(self):
+        """'dosyasını' (noktasız ı) ASCII listeyle eşleşmeliydi."""
+        self.assertNotIn("dosyasini", _gevsetme_adaylari("staj dosyasını bul"))
+
+    def test_uzun_aday_once_denenir(self):
+        adaylar = _gevsetme_adaylari("ab maliyet tablosu")
+        self.assertEqual(adaylar[0], "maliyet")
+
+    def test_tek_kelimelik_sorgunun_adayi_yok(self):
+        self.assertEqual(_gevsetme_adaylari("staj"), [])
+
+    def test_bos_sorgu_cokmez(self):
+        self.assertEqual(_gevsetme_adaylari(""), [])
+        self.assertEqual(_gevsetme_adaylari(None), [])
+
+    def test_sadece_zayif_kelime_varsa_havuza_donulur(self):
+        self.assertTrue(_gevsetme_adaylari("son dosya"))
+
+
+class SorguGevsetmeTest(unittest.TestCase):
+    """
+    Seçimi İNDEKS yapar.
+
+    Saf metin sezgisi ("en uzun kelime") canlıda İKİ KEZ yanlış seçti:
+    önce `dosyasını`, sonra `falan`. 134 bin dosyalık indeks varken tahmin
+    etmek gereksiz — adayları sorup sonuç vereni seçiyoruz.
+    """
+
+    def test_indekste_eslesen_aday_secilir(self):
+        # 'yedek' eşleşmiyor, 'staj' eşleşiyor → 'staj' seçilmeli
+        def sahte_ara(sorgu, **kw):
+            return [{'ad': 'staj.pdf'}] if sorgu == 'staj' else []
+        with mock.patch("features.file_index.ara", side_effect=sahte_ara):
+            self.assertEqual(_sorguyu_gevset("yedek staj dosyası"), "staj")
+
+    def test_hicbiri_eslesmezse_ilk_aday_denenir(self):
+        with mock.patch("features.file_index.ara", return_value=[]):
+            secilen = _sorguyu_gevset("zzzqqq wwwyyy dosyası")
+        self.assertIn(secilen, ("zzzqqq", "wwwyyy"))
+
+    def test_indeks_cokerse_ilk_aday_donulur(self):
+        with mock.patch("features.file_index.ara", side_effect=RuntimeError("db yok")):
+            self.assertIsNotNone(_sorguyu_gevset("staj raporu dosyası"))
 
     def test_tek_kelimelik_sorgu_gevsetilemez(self):
         self.assertIsNone(_sorguyu_gevset("staj"))
@@ -66,9 +111,6 @@ class SorguGevsetmeTest(unittest.TestCase):
     def test_bos_sorgu_cokmez(self):
         self.assertIsNone(_sorguyu_gevset(""))
         self.assertIsNone(_sorguyu_gevset(None))
-
-    def test_sadece_zayif_kelime_varsa_havuza_donulur(self):
-        self.assertIsNotNone(_sorguyu_gevset("son dosya"))
 
 
 class StratejiTest(unittest.TestCase):
@@ -269,3 +311,33 @@ class IndeksAraTest(unittest.TestCase):
              mock.patch("core.builtin_tools.dosya_komutu_isle") as gonder:
             DEFTER.getir("indeks_ara").calistir(sorgu="x")
         gonder.assert_not_called()
+
+
+class TurkceGevsetmeTest(unittest.TestCase):
+    """
+    CANLIDA YAKALANAN HATA: kurtarma `dosyasını` diye arama yaptı.
+
+    Zayıf kelime listesi ASCII ('dosyasini'), gerçek kelime Türkçe
+    ('dosyasını' — noktasız ı). Eşleşmediği için gürültü kelime elenmedi ve
+    "en uzun kelimeyi seç" kuralı onu seçti.
+    """
+
+    def test_turkce_gurultu_kelimesi_elenir(self):
+        self.assertEqual(_sorguyu_gevset("staj raporu dosyasını bul"), "staj")
+
+    def test_ascii_yazim_da_elenir(self):
+        self.assertEqual(_sorguyu_gevset("staj raporu dosyasini bul"), "staj")
+
+    def test_gurultu_kelimesi_asla_secilmez(self):
+        """Gevşetilen sorgu bir gürültü kelimesi olamaz — arama anlamsızlaşır."""
+        from core.recovery import _ZAYIF_TOKENLAR
+        for cumle in ("ULTRON yedek spec dosyasını bul",
+                      "maliyet tablosu dosyalarını göster",
+                      "sunum belgesini bul"):
+            secilen = _sorguyu_gevset(cumle)
+            self.assertNotIn(secilen, _ZAYIF_TOKENLAR,
+                             f"'{cumle}' → gürültü kelimesi seçildi: {secilen}")
+
+    def test_uzun_gurultu_kisa_anlamliyi_ezmez(self):
+        """'dosyasını' (9 harf) > 'staj' (4 harf) — uzunluk kuralı yanıltmamalı."""
+        self.assertEqual(_sorguyu_gevset("staj dosyasını bul"), "staj")
