@@ -103,13 +103,29 @@ def email_kisileri_listele():
 
 
 def email_coz(alici: str):
-    """Alıcı adını/adresini çözer → e-posta adresi veya None."""
+    """Alıcı adını/adresini çözer → e-posta adresi veya None.
+
+    Rehberde yoksa TAKMA AD katmanına sorulur ("patronum" → "Ahmet Kaya").
+    ⚠️ Rehberdeki doğrudan kayıt her zaman önce gelir."""
     key = (alici or '').lower().strip()
     kisiler = email_kisiler()
     if key in kisiler:
         return kisiler[key]
     if _EMAIL_RE.match(key):
         return key
+
+    try:
+        from core.aliases import takma_adi_coz
+        gercek = takma_adi_coz(key)
+        if gercek:
+            gercek_key = gercek.lower().strip()
+            if gercek_key in kisiler:
+                return kisiler[gercek_key]
+            if _EMAIL_RE.match(gercek_key):
+                return gercek_key
+    except Exception as e:
+        print(f"[Ultron TakmaAd] E-posta çözümü atlandı: {e}")
+
     return None
 
 

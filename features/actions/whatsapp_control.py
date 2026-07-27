@@ -113,7 +113,11 @@ def kisileri_listele():
 
 def kisi_coz(alici: str):
     """Alıcı adını/numarasını çözer → '+90...' veya None.
-    Türkçe yönelme eklerini tolere eder: 'anneme' → 'annem'."""
+    Türkçe yönelme eklerini tolere eder: 'anneme' → 'annem'.
+
+    Rehberde bulunamazsa TAKMA AD katmanına sorulur ("patronum" → "Ahmet Kaya").
+    ⚠️ Sıra önemli: rehberdeki DOĞRUDAN kayıt her zaman kazanır. Doğrudan kayıt
+    daha açık bir niyettir; takma ad yalnızca son çare."""
     key = (alici or '').lower().strip()
     kisiler = kisiler_yukle()
     if key in kisiler:
@@ -121,6 +125,16 @@ def kisi_coz(alici: str):
     for suf in ('ye', 'ya', 'e', 'a'):
         if key.endswith(suf) and key[:-len(suf)] in kisiler:
             return kisiler[key[:-len(suf)]]
+
+    # Takma ad → gerçek kişi → rehber
+    try:
+        from core.aliases import takma_adi_coz
+        gercek = takma_adi_coz(key)
+        if gercek and gercek.lower().strip() in kisiler:
+            return kisiler[gercek.lower().strip()]
+    except Exception as e:
+        print(f"[Ultron TakmaAd] Kişi çözümü atlandı: {e}")
+
     return numara_normalize(key)
 
 

@@ -171,6 +171,18 @@ son pdf'i aç
 > bunlarda onay kartı çıkar. Belge/resim/PDF sorusuz açılır.
 > Not: `chrome aç` hâlâ uygulama başlatır, dosya aramaz.
 
+### Takma adlar (kim kimdir)
+```
+patronum Ahmet Kaya demek                 ← öğretir
+annem Ayşe Ceylan'dır
+hocam aslında Mehmet Yılmaz
+patronum = Ahmet Kaya
+```
+> Sonra `patronuma whatsapp'tan yaz: selam` diyebilirsin.
+> **Onay kartında kimin kastedildiği yazar:** `patronuma → Ahmet Kaya`
+> Ultron sohbetten takma ad ÖĞRENMEZ, sadece yukarıdaki gibi açıkça söylersen.
+> Benzer isimler (`patron`, `patronlar`) çözülmez — yanlış kişiye gitmesin diye.
+
 ### Bağlamdan devam etme
 ```
 staj raporunu bul

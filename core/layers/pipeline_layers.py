@@ -9,6 +9,7 @@ import os
 from typing import Tuple, Dict, Any
 
 from core.context import UltronContext
+from core.aliases import kimlik_zinciri, takma_ad_ogren
 from core.tools import DEFTER
 # Araçların deftere yazılması için import ŞART — modül yan etkisiyle kaydolurlar.
 import core.builtin_tools  # noqa: F401
@@ -339,7 +340,7 @@ class SecurityAnalyzerLayer:
                         f"📎 **[DOSYA GÖNDERİM ONAYI — SKOR 75/100]**\n"
                         f"• Dosya: **{os.path.basename(yol)}** ({boyut:.1f} MB)\n"
                         f"• 📁 {os.path.dirname(yol)}\n"
-                        f"• Alıcı: **{plan.get('alici') or '?'}** ({kanal_adi})\n\n"
+                        f"• Alıcı: {kimlik_zinciri(plan.get('alici') or '?')} ({kanal_adi})\n\n"
                         f"Onaylarsanız dosya **bilgisayarınızdan çıkıp alıcıya gönderilecektir.**"
                     )
                     return ctx
@@ -381,7 +382,8 @@ class SecurityAnalyzerLayer:
                 ctx.security_level = "CONFIRM"
                 ctx.security_message = (
                     f"📱 **[WHATSAPP GÖNDERİM ONAYI — SKOR 70/100]**\n"
-                    f"• Alıcı: **{alici}** (`{numara}`)\n"
+                    # Takma ad kullanıldıysa KİMİN kastedildiği burada görünür
+                    f"• Alıcı: {kimlik_zinciri(alici)} (`{numara}`)\n"
                     f"• Mesaj: \"{metin}\"\n\n"
                     f"Onaylarsanız mesaj **OTOMATİK olarak gönderilecektir.**"
                 )
@@ -398,7 +400,7 @@ class SecurityAnalyzerLayer:
                 ctx.security_level = "CONFIRM"
                 ctx.security_message = (
                     f"📧 **[E-POSTA GÖNDERİM ONAYI — SKOR 70/100]**\n"
-                    f"• Alıcı: **{ep_alici}** (`{ep_adres}`)\n"
+                    f"• Alıcı: {kimlik_zinciri(ep_alici)} (`{ep_adres}`)\n"
                     f"• Konu: {ep_konu}\n"
                     f"• İçerik: \"{ep_icerik}\"\n\n"
                     f"Onaylarsanız e-posta **OTOMATİK olarak gönderilecektir.**"
@@ -490,6 +492,18 @@ class ExecutionEngineLayer:
                     ruh_hali_kaydet(db_cursor, db_conn, ruh_hali, ctx.normalized_input)
             except Exception as e:
                 print(f"[Ultron Mood] Ruh hali kaydedilemedi: {e}")
+
+        # 0.05 🧠 Takma ad öğretimi ("patronum Ahmet Kaya demek") — genel
+        #      hafızadan ÖNCE bakılır, yoksa "X = Y" kalıbını hafıza yutar.
+        if db_cursor and db_conn:
+            try:
+                takma = takma_ad_ogren(ctx.normalized_input, db_cursor, db_conn)
+                if takma:
+                    ctx.execution_success = True
+                    ctx.execution_result = takma
+                    return ctx
+            except Exception as e:
+                print(f"[Ultron TakmaAd] {e}")
 
         # 0.1 🧠 Otomatik hafıza öğrenme ("en sevdiğim dizi X", "hatırla: k = v"...)
         if db_cursor and db_conn:
