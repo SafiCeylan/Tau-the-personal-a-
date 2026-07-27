@@ -32,6 +32,7 @@ from features.auto_memory import hafiza_ogren
 from features.file_finder import dosya_arama_niyeti, dosya_bul_ve_islet
 from features.file_send import (
     dosya_niyeti_coz, dosya_komutu_isle, hedef_dosyayi_coz, indeks_komutu_algila,
+    calistirilabilir_mi,
 )
 from features.clipboard_tools import pano_komutu
 from features.quick_tools import (
@@ -342,6 +343,24 @@ class SecurityAnalyzerLayer:
                         f"Onaylarsanız dosya **bilgisayarınızdan çıkıp alıcıya gönderilecektir.**"
                     )
                     return ctx
+            # 1.45 📂 DOSYA AÇMA. Belge/resim/PDF sorusuz açılır. Ama .exe/.bat/
+            #      .ps1 gibi dosyaları "açmak" aslında PROGRAM ÇALIŞTIRMAKTIR —
+            #      indekste 134 bin dosya var, yanlış eşleşme program başlatır.
+            if plan.get('islem') == 'ac':
+                yol = hedef_dosyayi_coz(plan, getattr(ctx, 'kanal', 'desktop'))
+                if yol and calistirilabilir_mi(yol):
+                    ctx.entities['dosya_yolu'] = yol
+                    ctx.security_score = 80
+                    ctx.security_level = "CONFIRM"
+                    ctx.security_message = (
+                        f"⚠️ **[PROGRAM ÇALIŞTIRMA ONAYI — SKOR 80/100]**\n"
+                        f"• Dosya: **{os.path.basename(yol)}**\n"
+                        f"• 📁 {os.path.dirname(yol)}\n\n"
+                        f"Bu bir **belge değil, program.** Açmak onu "
+                        f"**çalıştıracaktır.** Onaylıyor musunuz?"
+                    )
+                    return ctx
+
             ctx.security_score = 10
             ctx.security_level = "SAFE"
             ctx.security_message = "✅ **[GÜVENLİ]** Dosya araması yürütülüyor."

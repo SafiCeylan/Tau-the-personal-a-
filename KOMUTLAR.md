@@ -148,6 +148,25 @@ sunum dosyası nerede
 > Tek adımda da olur: `staj raporunu anneme mail at`
 > — tek eşleşme varsa direkt gönderir, birden fazlaysa "hangisi?" diye sorar.
 
+### Dosyayı açma
+```
+staj raporu dosyasını aç                  ← varsayılan uygulamayla açar
+son pdf'i aç
+1'i aç                                    ← listeden seçerek
+```
+> ⚠️ `.exe` `.bat` `.ps1` `.msi` gibi dosyaları "açmak" onları **çalıştırmaktır** —
+> bunlarda onay kartı çıkar. Belge/resim/PDF sorusuz açılır.
+> Not: `chrome aç` hâlâ uygulama başlatır, dosya aramaz.
+
+### Bağlamdan devam etme
+```
+staj raporunu bul
+onu aç                                    ← "onu" = az önce bulunan dosya
+onu anneme gönder
+```
+> Neyi kastettiğini varsaydığını yazar: _(bağlamdan: 'onu' → staj raporu.pdf)_
+> 15 dakika sonra bağlam düşer, tekrar sorar. Telefondaki konuşma masaüstüne karışmaz.
+
 ### İndeks yönetimi
 ```
 dosya indeksi durumu                      ← kaç dosya, son tarama ne zaman

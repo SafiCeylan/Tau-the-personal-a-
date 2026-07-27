@@ -31,8 +31,12 @@ def onayli_komut_yurut(komut: str, kanal: str = 'desktop'):
     try:
         from features.file_send import dosya_niyeti_coz, dosya_komutu_isle
         plan = dosya_niyeti_coz(komut, kanal)
-        if plan and plan.get('islem') == 'gonder':
-            handled, resp = dosya_komutu_isle(komut, kanal=kanal, plan=plan)
+        # 'ac' de buraya girer: çalıştırılabilir dosya onay kartından geçtiyse
+        # `onaylandi=True` ile çağrılır, yoksa file_send tekrar onay ister ve
+        # kullanıcı sonsuz döngüye girer.
+        if plan and plan.get('islem') in ('gonder', 'ac'):
+            handled, resp = dosya_komutu_isle(komut, kanal=kanal, plan=plan,
+                                              onaylandi=True)
             if handled:
                 return True, resp
     except Exception as e:

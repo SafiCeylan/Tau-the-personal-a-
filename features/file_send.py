@@ -36,6 +36,26 @@ MASAUSTU_KANALI = 'desktop'
 
 _ARAMA_FIILLERI = ('bul', 'ara', 'nerede', 'listele', 'göster')
 _GONDERIM_FIILLERI = ('gönder', 'yolla', 'at', 'ilet', 'paylaş')
+# "aç" fiili SYSTEM_CONTROL ile çakışır ("chrome aç"). Bu yüzden 'ac' işlemi
+# YALNIZCA güçlü dosya sinyali olan cümlelerde üretilir — aşağıya bak.
+#
+# ⚠️ Karşılaştırma `file_index.sadelestir()` çıktısı üzerinde yapılır: Türkçe
+# harfler sadeleşir, "aç" → "ac". Bu yüzden kalıp ASCII olmalı.
+# ⚠️ Kelime sınırı şart: çıplak "ac" alt dizisi "ihtiyac", "acele", "aciklama"
+# gibi kelimelerin içinde geçer.
+_ACMA_RE = re.compile(r'\bac\b')
+
+# os.startfile bu uzantılarda dosyayı AÇMAZ, ÇALIŞTIRIR. İndekste 134 bin dosya
+# var; yanlış eşleşme program başlatmak demek. Bunlar onay kartından geçer.
+CALISTIRILABILIR_UZANTILAR = (
+    '.exe', '.bat', '.cmd', '.com', '.msi', '.ps1', '.vbs', '.vbe',
+    '.js', '.jse', '.wsf', '.wsh', '.scr', '.cpl', '.reg', '.lnk', '.jar',
+)
+
+
+def calistirilabilir_mi(yol: str) -> bool:
+    """Bu dosyayı 'açmak' aslında program çalıştırmak mı olur?"""
+    return str(yol or '').lower().endswith(CALISTIRILABILIR_UZANTILAR)
 
 # "1'i", "2'yi", "3.", "4 numaralı" gibi seçim ifadeleri
 _SECIM_RE = re.compile(
@@ -114,6 +134,7 @@ def dosya_komutu_ayristir(mesaj: str):
     hedef, alici = _hedef_belirle(ml)
     gonderim_var = any(f in ml for f in _GONDERIM_FIILLERI) or hedef is not None
     arama_var = any(f in ml for f in _ARAMA_FIILLERI)
+    acma_var = bool(_ACMA_RE.search(ml))
 
     # Sıra numarasıyla seçim: "1'i bana gönder"
     secim = None
@@ -124,7 +145,7 @@ def dosya_komutu_ayristir(mesaj: str):
     else:
         sorgu_ham = ham
 
-    if not (gonderim_var or arama_var):
+    if not (gonderim_var or arama_var or acma_var):
         return None
 
     tur = _tur_bul(ml)
@@ -137,7 +158,16 @@ def dosya_komutu_ayristir(mesaj: str):
         or any(k in ml for k in _KLASOR_KELIMELERI)
     )
 
-    islem = 'gonder' if (secim is not None or hedef) else 'ara'
+    if secim is not None or hedef:
+        islem = 'gonder'
+    elif acma_var and guclu:
+        # ⚠️ 'ac' SADECE güçlü sinyalde. Aksi halde "chrome aç" indekste
+        # chrome.exe'yi bulup uygulama başlatmak yerine dosya açmaya kalkardı.
+        # Bağlamdan gelen ikame "X dosyasını aç" olduğu için bu koşulu sağlar.
+        islem = 'ac'
+    else:
+        islem = 'ara'
+
     if islem == 'ara' and not arama_var:
         return None
 
@@ -183,6 +213,7 @@ def _tur_bul(ml: str):
 _GURULTU = {
     'dosya', 'dosyayi', 'dosyayı', 'dosyasini', 'dosyasını', 'dosyalari', 'dosyaları',
     'bul', 'ara', 'arar', 'nerede', 'listele', 'goster', 'göster', 'bakar',
+    'ac', 'aç', 'acar', 'açar',
     'gonder', 'gönder', 'yolla', 'at', 'ilet', 'paylas', 'paylaş', 'gonderir',
     'bana', 'telefonuma', 'telegram', 'telegrama', 'telegramdan',
     'mail', 'maille', 'mailden', 'maile', 'eposta', 'e-posta', 'epostayla',
@@ -359,15 +390,57 @@ def hedef_dosyayi_coz(plan: dict, kanal=MASAUSTU_KANALI):
     return None
 
 
-def dosya_komutu_isle(mesaj: str, kanal=MASAUSTU_KANALI, plan: dict = None):
+def _dosyayi_ac(plan: dict, kanal, onaylandi: bool = False):
     """
-    Dosya arama/gönderme komutunu işler → (işlendi_mi, yanıt).
+    İndeksteki dosyayı sistemin varsayılan uygulamasıyla açar → (işlendi_mi, yanıt).
+
+    ⚠️ `os.startfile` çalıştırılabilir dosyalarda dosyayı AÇMAZ, ÇALIŞTIRIR.
+    Onay verilmediyse bu tür dosyalar açılmaz; güvenlik katmanı onay kartı
+    gösterir ve onaylı çağrı `onaylandi=True` ile gelir.
+    """
+    yol = hedef_dosyayi_coz(plan, kanal)
+
+    if not yol:
+        sonuclar = file_index.ara(plan.get('sorgu') or '', tur=plan.get('tur'), limit=10)
+        if not sonuclar:
+            if plan.get('zayif'):
+                return False, None      # dosya komutu değilmiş — çağıran devam etsin
+            return True, f"🔍 `{plan.get('sorgu') or plan.get('tur')}` için dosya bulunamadı."
+        file_index.son_sonuclari_kaydet(kanal, sonuclar)
+        liste = file_index.sonuclari_bicimle(sonuclar, "Birden fazla eşleşme")
+        return True, liste + "\n\n❓ Hangisini açayım? (`1'i aç` gibi)"
+
+    if not os.path.exists(yol):
+        return True, (f"⚠️ `{os.path.basename(yol)}` artık yerinde değil.\n"
+                      f"`dosya indeksini güncelle` dersen listeyi tazelerim.")
+
+    if calistirilabilir_mi(yol) and not onaylandi:
+        return True, (f"⛔ `{os.path.basename(yol)}` bir **program**. Açmak onu "
+                      f"ÇALIŞTIRMAK demektir — onayın gerekiyor.")
+
+    try:
+        if sys.platform == 'win32':
+            os.startfile(yol)
+        return True, (f"📂 **Açılıyor:** `{os.path.basename(yol)}`\n"
+                      f"📁 {os.path.dirname(yol)}")
+    except Exception as e:
+        return True, f"⚠️ Dosya açılamadı: {e}"
+
+
+def dosya_komutu_isle(mesaj: str, kanal=MASAUSTU_KANALI, plan: dict = None,
+                      onaylandi: bool = False):
+    """
+    Dosya arama/gönderme/açma komutunu işler → (işlendi_mi, yanıt).
     `kanal`: seçim listesinin kime ait olduğu ('desktop' veya Telegram chat_id).
     `plan`: niyet katmanında zaten ayrıştırıldıysa tekrar ayrıştırma.
+    `onaylandi`: kullanıcı onay kartını geçtiyse True (çalıştırılabilir dosya).
     """
     plan = plan or dosya_komutu_ayristir(mesaj)
     if not plan:
         return False, None
+
+    if plan.get('islem') == 'ac':
+        return _dosyayi_ac(plan, kanal, onaylandi=onaylandi)
 
     # --- Seçim numarasıyla gönderim: "2'yi anneme mail at"
     if plan['secim'] is not None:

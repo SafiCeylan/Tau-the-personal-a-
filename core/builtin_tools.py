@@ -84,6 +84,20 @@ def dosya_gonder(metin="", kanal="desktop", plan=None, **_):
 
 
 @arac_kaydet(
+    "dosya_ac",
+    "Bilgisayardaki bir dosyayı varsayılan uygulamasıyla açar (PDF, Word, resim...).",
+    {"sorgu": "açılacak dosya adı"},
+    risk=RISK_ONAY,   # program çalıştırma riski — planner onaysız yürütemez
+)
+def dosya_ac(metin="", sorgu=None, kanal="desktop", **_):
+    # Planner parametre verdiyse aracın anlayacağı cümleyi kur; regex yolunda
+    # ham metin zaten "X dosyasını aç" biçimindedir.
+    komut = f"{sorgu} dosyasını aç" if sorgu else metin
+    islendi, cevap = dosya_komutu_isle(komut, kanal=kanal)
+    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+
+
+@arac_kaydet(
     "dosya_ara",
     "Bilgisayarda dosya arar ve bulursa açar. (Sıra: SYSTEM_CONTROL'dan ÖNCE.)",
     {"sorgu": "aranacak dosya adı/türü"},
