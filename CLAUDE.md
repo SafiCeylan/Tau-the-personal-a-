@@ -14,7 +14,7 @@
 | **Geliştirici** | Mehmet Safi Ceylan (SafiCeylan / memoc) |
 | **Yığın** | Python + PyQt5 (QPainter, web view YOK) + SQLite + Ollama |
 | **Varsayılan model** | Ollama `qwen2.5:3b` (küçük model — halüsinasyona meyilli, prompt kuralları sıkı) |
-| **Çalıştırma** | `python main.py` · `start_tau.bat` · exe: `C:\Users\memoc\UltronApp\ULTRON\ULTRON.exe` |
+| **Çalıştırma** | `python main.py` · `start_tau.bat` · exe: `dist\ULTRON\ULTRON.exe` (masaüstündeki `ULTRON.lnk` buraya bakar) |
 | **Diğer dokümanlar** | `KOMUTLAR.md` (kullanıcı kopya kağıdı) · `KURULUM.md` · `README.md` |
 
 ---
@@ -127,8 +127,9 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 
 | Konu | Kural |
 |------|-------|
-| **Testler** | `tests/test_all_features.py` **MOCK'SUZ — gerçek yan etki üretir.** "chrome kapat" testi Chrome'u GERÇEKTEN kapatır, ses seviyesini GERÇEKTEN değiştirir. Kullanıcıya sormadan çalıştırma. |
-| **PyInstaller** | **OneDrive içinde derleme YAPMA** — dist kilitlenir, PermissionError. `--distpath C:\Users\memoc\UltronApp --workpath C:\Users\memoc\ultron_build_tmp` |
+| **Testler** | Artık `tests/safety.py` zırhı var (27 Tem): OS'a dokunan son adım (subprocess, pycaw, keybd_event, psutil.kill, startfile, webbrowser) taklitle değiştirilir. **Yeni test modülü açarken `setUpModule`'de zırhı kurmayı unutma** — yoksa test gerçekten Chrome kapatır, ses değiştirir. |
+| **PyInstaller** | 23 Tem'de OneDrive içindeki `dist` kilitlenip PermissionError verdi → `--distpath C:\Users\memoc\UltronApp --workpath C:\Users\memoc\ultron_build_tmp` ile dışarı alınmıştı. 25 Tem'de tekrar proje içi `dist/`'e derlendi ve sorun çıkmadı. Kilit hatası alırsan yolu yine dışarı taşı. |
+| **dist boyutu** | `dist/` ~375 MB ve OneDrive klasörünün içinde — senkron trafiği yaratır. Git'te değil (`.gitignore`). |
 | **PyInstaller excludes** | sklearn/scipy/pandas/networkx ortamdan sızıp 1GB yapıyordu → excludes. Ama **setuptools DIŞLANAMAZ** (pygame pkg_resources → jaraco çöker). |
 | **exe verisi** | exe kendi `_internal` klasöründe yaşar — config/DB python sürümüyle **paylaşılmaz**. |
 | **aiodns** | `aiodns 4.0.0` Windows'ta "Could not contact DNS servers" ile edge-tts'i kırar. **requirements'a EKLEME.** |
@@ -162,11 +163,14 @@ zamanlanmış görevler · otomatik hafıza · dosya bulucu · pano sihirbazı �
 streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi · installer/exe.
 
 ### 🔨 Eksik kalanlar
-1. **Commit yok** — 24–25 Tem'in tüm işi (5 yeni modül + 21 değişmiş dosya) çalışma ağacında duruyor.
-2. **exe eski** (23 Tem build'i) — yeni modüller exe'de yok, yeniden derlenmeli.
-3. **KOMUTLAR.md eksik** — hesap makinesi, notlar, sayaç, saat komutları rehberde yok.
-4. **Testler mock'suz** — gerçek yan etki üretiyor, izole edilmeli.
-5. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
+1. **Push yok** — `origin` (github.com/SafiCeylan/Tau-the-personal-a-) yerelin gerisinde; commit'ler local.
+2. **exe GUI testi** — `dist/ULTRON/ULTRON.exe` 25 Tem 22:17 derlemesi, kodun son hâlini içeriyor; kullanıcı tam GUI turunu yapmadı.
+3. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
+4. `ui/tau_window.py` ~70 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
+
+### ✔️ 27 Tem'de kapatılanlar
+Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/sayaç/medya bölümleri ·
+`tests/safety.py` güvenlik zırhı (52 test yeşil, gerçek yan etki YOK) · CLAUDE.md.
 
 ---
 
@@ -177,7 +181,7 @@ streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi
 | 22 Tem | Backend/thread/onay fixleri, UWP açma, tray, saat parser'ı, AIP kuruldu, WhatsApp gönderimi, sohbet kalıcılığı, brifing, e-posta, istatistikler, Telegram köprüsü, TTS+wake word, halüsinasyon frenleri, STT insanileştirme, internet/hava/döviz düzeltmeleri | ✅ Canlı doğrulandı |
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
 | 24–25 Tem | `llm_gateway` (LLM UI'dan söküldü — Telegram/görevler artık LLM cevabı alıyor), `llm_intent` (LLM niyet sınıflandırıcı), `memory_rag` (alakaya göre hafıza), `confirmed_executor` (onaylı WA/mail gönderilmiyordu — fix), `quick_tools` (hesap/saat/sayaç/not), `mood.py` yeniden yazıldı, engine'e canlı config, chat_view (girdi geçmişi, kod bloğu, hızlı öneriler, medya butonları) | ⚠️ **Commit edilmedi** |
-| 27 Tem | CLAUDE.md yazıldı | ✅ |
+| 27 Tem | CLAUDE.md yazıldı · 24–25 Tem'in işi commit edildi (`43e0103`) · KOMUTLAR.md'ye 5 yeni bölüm · **`tests/safety.py` güvenlik zırhı** — testler artık Chrome kapatmıyor/ses değiştirmiyor, zırhı kilitleyen 3 test eklendi | ✅ 52 test yeşil (2.9 sn) |
 
 ---
 

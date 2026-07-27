@@ -18,6 +18,20 @@ from features.actions.system_control import sistem_komutu_algila, sistem_durumu_
 from features.reminders import hatirlatma_algila
 from features.web_search import canli_web_ara, web_arama_niyeti_algila
 from features.file_reader import dosya_oku_ve_analiz_et, dosya_okuma_niyeti_algila
+from tests.safety import guvenlik_zirhi_kur, guvenlik_zirhi_kaldir
+
+
+def setUpModule():
+    """
+    Testler gerçek yürütücüleri çağırıyor — zırh olmadan açık Chrome'u kapatır,
+    sistem sesini değiştirir, uygulama açar. OS'a dokunan son adım taklitle
+    değiştirilir; iş mantığı (regex/niyet/mesaj) gerçek kalır.
+    """
+    guvenlik_zirhi_kur()
+
+
+def tearDownModule():
+    guvenlik_zirhi_kaldir()
 
 
 class TestUltronExhaustiveSuite(unittest.TestCase):
@@ -395,6 +409,38 @@ class TestConfirmedExecutor(unittest.TestCase):
         ok, resp = ce.onayli_komut_yurut("chrome kapat")
         self.assertTrue(ok)
         self.assertIsInstance(resp, str)
+
+
+class TestGuvenlikZirhi(unittest.TestCase):
+    """
+    Zırhın kendisini kilitler. Biri setUpModule'ü veya tests/safety.py'yi silerse
+    bu testler kırmızı yanar — sessizce gerçek Chrome kapatan bir suite'e dönmez.
+    """
+
+    def test_zirh_kurulu(self):
+        import psutil
+        import features.actions.system_control as sc
+        self.assertEqual(getattr(sc.subprocess, '__name__', ''), '_SahteSubprocess',
+                         "Zırh kurulmamış: subprocess gerçek — testler OS'a dokunur!")
+        self.assertEqual(psutil.Process.kill.__name__, '_sahte',
+                         "Zırh kurulmamış: psutil.kill gerçek — açık uygulamalar kapanır!")
+
+    def test_surec_kapatma_os_a_ulasmiyor(self):
+        from tests.safety import CAGRI_KAYDI, cagri_yapildi_mi
+        CAGRI_KAYDI.clear()
+        status, resp = sistem_komutu_algila("chrome kapat")
+        self.assertTrue(status)
+        # taskkill komutu üretildi ama zırh tarafından yakalandı, çalıştırılmadı
+        self.assertTrue(cagri_yapildi_mi('subprocess.run'))
+        self.assertTrue(any('taskkill' in str(arg) for _, arg in CAGRI_KAYDI))
+
+    def test_ses_degisikligi_donanima_ulasmiyor(self):
+        from tests.safety import CAGRI_KAYDI, cagri_yapildi_mi
+        CAGRI_KAYDI.clear()
+        status, resp = sistem_komutu_algila("sesi %80 yap")
+        self.assertTrue(status)
+        self.assertIn("%80", resp)
+        self.assertTrue(cagri_yapildi_mi('volume'))
 
 
 if __name__ == '__main__':
