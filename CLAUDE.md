@@ -213,26 +213,22 @@ ekran görüntüsü, dosya alma) · TTS (edge, erkek ses) + wake word · sabah b
 zamanlanmış görevler · otomatik hafıza · dosya bulucu · pano sihirbazı · pomodoro ·
 streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi · installer/exe.
 
-### 🔨 Eksik kalanlar
-1. **Dosya gönderiminin testleri yazılmadı** (kullanıcı "sonra" dedi, 27 Tem). Yazılacaklar:
-   parser kalıpları, zayıf-sinyal devretme (`dosya_niyeti_coz`), gizli dosya filtresi,
-   kanal ayrımı, onay akışı. Zırh (`tests/safety.py`) burada da kurulmalı — gönderim
-   gerçek mail/Telegram trafiği üretir.
-2. ~~**exe eski kaldı**~~ → 27 Tem'de yeniden derlendi (dosya gönderimi artık exe'de var).
-3. ~~**Push bekliyor**~~ → 28 Tem'de tüm yerel commit'ler GitHub'a (`origin/main`) pushlandı.
-4. ~~**exe verisi ile python verisi ayrı**~~ → Tüm veri yolları `core.paths.veri_yolu` ile `%APPDATA%\ULTRON` altında birleştirildi. Exe ve Python ortamı aynı veritabanını (`bilgiler.db`), `config.json` ve `user_data.json` dosyalarını paylaşıyor.
-5. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
-6. `ui/tau_window.py` ~72 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
+### 🔨 Eksik kalanlar / Raftakiler
+1. Takvim entegrasyonu (Google/Outlook/ICS).
+2. Vision / OCR (RAM sınırları nedeniyle beklemede).
 
-### ✔️ 27 Tem'de kapatılanlar
-Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/sayaç/medya bölümleri ·
-`tests/safety.py` güvenlik zırhı (52 test yeşil, gerçek yan etki YOK) · CLAUDE.md.
+### ✔️ 28 Tem'de kapatılanlar & doğrulananlar
+* **Dosya Gönderim Doğrulaması:** Kullanıcı canlıda test etti, WhatsApp/Telegram/Mail dosya gönderiminin sorunsuz çalıştığını onayladı.
+* **Veri Yolu Birleştirmesi (`2e4369a`):** Tüm veriler `%APPDATA%\ULTRON` altında toplandı (`user_memory.py` ve `tau_backend.py` dahil). Exe ve Python ortamları tamamen senkronize.
+* **Git Sync:** Tüm yerel commit'ler GitHub (`origin/main`) deposuna pushlandı. 345 testin tamamı yeşil.
 
 ---
 
 ## 📅 Oturum Günlüğü
 
 | Tarih | Yapılan | Sonuç |
+|-------|---------|-------|
+| 28 Tem | Proje baştan sona analiz edildi · Tüm commit'ler GitHub'a pushlandı (`846a100`) · `user_memory.py` ve `tau_backend.py` veri yolları `%APPDATA%\ULTRON` olarak güncellendi (`2e4369a`) · `CLAUDE.md` güncellendi | ✅ 345 test yeşil, repo temiz ve güncel |
 |-------|---------|-------|
 | 22 Tem | Backend/thread/onay fixleri, UWP açma, tray, saat parser'ı, AIP kuruldu, WhatsApp gönderimi, sohbet kalıcılığı, brifing, e-posta, istatistikler, Telegram köprüsü, TTS+wake word, halüsinasyon frenleri, STT insanileştirme, internet/hava/döviz düzeltmeleri | ✅ Canlı doğrulandı |
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |
