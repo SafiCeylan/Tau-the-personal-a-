@@ -5,9 +5,9 @@ TAU Backend API bağlantısı için fonksiyonlar
 import requests
 import json
 import os
-from datetime import datetime
+from core.paths import veri_yolu
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+CONFIG_PATH = veri_yolu('config.json')
 
 def get_tau_config():
     """TAU backend config bilgilerini al"""

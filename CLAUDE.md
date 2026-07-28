@@ -219,13 +219,10 @@ streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi
    kanal ayrımı, onay akışı. Zırh (`tests/safety.py`) burada da kurulmalı — gönderim
    gerçek mail/Telegram trafiği üretir.
 2. ~~**exe eski kaldı**~~ → 27 Tem'de yeniden derlendi (dosya gönderimi artık exe'de var).
-3. **Push bekliyor** — `5c44597` yerelde. `--tray` değişikliği de commit edilmedi.
-   **exe verisi ile python verisi ayrı** — masaüstünden `python main.py` ile konuştuğun
-   Ultron ile tepsideki exe **farklı `bilgiler.db`** kullanıyor (27 Tem'de bir kez
-   kopyalandı, bundan sonra ayrışacaklar). Tek kaynağa indirmek için veri yolu
-   `%APPDATA%\ULTRON`'a alınmalı.
-4. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
-5. `ui/tau_window.py` ~72 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
+3. ~~**Push bekliyor**~~ → 28 Tem'de tüm yerel commit'ler GitHub'a (`origin/main`) pushlandı.
+4. ~~**exe verisi ile python verisi ayrı**~~ → Tüm veri yolları `core.paths.veri_yolu` ile `%APPDATA%\ULTRON` altında birleştirildi. Exe ve Python ortamı aynı veritabanını (`bilgiler.db`), `config.json` ve `user_data.json` dosyalarını paylaşıyor.
+5. Raftakiler: takvim entegrasyonu, Vision/OCR (RAM yetersiz).
+6. `ui/tau_window.py` ~72 KB — thread'ler ve controller ayrı dosyalara bölünebilir.
 
 ### ✔️ 27 Tem'de kapatılanlar
 Commit `43e0103` (24–25 Tem'in tüm işi) · KOMUTLAR.md'ye notlar/hesap/saat/sayaç/medya bölümleri ·

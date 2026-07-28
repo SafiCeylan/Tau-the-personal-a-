@@ -1,7 +1,8 @@
 import json
 import os
+from core.paths import veri_yolu
 
-USER_DATA_FILE = 'user_data.json'
+USER_DATA_FILE = veri_yolu('user_data.json')
 
 def save_to_json(key, value):
     """Belirtilen anahtar ve değeri JSON dosyasına kaydeder/günceller."""
