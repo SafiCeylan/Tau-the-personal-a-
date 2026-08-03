@@ -388,6 +388,18 @@ def _uyg_bul_ve_ac(app_name: str):
     return False, f"⚠️ **'{app_name}'** uygulaması Windows Başlat Menüsünde veya dizinlerde bulunamadı. Lütfen uygulamanın bilgisayarınızda yüklü olduğundan emin olunuz."
 
 
+def _kelime_var(mesaj: str, kelimeler) -> bool:
+    """
+    Kelime SINIRIYLA arar (`in` DEĞİL).
+
+    Alt dizi araması canlıda iki kez yanlış tetikledi:
+      • "sesimin ..."     → içinde "min" geçiyor → ses %10'a düşüyordu
+      • "sesi kesinlikle" → içinde "kes" geçiyor → ses susturuluyordu
+    Projenin `\\bac\\b` dersi burada da geçerli.
+    """
+    return any(re.search(r'\b' + re.escape(k) + r'\b', mesaj) for k in kelimeler)
+
+
 def sistem_komutu_algila(mesaj: str):
     """
     Mesaj içerisindeki Windows sistem komutlarını algılar ve çalıştırır.
@@ -413,13 +425,19 @@ def sistem_komutu_algila(mesaj: str):
     mesaj = mesaj.lower().strip()
     is_windows = sys.platform == 'win32' or os.name == 'nt'
 
-    # Yazım Hatalarını Otomatik Düzelt (chorome -> chrome, spotifi -> spotify)
+    # Yazım Hatalarını Otomatik Düzelt (chorome -> chrome, spotifi -> spotify, yao -> yap vb.)
     typos = {
         r'\bchorome\b': 'chrome',
         r'\bcrom\b': 'chrome',
         r'\bspotifi\b': 'spotify',
         r'\byutube\b': 'youtube',
         r'\bhesp\b': 'hesap',
+        r'\byao\b': 'yap',
+        r'\byukse\b': 'yükselt',
+        r'\byuksel\b': 'yükselt',
+        r'\byüksel\b': 'yükselt',
+        r'\barttir\b': 'artır',
+        r'\barttır\b': 'artır',
     }
     for pattern, replacement in typos.items():
         mesaj = re.sub(pattern, replacement, mesaj)
@@ -429,26 +447,64 @@ def sistem_komutu_algila(mesaj: str):
         return True, sistem_durumu_raporu()
 
     # 2. Birebir & Oransal Akıllı Ses Kontrolü
-    if "ses" in mesaj or "volume" in mesaj:
-        pct_match = re.search(r'(?:%|yüzde)\s*(\d+)|(\d+)\s*(?:%|kadar)', mesaj)
+    #    Kapı KELİME SINIRIYLA açılır: "sesli mesaj" ses komutu değildir.
+    if re.search(r'\b(ses|sesi|sesin|sesini|sesim|sesimi|sesine|sesler|sessiz|sessize|'
+                 r'volume|kökle|kokle|fulle)\b', mesaj):
+        # Yüzde: ya açık işaret (%, "yüzde", "... seviye") ya da bir AYARLAMA
+        # fiiliyle birlikte gelen sayı. Çıplak `(\d+)` her sayıyı yüzde sayıyordu:
+        # "ses 5 saniye gecikmeli geliyor" sesi %5'e çekiyordu.
+        pct_match = re.search(r'(?:%|yüzde)\s*(\d{1,3})|(\d{1,3})\s*(?:%|kadar|seviye|seviyesi|seviyesine)', mesaj)
         percent = int(pct_match.group(1) or pct_match.group(2)) if pct_match else None
+        if percent is None and _kelime_var(mesaj, ["yap", "ayarla", "getir", "olsun", "çek"]):
+            sayi = re.search(r'\b(\d{1,3})\b', mesaj)
+            percent = int(sayi.group(1)) if sayi else None
+        if percent is not None:
+            percent = max(0, min(100, percent))
 
-        if any(k in mesaj for k in ["kapat", "sessiz", "kapa", "mute", "sıfırla"]):
+        # Max / Full ("en yüksek", "maksimum", "max", "full", "kökle", "son ses", "tavan")
+        # NOT: kelime sınırına geçince çekimli biçimler AÇIKÇA yazılmalı —
+        # "ful" alt dizisi eskiden "fulle"yi de yakalıyordu, artık yakalamaz.
+        if _kelime_var(mesaj, ["en yüksek", "en yuksek", "maksimum", "max", "full", "ful",
+                               "fulle", "fulla", "kökle", "kokle", "köklet", "son ses",
+                               "son seviye", "tavan", "tamamını aç", "tam ac", "tam aç"]):
+            return sistem_sesi_kontrol("set", 100)
+
+        # Min / Low ("en düşük", "minimum", "min", "dip")
+        if _kelime_var(mesaj, ["en düşük", "en dusuk", "minimum", "min", "dip"]):
+            return sistem_sesi_kontrol("set", 10 if percent is None else percent)
+
+        # Mute
+        if _kelime_var(mesaj, ["kapat", "sessiz", "sessize", "sessizle", "kapa",
+                               "mute", "sıfırla", "sustur", "kes"]):
             return sistem_sesi_kontrol("mute")
 
-        # "sesi %49 yap" / "sesi 50 yap" -> ABSOLUTE SET
-        if any(k in mesaj for k in ["yap", "ayarla", "seviyesine getir"]) or (percent is not None and not any(k in mesaj for k in ["kıs", "düşür", "azalt", "yükselt", "artır"])):
-            return sistem_sesi_kontrol("set", percent)
+        # Set / Absolute ("sesi %49 yap", "sesi 50 yap", "ses seviyesini 50 yap")
+        if _kelime_var(mesaj, ["yap", "ayarla", "seviyesine getir", "seviyesine yap", "getir", "olsun"]) \
+                or (percent is not None and not _kelime_var(mesaj, ["kıs", "düşür", "azalt", "yükselt", "artır", "yukselt", "arttir"])):
+            return sistem_sesi_kontrol("set", percent if percent is not None else 50)
 
-        if any(k in mesaj for k in ["kıs", "düşür", "azalt"]):
+        # Volume Down
+        if _kelime_var(mesaj, ["kıs", "düşür", "azalt", "indir", "dusur", "kis"]):
             return sistem_sesi_kontrol("down", percent)
 
-        if any(k in mesaj for k in ["aç", "yükselt", "artır", "çoğalt"]):
+        # Volume Up
+        if _kelime_var(mesaj, ["aç", "yükselt", "artır", "çoğalt", "yukselt", "arttir",
+                               "cogalt", "yüksel", "yuksel", "yükseltme", "yükseltin"]):
             return sistem_sesi_kontrol("up", percent)
+
+        # ❗ Genel "ses geçiyorsa bir şey yap" kestirmesi YOK. Ne yapılacağı
+        # anlaşılmadıysa ses seviyesine dokunulmaz — cümle akışın devamına
+        # (ve gerekirse LLM'e) bırakılır. Sessizce sesi değiştirmek, kullanıcının
+        # sormadığı bir eylemi yapmaktır.
 
     # 3. Bilgisayarı Kilitleme / Güvenlik
     if "bilgisayarı kilitle" in mesaj or "ekranı kilitle" in mesaj or "oturumu kilitle" in mesaj:
         return bilgisayar_kilitle()
+
+    # 3.5 Uyku modu — Telegram menüsündeki "🌙 Uyku Modu" butonunun karşılığı.
+    #     Karşılığı olmayan buton, LLM'in "uykuya aldım" diye uydurması demektir.
+    if _kelime_var(mesaj, ["uykuya", "uyut", "uyku moduna"]):
+        return bilgisayar_uyut()
 
     # 4. Süreç / Uygulama Kapatma (Process Termination)
     if "kapat" in mesaj or "sonlandır" in mesaj or "durdur" in mesaj:
@@ -635,6 +691,18 @@ def sistem_durumu_raporu():
         )
     except Exception as e:
         return f"Sistem bilgisi alınırken hata: {e}"
+
+
+def bilgisayar_uyut():
+    """Bilgisayarı uyku moduna alır (hazırda bekletme açıksa hibernate olur)."""
+    if sys.platform != 'win32':
+        return False, "Uyku modu sadece Windows üzerinde desteklenmektedir."
+    try:
+        subprocess.run(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
+                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return True, "🌙 Bilgisayar uyku moduna alınıyor. Uyandırmak için `kilit aç` diyebilirsin."
+    except Exception as e:
+        return False, f"⚠️ Uyku moduna alınamadı: {e}"
 
 
 def bilgisayar_kilitle():

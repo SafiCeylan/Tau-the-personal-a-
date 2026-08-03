@@ -29,6 +29,34 @@ anneme whatsapptan geliyorum yaz
 
 ---
 
+## 📱 TELEGRAM HIZLI ERIŞIM BUTONLARI VE SLASH KOMUTLAR
+
+Telegram sohbetinizin altında açılan **Hızlı Buton Takımı** veya Telegram klavyesindeki `/` işaretine basarak kullanabileceğiniz hazır komutlar:
+
+### Hızlı Butonlar & Slash Komutlar
+```text
+📸 Ekran Görüntüsü    /ekran        ← PC ekranının anlık görüntüsünü fotoğraf olarak atar
+↵ Enter               /enter        ← PC'de Enter tuşuna basar
+⌨️ Alt+Enter          /alt_enter    ← PC'de Alt+Enter kombinasyonu basar
+📋 Ctrl+C             /ctrl_c       ← Kopyalama (Ctrl+C) tuşuna basar
+📋 Ctrl+V             /ctrl_v       ← Yapıştırma (Ctrl+V) tuşuna basar
+❌ Alt+F4             /alt_f4       ← Aktif pencereyi kapatır (Alt+F4)
+☀️ Sabah Brifingi     /brifing      ← Günlük hava, döviz ve hatırlatma brifingi verir
+📊 Sistem Durumu                     ← CPU, RAM, Disk kullanımını raporlar
+⭐ Özel Kısayollarım  /ozel         ← Kendi eklediğin dinamik kısayol butonları menüsü
+🎛️ Menüyü Kapat                      ← Hızlı buton takımını gizler (tekrar açmak için /menu)
+```
+
+### ⭐ Canlı Özel Kısayol Ekleme & Silme
+```text
+kısayol ekle: Photoshop = ctrl+alt+shift+p    ← Menüye yeni özel buton ve tuş ekler
+kısayol ekle: VS Code = code                  ← Uygulama çalıştırma kısayolu ekler
+kısayol ekle: Terminal = ctrl+alt+t           ← Özel tuş kombinasyonu ekler
+kısayol sil: Photoshop                        ← Eklenen özel kısayolu siler
+```
+
+---
+
 ## 📧 E-POSTA (Gmail)
 
 ### Kişi ekleme / yönetme
@@ -74,6 +102,44 @@ en sevdiğim dizi Dark                     ← otomatik öğrenir
 benim adım Mehmet / 25 yaşındayım / mesleğim yazılımcı
 ankara'da yaşıyorum                       ← hava durumu şehrini de günceller!
 ```
+
+## 🧠 ÖĞRENME (geçmiş sohbetlerden)
+```
+ne öğrendin                               ← alışkanlıkların ve öğrenilmiş kalıpların raporu
+neler öğrendin
+hakkımda ne biliyorsun
+şunu unut: biraz kısar mısın              ← yanlış öğrenilmiş bir ifadeyi siler
+öğrendiklerini unut                       ← tüm öğrenilmiş kalıpları siler (arşiv kalır)
+```
+> **Nasıl öğreniyor?**
+> • **Hatırlama:** Eski konuşmalar arşivleniyor; bir şey sorduğunda o konuyla ilgili
+>   geçmiş konuşmaların cevabıma dahil oluyor. ("kedimin adı neydi" → hatırlar)
+> • **Alışkanlık:** Hangi komutu ne sıklıkla, hangi saatte kullandığın sayılıyor.
+> • **Düzeltme:** Bir cümlemi anlamazsam ve sen aynı şeyi başka türlü söyleyip
+>   başarırsan, o ifadeyi öğrenirim. İkinci kez olunca kalıcı olur ve kullandığımda
+>   sana `_(🧠 öğrenilmiş kalıp: …)_` diye bildiririm — yanlışsa `şunu unut:` de.
+> • **Ruh hâli:** Sohbet mesajlarının tonu turun yanına yazılıyor; raporda
+>   "keyifsiz mesajların çoğu gece saatlerinde" gibi bir satır çıkabiliyor.
+> ⚠️ Şifre/PIN/token geçen mesajlar arşive **hiç girmez**.
+
+### 💡 Öneriler (alışkanlıktan otomasyon)
+```
+önerilerin neler                          ← gözlediğim alışkanlıklardan öneri listesi
+bekleyen öneri var mı
+1. öneriyi uygula                         ← öneriyi kurar (görev / kısayol)
+öneriyi kabul et                          ← tek öneri varsa numara gerekmez
+1. öneriyi reddet                         ← bir daha sormam
+öneriyi boşver
+```
+> Aynı şeyi 5+ kez yaptığında sana **sorarım**: "her gün 08:00'de hava durumu
+> çalıştırayım mı?" veya "bu komut için kısayol oluşturayım mı?".
+> • **Hiçbir şey kendiliğinden kurulmaz** — sen "uygula" demeden olmaz.
+> • **Reddettiğin bir daha sorulmaz.**
+> • Zaten kurulu bir görev/kısayol için öneri gelmez.
+> • Kurduğun şey geri alınabilir: `zamanlanmış görevler` → `zamanlama sil: 3`,
+>   kısayol için `kısayol sil: <ad>`.
+> • Mesaj gönderen komutlar (WhatsApp/mail/dosya gönderme) **asla** öneriye dönüşmez.
+> Öneriler `ne öğrendin` raporunun sonunda da görünür.
 
 ## 📂 DOSYA
 ```
@@ -259,6 +325,17 @@ sus                                       ← konuşmayı anında keser
 - 🎙️ **Sesli mesaj** at → yazıya çevirip komut olarak işler
 - 📎 **Dosya/fotoğraf** gönder → PC'nin İndirilenler'ine kaydeder
 - `/start` → yardım menüsü
+
+## ⌨️ UZAKTAN KLAVYE / TUŞ KOMBİNASYONU (Telegram & Masaüstü)
+```
+tuş: ctrl+enter               ← Ekrana Ctrl+Enter tuş kombinasyonu basar
+tuş: enter                    ← Klavyeden Enter basar
+tuş: alt+f4                   ← Aktif pencereyi kapatır (Alt+F4)
+1 2 3 4 enter                 ← Ekrana 1 2 3 4 yazıp Enter'a basar
+1234 enter'a bas              ← Ekrana 1234 yazıp Enter'a basar
+yaz: merhaba dunya enter      ← Metni yazıp Enter basar
+```
+> Telegram'dan ekran görüntüsü alıp ekrandaki onay penceresini gördüğünde bu komutlarla uzaktan doğrudan yanıt verebilirsin.
 
 ---
 *Bu dosya: `KOMUTLAR.md` — proje kökünde durur, yeni özellik eklendikçe güncellenir.*

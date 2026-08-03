@@ -36,6 +36,7 @@ VERI_DOSYALARI = (
     'user_data.json',
     'app_cache.json',
     'capability_cache.json',
+    'custom_shortcuts.json',
 )
 
 

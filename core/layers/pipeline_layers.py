@@ -35,6 +35,7 @@ from features.file_send import (
     dosya_niyeti_coz, dosya_komutu_isle, hedef_dosyayi_coz, indeks_komutu_algila,
     calistirilabilir_mi,
 )
+from features.chat_learning import ogrenme_komutu_algila
 from features.clipboard_tools import pano_komutu
 from features.quick_tools import (
     hesapla, hesap_niyeti_algila, saat_tarih_raporu, saat_tarih_niyeti_algila,
@@ -42,6 +43,19 @@ from features.quick_tools import (
     notlari_getir, notlari_sil,
 )
 from features.screenshot_tool import ekran_goruntusu_al
+
+
+def _klavye_komutu_mu(msg: str) -> bool:
+    """
+    Tuş isteği kalıpları `core.interaction.level4_input`'ta durur (tek kaynak).
+    Import TEMBEL: o paketin `__init__`'i pywinauto zincirini çekiyor, niyet
+    katmanı bunu her açılışta ödemesin — pywinauto yoksa da çökmesin.
+    """
+    try:
+        from core.interaction.level4_input import klavye_komutu_mu
+    except Exception:
+        return False
+    return klavye_komutu_mu(msg)
 
 
 # =========================================================================
@@ -84,7 +98,15 @@ class IntentAnalyzerLayer:
         # düştüğünde yerel LLM'e danışılır (doğal dil komutlarını yakalamak için).
         self.config = config or {}
 
-    def process(self, ctx: UltronContext) -> UltronContext:
+    def process(self, ctx: UltronContext, hafif: bool = False) -> UltronContext:
+        """
+        `hafif=True`: SAF regex sınıflandırma — dosya indeksine sorulmaz,
+        öğrenilmiş kalıba bakılmaz, LLM'e danışılmaz.
+
+        Geçmiş arşivini toplu sınıflandırmak için var (yüzlerce eski mesaj için
+        indeks sorgusu açmak hem yavaş hem anlamsız: o dosyalar bugünkü diskte
+        olmayabilir).
+        """
         msg = ctx.normalized_input.lower()
 
         # 📇 Dosya indeksi yönetimi ("dosya indeksini güncelle")
@@ -93,11 +115,20 @@ class IntentAnalyzerLayer:
             ctx.confidence = 0.95
             return ctx
 
+        # 🧠 Öğrenme raporu / kalıp silme ("ne öğrendin", "şunu unut: ...").
+        # Dosya niyetinden ÖNCE bakılır: "öğrendiklerini göster" cümlesindeki
+        # "göster" fiili dosya aramasına benziyor.
+        if ogrenme_komutu_algila(ctx.normalized_input):
+            ctx.intent = "LEARNING_REPORT"
+            ctx.confidence = 0.95
+            return ctx
+
         # 📎 Dosya bul & gönder — WhatsApp/e-posta niyetlerinden ÖNCE bakılır,
         # çünkü "staj raporunu anneme mail at" cümlesi ikisine birden benziyor.
         # Karar `dosya_niyeti_coz` içinde veriliyor: zayıf sinyalli cümlelerde
         # indekste eşleşme yoksa niyet ALINMAZ, mesaj akışı bozulmaz.
-        dosya_plani = dosya_niyeti_coz(ctx.normalized_input, getattr(ctx, 'kanal', 'desktop'))
+        dosya_plani = None if hafif else \
+            dosya_niyeti_coz(ctx.normalized_input, getattr(ctx, 'kanal', 'desktop'))
         if dosya_plani:
             ctx.intent = "FILE_TRANSFER"
             ctx.confidence = 0.92
@@ -162,7 +193,7 @@ class IntentAnalyzerLayer:
             ctx.intent = "CURRENCY"
             ctx.confidence = 0.95
         # Kelime sınırı ile eşle: "prenses", "seslendirme" gibi kelimeler tetiklemesin
-        elif re.search(r'\b(ses|sesi|sesini|volume)\b', msg):
+        elif re.search(r'\b(ses|sesi|sesini|sesim|sesimi|sesine|volume|kökle|fulle|kokle)\b', msg):
             ctx.intent = "SET_VOLUME"
             ctx.confidence = 0.95
         elif medya_komutu_algila(msg):
@@ -179,6 +210,15 @@ class IntentAnalyzerLayer:
         elif any(k in msg for k in ["hatırlat", "hatırlatıcı", "alarm"]):
             ctx.intent = "CREATE_REMINDER"
             ctx.confidence = 0.90
+        # ⌨️ KLAVYE: AÇIK tuş isteği şart — çıplak kelime yetmez.
+        # Gevşek kalıp iki cümleyi aktif pencereye YAZIYORDU:
+        #   • "yeni tab aç"  → \btab\b eşleşiyordu (eylem eki opsiyoneldi)
+        #   • "şifre nedir"  → \bşifre\b eşleşiyor, "nedir" PIN sanılıyordu
+        # Bu yüzden ya bir ön ek (`tuş:`), ya bir modifier kombinasyonu,
+        # ya da tuş adının ardından açık bir eylem fiili ("bas") aranır.
+        elif _klavye_komutu_mu(msg):
+            ctx.intent = "KEYBOARD_INPUT"
+            ctx.confidence = 0.95
         elif any(k in msg for k in ["analiz raporu", "haftalık rapor", "aylık rapor", "kişisel analiz", "haftalık özet"]):
             ctx.intent = "ANALYSIS_REPORT"
             ctx.confidence = 0.90
@@ -192,18 +232,44 @@ class IntentAnalyzerLayer:
         # kelimeler SYSTEM_CONTROL'ü YANLIŞLIKLA tetiklemesin. Aksi halde bu komutlar
         # yanlış güvenlik skoru + yanlış onay kartı üretiyordu.
         elif any(k in msg for k in ["sistem", "donanım", "ram", "cpu"]) or \
-                re.search(r'\b(kapat|başlat|çalıştır|aç)\b', msg):
+                re.search(r'\b(kapat|başlat|çalıştır|aç|kilitle|uykuya|uyut)\b', msg):
+            # kilitle/uykuya: Telegram menüsündeki "🔒 PC Kilitle" ve "🌙 Uyku Modu"
+            # butonları buradan geçmezse GENERAL_CONVERSATION'a düşüp LLM'e gidiyor,
+            # model de eylemi yapmış gibi anlatıyordu.
             ctx.intent = "SYSTEM_CONTROL"
             ctx.confidence = 0.85
         else:
             ctx.intent = "GENERAL_CONVERSATION"
             ctx.confidence = 0.70
 
+        # 🧠 ÖĞRENİLMİŞ KALIP — regex bir eyleme bağlayamadıysa, kullanıcının
+        # geçmişte DÜZELTEREK öğrettiği ifadelere bak. LLM'den ÖNCE gelir:
+        # "deterministik yol her zaman LLM'den önce" (proje kuralı 1).
+        # Eşleşme sıkıdır (birebir ya da %85 kelime ortaklığı) ve mesaj gönderen
+        # niyetler öğrenilemez — yanlış kalıp yanlış kişiye mesaj demektir.
+        if ctx.intent == "GENERAL_CONVERSATION" and not hafif:
+            try:
+                from features.chat_learning import ogrenilmis_intent
+                bulunan = ogrenilmis_intent(ctx.normalized_input)
+            except Exception as e:
+                print(f"[ULTRON Ogrenme] Kalip sorgusu atlandi: {e}")
+                bulunan = None
+            if bulunan:
+                ogrenilen_intent, ornek = bulunan
+                ctx.intent = ogrenilen_intent
+                ctx.confidence = 0.75
+                ctx.intent_source = "ogrenilmis"
+                # Sessiz uygulama YASAK: kullanıcı hangi kalıbın devreye
+                # girdiğini görmeli ki yanlışsa "şunu unut" diyebilsin.
+                ctx.ogrenme_notu = f"öğrenilmiş kalıp: \"{ornek}\" → {ogrenilen_intent}"
+                return ctx
+
         # LLM DESTEĞİ: Regex net bir eyleme bağlayamadıysa (GENERAL_CONVERSATION),
         # yerel LLM'e sınıflandırma danış. Doğal dille yazılmış komutları
         # ("bana motivasyon şarkısı koy") yakalar. Ollama yoksa/yavaşsa sessizce
         # regex sonucunda kalır — akış asla bozulmaz.
-        if ctx.intent == "GENERAL_CONVERSATION" and self.config.get('llm_intent_enabled'):
+        if ctx.intent == "GENERAL_CONVERSATION" and not hafif and \
+                self.config.get('llm_intent_enabled'):
             try:
                 from features.llm_intent import llm_intent_coz
                 sonuc = llm_intent_coz(ctx.normalized_input, self.config)
@@ -218,6 +284,21 @@ class IntentAnalyzerLayer:
                 print(f"[Ultron Intent] LLM niyet çözümü atlandı: {e}")
 
         return ctx
+
+
+def arsiv_niyeti_tahmin_et(metin: str) -> str:
+    """
+    Eski bir mesajın niyetini SAF REGEX ile tahmin eder (öğrenme arşivi için).
+
+    Niyet tanımının tek kaynağı bu katmandır; geçmişi ayrı bir sınıflandırıcıyla
+    etiketlemek iki ayrı gerçek üretirdi. Aynı zincir, `hafif` modda çalıştırılır.
+    """
+    try:
+        ctx = UltronContext(raw_input=metin, normalized_input=metin)
+        return IntentAnalyzerLayer({}).process(ctx, hafif=True).intent
+    except Exception as e:
+        print(f"[ULTRON Ogrenme] Gecmis niyet tahmini basarisiz: {e}")
+        return "GENERAL_CONVERSATION"
 
 
 # =========================================================================
@@ -290,7 +371,27 @@ class MemoryContextLayer:
                 except Exception:
                     memories = []
         ctx.user_memories = memories
+        self._ogrenmeyi_ekle(ctx)
         return ctx
+
+    @staticmethod
+    def _ogrenmeyi_ekle(ctx: UltronContext) -> None:
+        """
+        Geçmiş konuşma arşivinden geri çağırma + gözlenmiş alışkanlıklar.
+
+        SADECE LLM'in cevaplayacağı niyetlerde çalışır: "chrome aç" komutunun
+        cevabını deterministik araç üretiyor, arşive sorgu atmak boşuna
+        gecikmedir. Hata durumunda sessizce boş geçilir — öğrenme bir
+        iyileştirmedir, tek nokta arıza değil.
+        """
+        if ctx.intent not in ("GENERAL_CONVERSATION", "WEB_SEARCH"):
+            return
+        try:
+            from features import chat_learning
+            ctx.ogrenme_blogu = chat_learning.prompt_blogu(ctx.normalized_input, k=3)
+            ctx.ogrenme_profili = chat_learning.profil_satirlari()
+        except Exception as e:
+            print(f"[ULTRON Ogrenme] Gecmis baglami eklenemedi: {e}")
 
 
 # =========================================================================
@@ -307,6 +408,30 @@ class SecurityAnalyzerLayer:
             ctx.security_score = 5
             ctx.security_level = "SAFE"
             ctx.security_message = "✅ **[GÜVENLİ]** Medya kontrolü uygulanıyor."
+            return ctx
+
+        # ⌨️ KLAVYE EMÜLASYONU: gezinme/düzenleme tuşları geri alınabilir → SAFE.
+        # Ama pencere kapatan, silen, kilit açan tuşlar geri alınamaz VE hangi
+        # pencereye gittiğini kullanıcı (özellikle telefondayken) görmüyor.
+        # Risk listesi tek yerde: level4_input.riskli_tus_mu.
+        if ctx.intent == "KEYBOARD_INPUT":
+            from core.interaction.level4_input import riskli_tus_mu
+            riskli, sebep = riskli_tus_mu(ctx.normalized_input)
+            if riskli:
+                ctx.security_score = 70
+                ctx.security_level = "CONFIRM"
+                ctx.security_message = (
+                    f"⌨️ **[UZAKTAN TUŞ ONAYI — SKOR 70/100]**\n"
+                    f"• İstek: `{ctx.normalized_input}`\n"
+                    f"• Risk: {sebep}\n"
+                    f"• Tuş **o an önde olan pencereye** gider. Hangi pencere olduğunu "
+                    f"görmüyorsanız önce `ekran görüntüsü al` deyin.\n\n"
+                    f"Onaylıyor musunuz?"
+                )
+            else:
+                ctx.security_score = 10
+                ctx.security_level = "SAFE"
+                ctx.security_message = "⌨️ **[GÜVENLİ]** Klavye tuş emülasyonu uygulanıyor."
             return ctx
 
         # 1. Tier: 100+ (Kritik - Manuel Onay Şartı)
@@ -490,6 +615,10 @@ class ExecutionEngineLayer:
                 ruh_hali, _skor = ruh_hali_analiz(ctx.normalized_input)
                 if ruh_hali != 'belirsiz':
                     ruh_hali_kaydet(db_cursor, db_conn, ruh_hali, ctx.normalized_input)
+                    # Öğrenme arşivi de aynı damgayı alsın — duyguyu ayrı bir
+                    # tabloda tutmak "ne zaman/neyden bahsederken" sorusunu
+                    # cevaplanamaz bırakıyordu.
+                    ctx.ruh_hali = ruh_hali
             except Exception as e:
                 print(f"[Ultron Mood] Ruh hali kaydedilemedi: {e}")
 
@@ -625,6 +754,16 @@ class PromptGeneratorLayer:
         if ctx.execution_result and ctx.intent == "WEB_SEARCH":
             web_context_str = f"\n[CANLI İNTERNET VERİLERİ]:\n{ctx.execution_result}\nLütfen bu canlı verileri temel alarak Türkçe net ve detaylı yanıt ver.\n"
 
+        # 🧠 ÖĞRENME KATMANI — geçmiş konuşma arşivi + gözlenmiş alışkanlıklar.
+        # `recent_context` yalnızca SON 6 mesajdır ve pencere kapanınca uçar;
+        # bu blok aylar öncesinden gelir.
+        ogrenme_str = ctx.ogrenme_blogu or ""
+        if ctx.ogrenme_profili:
+            ogrenme_str += ("\n[ULTRON'UN GÖZLEMLERİ — kullanıcının alışkanlıkları]\n" +
+                            "\n".join(f"- {s}" for s in ctx.ogrenme_profili) +
+                            "\nBunlar sayımdan gelen GÖZLEMLERDİR; kullanıcı sormadıkça "
+                            "sayıp dökme, sadece cevabını buna göre kişiselleştir.\n")
+
         # Pano görevi (özetle/çevir): içerik + görev LLM'e verilir
         if ctx.entities.get('pano_icerik'):
             web_context_str += (f"\n[PANO İÇERİĞİ]:\n{ctx.entities['pano_icerik'][:3000]}\n"
@@ -651,6 +790,7 @@ class PromptGeneratorLayer:
             f"Ama yeteneklerini SORANA yukarıdaki gerçek yeteneklerini anlat.\n"
             f"3. Emin olmadığın bilgiyi uydurma; bilmiyorsan bilmediğini söyle.\n"
             f"[KULLANICI HAFIZASI]\n{mem_str}\n"
+            f"{ogrenme_str}"
             f"{chat_history_str}"
             f"{web_context_str}"
             f"Kullanıcı Komutu: {ctx.normalized_input}\n"

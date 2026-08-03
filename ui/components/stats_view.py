@@ -206,8 +206,13 @@ class StatsViewWidget(QWidget):
         self.card_hafiza = StatCard("🧠", "HAFIZA KAYDI")
         self.card_rehber = StatCard("📇", "REHBER KİŞİSİ")
         self.card_rutin = StatCard("🎛️", "ÖZEL RUTİN")
+        # 🧠 Öğrenme katmanı kartları (features/chat_learning + suggestions)
+        self.card_arsiv = StatCard("🗄️", "ARŞİVLENMİŞ KONUŞMA")
+        self.card_kalip = StatCard("🔁", "ÖĞRENİLEN KALIP")
+        self.card_oneri = StatCard("💡", "BEKLEYEN ÖNERİ")
         for i, card in enumerate([self.card_toplam, self.card_bugun, self.card_hatirlatma,
-                                  self.card_hafiza, self.card_rehber, self.card_rutin]):
+                                  self.card_hafiza, self.card_rehber, self.card_rutin,
+                                  self.card_arsiv, self.card_kalip, self.card_oneri]):
             grid.addWidget(card, i // 3, i % 3)
         layout.addLayout(grid)
 
@@ -248,6 +253,13 @@ class StatsViewWidget(QWidget):
         self.card_hafiza.set_value(stats.get('hafiza_kaydi', 0))
         self.card_rehber.set_value(stats.get('rehber_kisi', 0))
         self.card_rutin.set_value(stats.get('ozel_rutin', 0))
+
+        # Öğrenme metrikleri gelmeyebilir (ogrenme.db açılamadıysa) — 0 göster,
+        # kartı gizleme: kaybolan kart "bozuldu mu?" sorusu doğurur.
+        ogrenme = stats.get('ogrenme') or {}
+        self.card_arsiv.set_value(ogrenme.get('konusma', 0))
+        self.card_kalip.set_value(ogrenme.get('kalip', 0))
+        self.card_oneri.set_value((ogrenme.get('oneri') or {}).get('bekleyen', 0))
 
         self.chart.set_data(stats.get('gunluk_aktivite', []))
 

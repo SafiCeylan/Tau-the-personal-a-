@@ -370,7 +370,8 @@ class TelegramWorkerThread(QThread):
 
         bot_adi = tg.bot_bilgisi(token)
         if bot_adi:
-            self.status_signal.emit(f"📱 Telegram köprüsü aktif: @{bot_adi}")
+            tg.set_bot_commands(token)
+            self.status_signal.emit(f"📱 Telegram köprüsü aktif: @{bot_adi} (Hızlı Komut Menüsü Kaydedildi)")
         else:
             self.status_signal.emit("⚠️ Telegram token doğrulanamadı — köprü kapalı.")
             return
@@ -432,24 +433,267 @@ class TelegramWorkerThread(QThread):
         self._handle_text_command(tg, token, chat_id, text)
 
     def _handle_text_command(self, tg, token, chat_id, text):
-        if text in ('/start', '/help', '/yardim'):
+        cmd_lower = text.lower().strip()
+
+        # 🏠 Ana Menü
+        if cmd_lower in ('/start', '/help', '/yardim', '/menu', '/klavye', '🏠 ana menü', '🎛️ hızlı menü'):
             tg.send_message(
                 token, chat_id,
-                "🔴 **ULTRON NEURAL CORE — Telegram Köprüsü**\n\n"
-                "Masaüstündeki her komut buradan da çalışır:\n"
-                "• `sabah brifingi` — hava + döviz + hatırlatmalar\n"
-                "• `yarın 14:00 toplantıyı hatırlat`\n"
-                "• `annem'e whatsapp'tan mesaj gönder: naber`\n"
-                "• `ekran görüntüsü al` — PC ekranı fotoğraf olarak gelir 📸\n"
-                "• `staj raporunu bul` — PC'ndeki dosyayı arar, nerede olduğunu söyler 🔍\n"
-                "• `1'i bana gönder` — bulduğu dosyayı telefonuna yollar 📤\n"
-                "• `2'yi anneme mail at` — dosyayı e-posta eki olarak gönderir (onay ister)\n"
-                "• 🎙️ **Sesli mesaj** at — yazıya çevirip komut olarak işlerim\n"
-                "• 📎 **Dosya/fotoğraf** gönder — PC'nin İndirilenler'ine kaydederim\n"
-                "• `hava durumu nedir` / herhangi bir soru (LLM)\n\n"
-                "Riskli komutlar ✅/❌ butonlarıyla onayınızı bekler."
+                "🔴 **ULTRON NEURAL CORE — Telegram Kategorili Komut Menüsü**\n\n"
+                "Aşağıdaki menü kategorilerinden birini seçerek veya kısayol butonlarını kullanarak bilgisayarınızı uzaktan yönetebilirsiniz:\n\n"
+                "• 🖥️ **Pencere & Gezinme** (`/pencere` — Alt+Tab, Win+D, Win+E)\n"
+                "• ✍️ **Yazı & Düzenleme** (`/duzenleme` — Ctrl+C, Ctrl+V, Ctrl+Z)\n"
+                "• 🌐 **Tarayıcı & Sekme** (`/tarayici` — Ctrl+T, Ctrl+W, F5)\n"
+                "• 🎵 **Medya & Ses** (`/medya` — Oynat, Duraklat, Ses)\n"
+                "• 💻 **Sistem & Güç** (`/sistem_menu` — CPU/RAM, Chrome, CMD)\n"
+                "• 📊 **Bilgi & Brifing** (`/brifing_menu`)",
+                reply_markup=tg.ana_menu_klavyesi()
             )
             return
+
+        # 🖥️ Pencere & Gezinme Menüsü
+        if cmd_lower in ('/pencere', '🖥️ pencere & gezinme'):
+            tg.send_message(
+                token, chat_id,
+                "🖥️ **PENCERE VE MASAÜSTÜ GEZİNME MENÜSÜ**\n\n"
+                "Aktif pencereler arası geçiş yapın, masaüstünü gösterin veya pencereleri hizalayın:",
+                reply_markup=tg.pencere_gezinme_klavyesi()
+            )
+            return
+
+        # ✍️ Yazı & Düzenleme Menüsü
+        if cmd_lower in ('/duzenleme', '✍️ yazı & düzenleme'):
+            tg.send_message(
+                token, chat_id,
+                "✍️ **YAZI VE DÜZENLEME KISAYOLLARI MENÜSÜ**\n\n"
+                "Kopyala, yapıştır, geri al, kaydet ve tuş darbeleri:",
+                reply_markup=tg.yazi_duzenleme_klavyesi()
+            )
+            return
+
+        # 🌐 Tarayıcı & Sekme Menüsü
+        if cmd_lower in ('/tarayici', '🌐 tarayıcı & sekme'):
+            tg.send_message(
+                token, chat_id,
+                "🌐 **TARAYICI VE SEKME KISAYOLLARI MENÜSÜ**\n\n"
+                "Sekme açma, kapatma, yenileme ve tam ekran kontrolleri:",
+                reply_markup=tg.tarayici_klavyesi()
+            )
+            return
+
+        # 🎵 Medya & Ses Menüsü
+        if cmd_lower in ('/medya', '📸 ekran & medya menüsü', '🎵 medya & ses'):
+            tg.send_message(
+                token, chat_id,
+                "🎵 **EKRAN VE MEDYA YÖNETİM MENÜSÜ**\n\n"
+                "Ekran görüntüsü alma ve medya kontrolleri:",
+                reply_markup=tg.medya_klavyesi()
+            )
+            return
+
+        # 💻 Sistem & Güç Menüsü
+        if cmd_lower in ('/sistem_menu', '💻 sistem & güç', '💻 sistem & guc'):
+            tg.send_message(
+                token, chat_id,
+                "💻 **SİSTEM VE UYGULAMA YÖNETİM MENÜSÜ**\n\n"
+                "CPU/RAM durumu, hızlı uygulama açma ve güç kontrolleri:",
+                reply_markup=tg.sistem_klavyesi()
+            )
+            return
+
+        # 📊 Bilgi & Brifing Menüsü
+        if cmd_lower in ('/brifing_menu', '📊 bilgi & brifing'):
+            tg.send_message(
+                token, chat_id,
+                "📊 **BİLGİ VE BRİFİNG MENÜSÜ**\n\n"
+                "Hava, döviz, haberler, hatırlatmalar ve notlar:",
+                reply_markup=tg.brifing_klavyesi()
+            )
+            return
+
+        # 🎛️ Menüyü Kapat — hızlı buton takımını gizler
+        if cmd_lower in ('/menu_kapat', '🎛️ menüyü kapat', 'menüyü kapat'):
+            tg.send_message(
+                token, chat_id,
+                "🎛️ Hızlı buton takımı gizlendi. Geri açmak için `/menu` yazman yeterli.",
+                reply_markup={"remove_keyboard": True}
+            )
+            return
+
+        # ⭐ Özel Kısayollarım Menüsü
+        if cmd_lower in ('/ozel', '⭐ özel kısayollarım', 'özel kısayollarım'):
+            tg.send_message(
+                token, chat_id,
+                "⭐ **ÖZEL KISAYOLLARIM MENÜSÜ**\n\n"
+                "Kendi eklediğiniz özel tuş kombinasyonları ve komutlar aşağıdadır.\n\n"
+                "• **Yeni Ekleme:** `kısayol ekle: VS Code = code` veya `kısayol ekle: Photoshop = ctrl+alt+shift+p`\n"
+                "• **Silme:** `kısayol sil: VS Code`",
+                reply_markup=tg.ozel_klavye()
+            )
+            return
+
+        if cmd_lower in ('➕ kısayol ekle', '/kisayol_ekle'):
+            tg.send_message(
+                token, chat_id,
+                "➕ **YENİ ÖZEL KİSAYOL EKLEME**\n\n"
+                "Lütfen eklemek istediğiniz kısayolu şu formatta yazıp gönderin:\n\n"
+                "`kısayol ekle: Buton Adı = tuş veya komut`\n\n"
+                "**Örnekler:**\n"
+                "• `kısayol ekle: Photoshop = ctrl+alt+shift+p`\n"
+                "• `kısayol ekle: Terminal = ctrl+alt+t`\n"
+                "• `kısayol ekle: Spotify = spotify`",
+                reply_markup=tg.ozel_klavye()
+            )
+            return
+
+        if cmd_lower in ('🗑️ kısayol sil', '/kisayol_sil'):
+            tg.send_message(
+                token, chat_id,
+                "🗑️ **ÖZEL KISAYOL SİLME**\n\n"
+                "Silmek istediğiniz kısayolun adını şu formatta gönderin:\n\n"
+                "`kısayol sil: Buton Adı`\n\n"
+                "**Örnek:** `kısayol sil: Photoshop`",
+                reply_markup=tg.ozel_klavye()
+            )
+            return
+
+        # Kısayol ekleme kalıbı ("kısayol ekle: X = Y")
+        import re
+        m_ekle = re.search(r'kısayol\s*ekle\s*:\s*([^=]+)=\s*(.+)', text, re.IGNORECASE)
+        if m_ekle:
+            from features import custom_shortcuts
+            ad_str = m_ekle.group(1).strip()
+            komut_str = m_ekle.group(2).strip()
+            ok, msg_res = custom_shortcuts.ekle(ad_str, komut_str)
+            tg.send_message(token, chat_id, msg_res, reply_markup=tg.ozel_klavye())
+            return
+
+        # Kısayol silme kalıbı ("kısayol sil: X")
+        m_sil = re.search(r'kısayol\s*sil\s*:\s*(.+)', text, re.IGNORECASE)
+        if m_sil:
+            from features import custom_shortcuts
+            ad_str = m_sil.group(1).strip()
+            ok, msg_res = custom_shortcuts.sil(ad_str)
+            tg.send_message(token, chat_id, msg_res, reply_markup=tg.ozel_klavye())
+            return
+
+        # Gelişmiş Hızlı Buton ve Slash Komut Eşlemeleri (40+ Kısayol)
+        quick_map = {
+            # Pencere & Gezinme Kısayolları
+            "/alt_tab": "alt+tab bas",
+            "🔄 alt+tab": "alt+tab bas",
+            "🔙 alt+shift+tab": "alt+shift+tab bas",
+            "/win_d": "win+d bas",
+            "🖥️ win+d": "win+d bas",
+            "/win_e": "win+e bas",
+            "📁 win+e": "win+e bas",
+            "📋 win+v": "win+v bas",
+            "📸 win+shift+s": "win+shift+s bas",
+            "⚙️ ctrl+shift+esc": "ctrl+shift+esc bas",
+            "/alt_f4": "alt+f4 bas",
+            "❌ alt+f4": "alt+f4 bas",
+            "🔒 win+l": "win+l bas",
+            "⬆️ win+up": "win+up bas",
+            "⬇️ win+down": "win+down bas",
+            "⬅️ win+left": "win+left bas",
+            "➡️ win+right": "win+right bas",
+
+            # Yazı & Düzenleme Kısayolları
+            "/ctrl_c": "ctrl+c bas",
+            "📋 ctrl+c": "ctrl+c bas",
+            "/ctrl_v": "ctrl+v bas",
+            "📋 ctrl+v": "ctrl+v bas",
+            "/ctrl_x": "ctrl+x bas",
+            "✂️ ctrl+x": "ctrl+x bas",
+            "↩️ ctrl+z": "ctrl+z bas",
+            "↪️ ctrl+y": "ctrl+y bas",
+            "/ctrl_a": "ctrl+a bas",
+            "🅰️ ctrl+a": "ctrl+a bas",
+            "/ctrl_s": "ctrl+s bas",
+            "💾 ctrl+s": "ctrl+s bas",
+            "🔍 ctrl+f": "ctrl+f bas",
+            "🖨️ ctrl+p": "ctrl+p bas",
+            "/enter": "enter bas",
+            "↵ enter": "enter bas",
+            "/alt_enter": "alt+enter bas",
+            "⌨️ alt+enter": "alt+enter bas",
+            "/tab": "tab bas",
+            "↹ tab": "tab bas",
+            "/esc": "escape bas",
+            "⎋ escape": "escape bas",
+            "/backspace": "backspace bas",
+            "🔙 backspace": "backspace bas",
+            "🗑️ delete": "delete bas",
+
+            # Tarayıcı & Sekme Kısayolları
+            "➕ ctrl+t": "ctrl+t bas",
+            "❌ ctrl+w": "ctrl+w bas",
+            "↩️ ctrl+shift+t": "ctrl+shift+t bas",
+            "➡️ ctrl+tab": "ctrl+tab bas",
+            "⬅️ ctrl+shift+tab": "ctrl+shift+tab bas",
+            "🔄 f5": "f5 bas",
+            "🌐 ctrl+n": "ctrl+n bas",
+            "🕵️ ctrl+shift+n": "ctrl+shift+n bas",
+            "🖥️ f11": "f11 bas",
+
+            # Ekran & Medya Kontrolleri
+            "/ekran": "ekran görüntüsü al",
+            "📸 ekran görüntüsü al": "ekran görüntüsü al",
+            "📸 ekran görüntüsü": "ekran görüntüsü al",
+            "⏯️ oynat/duraklat": "müziği duraklat",
+            "/ses_yukselt": "sesini artır",
+            "🔊 ses yükselt (%10)": "sesini artır",
+            "/ses_dusur": "sesini kıs",
+            "🔉 ses düşür (%10)": "sesini kıs",
+            "/ses_sessiz": "sesi kapat",
+            "🔇 sesi sustur": "sesi kapat",
+            "sonraki şarkı": "sonraki şarkı",
+            "⏭️ sonraki şarkı": "sonraki şarkı",
+            "önceki şarkı": "önceki şarkı",
+            "⏮️ önceki şarkı": "önceki şarkı",
+
+            # Sistem & Uygulamalar
+            "/sistem": "sistem durumu nedir",
+            "📊 sistem durumu": "sistem durumu nedir",
+            "📊 sistem istatistikleri": "sistem durumu nedir",
+            "/internet": "internet var mı",
+            "🌐 i̇nternet kontrolü": "internet var mı",
+            "🌐 internet kontrolü": "internet var mı",
+            "/chrome": "chrome aç",
+            "🌐 chrome'u aç": "chrome aç",
+            "/cmd": "cmd aç",
+            "💻 terminal / cmd aç": "cmd aç",
+            "/indirilenler": "indirilenler klasörünü aç",
+            "📂 i̇ndirilenler klasörü": "indirilenler klasörünü aç",
+            "📂 indirilenler klasörü": "indirilenler klasörünü aç",
+            "🧮 hesap makinesi aç": "hesap makinesi aç",
+            "/kilitle": "bilgisayarı kilitle",
+            "🔒 pc kilitle": "bilgisayarı kilitle",
+            "/uyku": "bilgisayarı uykuya al",
+            "🌙 uyku modu": "bilgisayarı uykuya al",
+
+            # Brifing & Bilgi
+            "/brifing": "sabah brifingi",
+            "☀️ sabah brifingi": "sabah brifingi",
+            "/hava": "hava durumu nedir",
+            "🌦️ hava durumu": "hava durumu nedir",
+            "/doviz": "dolar kaç TL",
+            "💱 dolar & euro kuru": "dolar kaç TL",
+            "/haberler": "son haberler neler",
+            "📰 son haberler": "son haberler neler",
+            "/hatirlatmalar": "hatırlatmalarımı göster",
+            "⏰ hatırlatmalarım": "hatırlatmalarımı göster",
+            "/notlar": "notlarımı göster",
+            "📋 notlarım": "notlarımı göster",
+        }
+
+        if cmd_lower in quick_map:
+            text = quick_map[cmd_lower]
+        else:
+            from features import custom_shortcuts
+            ozel_komut = custom_shortcuts.komut_bul(text)
+            if ozel_komut:
+                text = ozel_komut
 
         # Bekleyen onay varken başka mesaj gelirse güvenlik gereği iptal et
         if chat_id in self.pending:
@@ -661,6 +905,14 @@ class AssistantController:
             self.db.log_conversation(soru, cevap)
         except Exception as e:
             print(f"[TAU] Sohbet loglanamadı: {e}")
+        # 🧠 Öğrenme arşivindeki kaydın cevabını tamamla. Engine turu kaydettiğinde
+        # masaüstü cevabı HENÜZ ÜRETİLMEMİŞTİ (streaming) — cevapsız bir arşiv,
+        # "geçen sefer ne demiştin" sorusunu cevaplayamaz.
+        try:
+            from features import chat_learning
+            chat_learning.cevabi_tamamla("desktop", soru, cevap)
+        except Exception as e:
+            print(f"[ULTRON Ogrenme] Cevap arsive yazilamadi: {e}")
 
     def get_reminders(self):
         self.cursor.execute("""
@@ -728,6 +980,17 @@ class AssistantController:
                       (gun.strftime('%Y-%m-%d') + '%',))
             aktivite.append((GUN_KISA[gun.weekday()], c.fetchone()[0]))
         stats['gunluk_aktivite'] = aktivite
+
+        # 🧠 Öğrenme katmanı — ayrı veritabanında (ogrenme.db) yaşar.
+        # Örüntüler önbelleklidir; bu çağrı her yenilemede SQL taraması yapmaz.
+        try:
+            from features import chat_learning, suggestions
+            ogrenme = chat_learning.istatistik()
+            ogrenme['oneri'] = suggestions.durum(db_cursor=c)
+            stats['ogrenme'] = ogrenme
+        except Exception as e:
+            print(f"[Ultron Stats] Ogrenme metrikleri alinamadi: {e}")
+            stats['ogrenme'] = {}
 
         stats['mood'] = self.get_mood_stats()
         return stats

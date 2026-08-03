@@ -38,6 +38,20 @@ class UltronContext:
     # 5. Memory Context
     user_memories: List[str] = field(default_factory=list)
     recent_context: List[Dict[str, str]] = field(default_factory=list)
+    # Öğrenme katmanı (features/chat_learning.py):
+    #   ogrenme_blogu   → geçmiş konuşma arşivinden geri çağrılanlar (prompt'a girer)
+    #   ogrenme_profili → gözlenmiş alışkanlıklar ("sabahları brifing ister")
+    # İkisi de yalnızca LLM'in cevaplayacağı niyetlerde doldurulur; deterministik
+    # komutlar arşive sorgu atıp boşuna yavaşlamaz.
+    ogrenme_blogu: str = ""
+    ogrenme_profili: List[str] = field(default_factory=list)
+    # Öğrenilmiş bir kalıp niyeti belirlediyse kullanıcıya BİLDİRİLİR.
+    # Sessiz öğrenme = bir gün sessizce yanlış komut çalışması.
+    ogrenme_notu: str = ""
+    # O turda ölçülen duygu — yalnızca gerçek sohbette dolar (komut cümlesinin
+    # duygusu yoktur). Arşive turun yanına yazılır: "ne zaman / neyden
+    # bahsederken" sorusu ancak saat ve metinle AYNI satırda cevaplanabilir.
+    ruh_hali: str = ""
     
     # 6. Security Analyzer
     security_score: int = 0  # 0-100+

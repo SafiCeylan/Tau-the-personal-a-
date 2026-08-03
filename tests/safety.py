@@ -7,7 +7,14 @@ doğrudan çağırıyor. Zırh olmadan `python -m pytest tests/` komutu:
   • açık Chrome'u GERÇEKTEN kapatır (taskkill + psutil.kill),
   • sistem ses seviyesini GERÇEKTEN değiştirir (pycaw),
   • uygulama açar, tarayıcı sekmesi açar, medya tuşu gönderir,
-  • bilgisayarı kilitler.
+  • bilgisayarı kilitler,
+  • ⌨️ AKTİF PENCEREYE TUŞ BASAR (Ctrl+Enter, "1234"+Enter…),
+  • 🧠 kullanıcının GERÇEK öğrenme arşivine test cümleleri yazar.
+
+⚠️ ZIRH MODÜL BAZLIDIR. `system_control` içindeki `ctypes`'ı taklitlemek
+`level4_input`'u KORUMAZ — o kendi `ctypes`'ını import eder. Klavye testleri
+eklenince bu delik açıldı ve testler gerçekten tuş basmaya başladı. Yeni bir
+modül OS'a doğrudan dokunuyorsa buraya da bir satır eklenmeli.
 
 Çözüm: yürütmenin EN DİBİNDEKİ işletim sistemi çağrıları taklitle değiştirilir.
 Üstteki iş mantığı (regex, niyet, mesaj üretimi) gerçek kalır — yani testler
@@ -154,6 +161,48 @@ def guvenlik_zirhi_kur():
     if getattr(sc, 'PYCAW_AVAILABLE', False):
         hedefler.append(mock.patch.object(sc, 'AudioUtilities', _SahteAudioUtilities))
 
+    # ⌨️ AIP Level 4 — klavye emülasyonu. İki ayrı çıkış var:
+    #   • keybd_event / MapVirtualKeyW  → level4_input'un KENDİ ctypes'ı
+    #   • pywinauto.keyboard.send_keys  → fonksiyon içinde import ediliyor,
+    #     bu yüzden kaynak modülde yamalanır (yerel isim değil).
+    try:
+        from core.interaction import level4_input as _l4
+        hedefler.append(mock.patch.object(_l4, 'ctypes', _SahteCtypes()))
+    except Exception as e:  # pywinauto/pencere ortamı yoksa modül yüklenmeyebilir
+        print(f"[Zırh] level4_input yamalanamadı: {e}")
+
+    try:
+        import pywinauto.keyboard  # noqa: F401
+        hedefler.append(mock.patch('pywinauto.keyboard.send_keys',
+                                   _kaydet('keyboard.send_keys')))
+    except Exception as e:
+        print(f"[Zırh] pywinauto.keyboard yamalanamadı: {e}")
+
+    # 🧠 ÖĞRENME ARŞİVİ — testler GERÇEK `%APPDATA%\ULTRON\ogrenme.db` dosyasına
+    # yazmasın. Zırhsız hâlde niyet katmanından geçen her test cümlesi kullanıcının
+    # gerçek arşivine düşüyor ve "ne öğrendin" raporunu test verisiyle kirletiyordu.
+    # (Zırh yalnızca OS'u değil, KALICI VERİYİ de korumalı.)
+    try:
+        from features import chat_learning as _cl
+        hedefler.append(mock.patch.object(_cl, '_db_yolu',
+                                          lambda: _gecici_ogrenme_db()))
+    except Exception as e:
+        print(f"[Zırh] chat_learning yamalanamadı: {e}")
+
+    # 💡 ÖNERİ KARARLARI ve ⚡ ÖZEL KISAYOLLAR — ikisi de kullanıcının gerçek
+    # `%APPDATA%\ULTRON` klasörüne JSON yazar. Öğrenme raporu artık öneri
+    # ürettiği için, raporu çağıran HER test gösterilen listeyi diske
+    # işaretliyor; kısayol önerisini kabul eden bir test ise kullanıcının
+    # menüsüne gerçek bir buton ekler.
+    for _modul_adi in ('suggestions', 'custom_shortcuts'):
+        try:
+            _modul = __import__(f'features.{_modul_adi}', fromlist=[_modul_adi])
+            hedefler.append(mock.patch.object(
+                _modul, '_dosya_yolu',
+                lambda _ad=_modul_adi: _gecici_veri_dosyasi(f'{_ad}.json')))
+        except Exception as e:
+            print(f"[Zırh] {_modul_adi} yamalanamadı: {e}")
+
     for p in hedefler:
         p.start()
         _patcher_listesi.append(p)
@@ -170,6 +219,31 @@ def guvenlik_zirhi_kaldir():
         except Exception:
             pass
     _kurulu = False
+
+
+_gecici_ogrenme_yolu = None
+
+
+def _gecici_ogrenme_db() -> str:
+    """Zırh süresince kullanılacak tek kullanımlık öğrenme veritabanı yolu."""
+    global _gecici_ogrenme_yolu
+    if _gecici_ogrenme_yolu is None:
+        import tempfile
+        _gecici_ogrenme_yolu = os.path.join(
+            tempfile.mkdtemp(prefix='ultron_test_ogrenme_'), 'ogrenme.db')
+    return _gecici_ogrenme_yolu
+
+
+_gecici_veri_dizini = None
+
+
+def _gecici_veri_dosyasi(dosya_adi: str) -> str:
+    """Zırh süresince JSON durum dosyaları için tek kullanımlık dizin."""
+    global _gecici_veri_dizini
+    if _gecici_veri_dizini is None:
+        import tempfile
+        _gecici_veri_dizini = tempfile.mkdtemp(prefix='ultron_test_veri_')
+    return os.path.join(_gecici_veri_dizini, dosya_adi)
 
 
 def _kaydet(etiket):

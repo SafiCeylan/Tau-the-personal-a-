@@ -145,13 +145,21 @@ def dosya_ac(metin="", sorgu=None, kanal="desktop", **_):
 
 @arac_kaydet(
     "dosya_ara",
-    "Bilgisayarda dosya arar ve bulursa açar. (Sıra: SYSTEM_CONTROL'dan ÖNCE.)",
+    "Bilgisayarda dosya arar ve bulursa gösterir/açar. (Sıra: SYSTEM_CONTROL'dan ÖNCE.)",
     {"sorgu": "aranacak dosya adı/türü"},
     intent="FILE_SEARCH",
 )
 def dosya_ara(metin="", sorgu=None, **_):
-    islendi, cevap = dosya_bul_ve_islet(sorgu or metin)
-    return _dosya_sonucu(cevap) if islendi else AracSonuc.islenmedi()
+    s = sorgu or metin
+    islendi, cevap = dosya_bul_ve_islet(s)
+    if islendi:
+        return _dosya_sonucu(cevap)
+    # Klasör bazlı arama (Downloads vb.) sonuç vermediyse, indeksten genel arama yap
+    toplam = file_index.sonuc_sayisi(s or '')
+    sonuclar = file_index.ara(s or '', limit=10)
+    if sonuclar:
+        return AracSonuc.ok(file_index.sonuclari_bicimle(sonuclar, "Bulunan dosyalar", toplam=toplam))
+    return AracSonuc.ok(f"🔍 `{s}` için eşleşen dosya bulunamadı.", hata_tipi=BULUNAMADI)
 
 
 @arac_kaydet(
@@ -352,10 +360,15 @@ def not_yonet(metin="", islem=None, icerik=None, db_cursor=None, db_conn=None, *
 # =========================================================================
 
 @arac_kaydet(
-    "medya_kontrol", "Çalan medyayı duraklatır, devam ettirir veya geçer.",
-    {"aksiyon": "playpause|next|prev"}, intent="MEDIA_CONTROL",
+    "medya_kontrol", "Çalan medyayı duraklatır, devam ettirir, sesi ayarlar veya geçer.",
+    {"aksiyon": "playpause|next|prev|ses seviyesi komutu"}, intent="MEDIA_CONTROL",
 )
 def medya(metin="", aksiyon=None, **_):
+    sorgu = aksiyon or metin or ""
+    if any(k in sorgu.lower() for k in ["ses", "%", "yüzde", "seviye", "volume"]):
+        islendi, cevap = sistem_komutu_algila(metin or (f"sesi {sorgu} yap" if "ses" not in sorgu.lower() else sorgu))
+        if islendi:
+            return AracSonuc.ok(cevap)
     hedef = aksiyon or medya_komutu_algila(metin) or "playpause"
     basarili, cevap = medya_kontrol(hedef)
     return AracSonuc(islendi=True, basarili=basarili, mesaj=cevap)
@@ -363,8 +376,8 @@ def medya(metin="", aksiyon=None, **_):
 
 @arac_kaydet(
     "uygulama_calistir",
-    "Uygulama açar/kapatır, ses seviyesini ayarlar, müzik çalar.",
-    {"uygulama": "uygulama adı", "sarki": "çalınacak şarkı"},
+    "Sistem komutu çalıştırır: uygulama aç/kapat, ses seviyesi ayarla, müzik çal, sistem bilgilerini göster.",
+    {"metin": "doğal dil komutu (örn. 'chrome aç', 'sesi %50 yap', 'sistem bilgileri', 'spotify kapat')"},
     intent=("SYSTEM_CONTROL", "SET_VOLUME", "PLAY_MUSIC"),
 )
 def uygulama_calistir(metin="", uygulama=None, sarki=None, **_):
@@ -427,6 +440,48 @@ def odak_modu(metin="", aksiyon=None, dakika=None, **_):
         veri['focus_minutes'] = int(dakika)
     # Asıl zamanlayıcı UI tarafında kurulur; mesaj orada ezilir.
     return AracSonuc.ok("🎯 Odak modu isteği alındı.", **veri)
+
+
+@arac_kaydet(
+    "klavye_tusu",
+    "Klavyeden tuş basar veya tuş kombinasyonu/metin gönderir (ctrl+enter, enter, alt+f4, 1234 enter vb.).",
+    {"metin": "tuş kombinasyonu veya yazılacak metin"},
+    intent="KEYBOARD_INPUT",
+)
+def klavye_tusu(metin="", **_):
+    from core.interaction import level4_input
+    basarili, cevap = level4_input.send_keyboard_input(metin)
+    return AracSonuc.ok(cevap) if basarili else AracSonuc.hata(cevap)
+
+
+@arac_kaydet(
+    "ogrenme_raporu",
+    "Geçmiş sohbetlerden öğrenilen alışkanlıkları raporlar, alışkanlığa dayalı "
+    "öneri sunar/uygular veya yanlış öğrenilmiş bir kalıbı unutur "
+    "('ne öğrendin', 'önerilerin', '1. öneriyi uygula', 'şunu unut: ...').",
+    {"metin": "kullanıcının cümlesi"}, intent="LEARNING_REPORT", db_ister=True,
+)
+def ogrenme_raporu_arac(metin="", db_cursor=None, db_conn=None, **_):
+    from features import chat_learning, suggestions
+    komut = chat_learning.ogrenme_komutu_algila(metin or "")
+    islem = (komut or {}).get('islem')
+    hedef = (komut or {}).get('hedef', '')
+
+    if islem == 'unut':
+        return AracSonuc.ok(chat_learning.unut(hedef))
+    if islem == 'oneri':
+        return AracSonuc.ok(suggestions.oneri_metni(db_cursor=db_cursor))
+    if islem == 'oneri_kabul':
+        return AracSonuc.ok(suggestions.kabul_et(hedef, db_cursor=db_cursor,
+                                                 db_conn=db_conn))
+    if islem == 'oneri_red':
+        return AracSonuc.ok(suggestions.reddet(hedef, db_cursor=db_cursor))
+
+    # Niyet katmanı bu aracı yalnızca komut tanındığında çağırır; yine de
+    # doğrudan (planner/test) çağrılabildiği için varsayılan rapordur.
+    # Öneriler rapora eklenir: keşif tek bir komuta bağlı kalmasın.
+    return AracSonuc.ok(chat_learning.ogrenme_raporu() +
+                        suggestions.rapor_eki(db_cursor=db_cursor))
 
 
 # =========================================================================

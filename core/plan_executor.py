@@ -104,8 +104,25 @@ class PlanYurutucu:
                 durumlar[gorev.id] = BASARISIZ
                 continue
 
-            if arac.risk == RISK_ONAY and gorev.id not in self.onaylanan:
+            # 🔐 ADIM BAZLI GÜVENLİK — aracın risk etiketi TEK BAŞINA YETMEZ.
+            # Motor, çok adımlı cümlelerde tek intent'in onay kartını atlayıp
+            # kararı buraya bırakıyor (yoksa plan hiç kurulamıyordu). Ama
+            # "chrome'u kapat" adımı `uygulama_calistir` ile yürütülür ve o araç
+            # RISK_GUVENLI'dir — güvenlik katmanı ise ona CONFIRM 75 verir.
+            # Sadece `arac.risk`e bakmak, o komutu onaysız çalıştırmaktı.
+            seviye, guvenlik_mesaji = self._adim_guvenlik(arac, gorev)
+
+            if seviye == "FORBIDDEN":
+                # Yasaklı adım onaylanamaz; plan durmaz, adım düşer.
+                gorev.durum = BASARISIZ
+                gorev.sonuc = guvenlik_mesaji
+                durumlar[gorev.id] = BASARISIZ
+                continue
+
+            if (arac.risk == RISK_ONAY or seviye == "CONFIRM") and gorev.id not in self.onaylanan:
                 gorev.durum = ONAY_BEKLIYOR
+                if guvenlik_mesaji:
+                    gorev.sonuc = guvenlik_mesaji
                 sonuc.onay_bekleyen = gorev
                 # Onay alınana kadar SONRAKİ adımlara geçme — sıradaki adım
                 # onaylanmamış adımın çıktısına dayanıyor olabilir.
@@ -137,6 +154,40 @@ class PlanYurutucu:
             g.durum in (BITTI, ATLANDI) for g in plan.gorevler
         )
         return sonuc
+
+    # ---------------------------------------------------------------
+    def _adim_guvenlik(self, arac, gorev: Gorev) -> tuple[str, str]:
+        """
+        Adımın KENDİ metnini güvenlik katmanından geçirir → (seviye, mesaj).
+
+        Kuralları burada tekrar yazmıyoruz: `SecurityAnalyzerLayer` tek kaynak.
+        Kopyalanan güvenlik kuralı, güncellenmeyen güvenlik kuralıdır.
+        """
+        metin = self._metin_tahmini(gorev)
+        if not metin:
+            return "", ""
+
+        try:
+            from core.context import UltronContext
+            from core.layers.pipeline_layers import SecurityAnalyzerLayer
+
+            alt = UltronContext(raw_input=metin, normalized_input=metin)
+            alt.kanal = self.kanal
+            intent = getattr(arac, 'intent', None)
+            if isinstance(intent, (tuple, list)):
+                intent = intent[0] if intent else None
+            if intent:
+                alt.intent = intent
+            alt = SecurityAnalyzerLayer().process(alt)
+        except Exception as e:
+            print(f"[Ultron Plan] Adım güvenlik kontrolü yapılamadı: {e}")
+            return "", ""
+
+        if alt.security_level == "FORBIDDEN":
+            return "FORBIDDEN", alt.security_message
+        if alt.security_level in ("CONFIRM", "DOUBLE_CONFIRM"):
+            return "CONFIRM", alt.security_message
+        return "", ""
 
     # ---------------------------------------------------------------
     def _kurtarmayi_dene(self, gorev: Gorev, arac_sonucu):

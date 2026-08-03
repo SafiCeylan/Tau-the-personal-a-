@@ -89,6 +89,159 @@ def onay_butonlari() -> dict:
     ]]}
 
 
+def ana_menu_klavyesi() -> dict:
+    """Telegram Ana Kategori Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "🖥️ Pencere & Gezinme"}, {"text": "✍️ Yazı & Düzenleme"}],
+            [{"text": "🌐 Tarayıcı & Sekme"}, {"text": "🎵 Medya & Ses"}],
+            [{"text": "💻 Sistem & Güç"}, {"text": "📊 Bilgi & Brifing"}],
+            [{"text": "⭐ Özel Kısayollarım"}, {"text": "📸 Ekran Görüntüsü Al"}, {"text": "🎛️ Menüyü Kapat"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def ozel_klavye() -> dict:
+    """Kullanıcının eklediği dinamik özel kısayollar menüsü."""
+    from features import custom_shortcuts
+    shortcuts = custom_shortcuts.yukle()
+
+    buttons = []
+    current_row = []
+    for ad in shortcuts.keys():
+        btn_text = ad if ad.startswith(("⚡", "🔍", "🖥️", "📋", "⭐", "⌨️")) else f"⭐ {ad}"
+        current_row.append({"text": btn_text})
+        if len(current_row) == 2:
+            buttons.append(current_row)
+            current_row = []
+    if current_row:
+        buttons.append(current_row)
+
+    # Yönetim Butonları
+    buttons.append([{"text": "➕ Kısayol Ekle"}, {"text": "🗑️ Kısayol Sil"}])
+    buttons.append([{"text": "🏠 Ana Menü"}])
+
+    return {
+        "keyboard": buttons,
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def pencere_gezinme_klavyesi() -> dict:
+    """Pencere ve Masaüstü Gezinme Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "🔄 Alt+Tab"}, {"text": "🔙 Alt+Shift+Tab"}, {"text": "🖥️ Win+D"}],
+            [{"text": "📁 Win+E"}, {"text": "📋 Win+V"}, {"text": "📸 Win+Shift+S"}],
+            [{"text": "⚙️ Ctrl+Shift+Esc"}, {"text": "❌ Alt+F4"}, {"text": "🔒 Win+L"}],
+            [{"text": "⬆️ Win+Up"}, {"text": "⬇️ Win+Down"}, {"text": "⬅️ Win+Left"}, {"text": "➡️ Win+Right"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def yazi_duzenleme_klavyesi() -> dict:
+    """Yazı ve Düzenleme Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "📋 Ctrl+C"}, {"text": "📋 Ctrl+V"}, {"text": "✂️ Ctrl+X"}],
+            [{"text": "↩️ Ctrl+Z"}, {"text": "↪️ Ctrl+Y"}, {"text": "🅰️ Ctrl+A"}],
+            [{"text": "💾 Ctrl+S"}, {"text": "🔍 Ctrl+F"}, {"text": "🖨️ Ctrl+P"}],
+            [{"text": "↵ Enter"}, {"text": "⌨️ Alt+Enter"}, {"text": "↹ Tab"}],
+            [{"text": "⎋ Escape"}, {"text": "🔙 Backspace"}, {"text": "🗑️ Delete"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def tarayici_klavyesi() -> dict:
+    """Tarayıcı ve Sekme Yönetim Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "➕ Ctrl+T"}, {"text": "❌ Ctrl+W"}, {"text": "↩️ Ctrl+Shift+T"}],
+            [{"text": "➡️ Ctrl+Tab"}, {"text": "⬅️ Ctrl+Shift+Tab"}, {"text": "🔄 F5"}],
+            [{"text": "🌐 Ctrl+N"}, {"text": "🕵️ Ctrl+Shift+N"}, {"text": "🖥️ F11"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def medya_klavyesi() -> dict:
+    """Ekran ve Medya Yönetim Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "📸 Ekran Görüntüsü Al"}, {"text": "⏯️ Oynat/Duraklat"}],
+            [{"text": "🔊 Ses Yükselt (%10)"}, {"text": "🔉 Ses Düşür (%10)"}, {"text": "🔇 Sesi Sustur"}],
+            [{"text": "⏭️ Sonraki Şarkı"}, {"text": "⏮️ Önceki Şarkı"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def sistem_klavyesi() -> dict:
+    """Sistem ve Uygulama Yönetim Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "📊 Sistem Durumu"}, {"text": "🌐 İnternet Kontrolü"}],
+            [{"text": "🌐 Chrome'u Aç"}, {"text": "💻 Terminal / CMD Aç"}],
+            [{"text": "📂 İndirilenler Klasörü"}, {"text": "🧮 Hesap Makinesi Aç"}],
+            [{"text": "🔒 PC Kilitle"}, {"text": "🌙 Uyku Modu"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def brifing_klavyesi() -> dict:
+    """Bilgi, Brifing ve Not Menüsü."""
+    return {
+        "keyboard": [
+            [{"text": "☀️ Sabah Brifingi"}, {"text": "🌦️ Hava Durumu"}],
+            [{"text": "💱 Dolar & Euro Kuru"}, {"text": "📰 Son Haberler"}],
+            [{"text": "⏰ Hatırlatmalarım"}, {"text": "📋 Notlarım"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def set_bot_commands(token: str) -> bool:
+    """Telegram istemcisindeki slash (/) komut menüsünü kaydeder."""
+    commands = [
+        {"command": "menu", "description": "🏠 Ana Menü ve Tüm Kategoriler"},
+        {"command": "pencere", "description": "🖥️ Pencere & Gezinme (Alt+Tab, Win+D, Win+E)"},
+        {"command": "duzenleme", "description": "✍️ Yazı & Düzenleme (Ctrl+C, Ctrl+V, Ctrl+Z)"},
+        {"command": "tarayici", "description": "🌐 Tarayıcı & Sekme (Ctrl+T, Ctrl+W, F5)"},
+        {"command": "medya", "description": "🎵 Medya & Ses (Oynat, Duraklat, Ses)"},
+        {"command": "sistem", "description": "📊 Sistem durumu (CPU/RAM/Disk)"},
+        {"command": "sistem_menu", "description": "💻 Sistem & Güç menüsü (Chrome, CMD, güç)"},
+        {"command": "brifing_menu", "description": "📊 Brifing & Bilgi Servisleri"},
+        {"command": "menu_kapat", "description": "🎛️ Hızlı buton takımını gizle"},
+        {"command": "alt_tab", "description": "🔄 Alt+Tab bas (Sonraki pencere)"},
+        {"command": "win_d", "description": "🖥️ Win+D bas (Masaüstünü göster)"},
+        {"command": "win_e", "description": "📁 Win+E bas (Dosya Gezgini)"},
+        {"command": "ekran", "description": "📸 Ekran görüntüsü al ve gönder"},
+        {"command": "enter", "description": "↵ Enter tuşuna bas"},
+        {"command": "alt_f4", "description": "❌ Alt+F4 pencere kapat"},
+        {"command": "brifing", "description": "☀️ Sabah Brifingi al"}
+    ]
+    res = api_call(token, "setMyCommands", commands=commands)
+    return res is not None
+
+
 def send_photo(token: str, chat_id, photo_path: str, caption: str = '') -> bool:
     """Fotoğraf gönderir (multipart upload)."""
     if requests is None or not os.path.exists(photo_path):

@@ -1,6 +1,6 @@
-# 🔴 CLAUDE.md — ULTRON Neural Core | Proje Hafızası
+# 🔴 AGENTS.md — ULTRON Neural Core | Proje Hafızası
 
-> Bu dosya, Claude ile her oturuma hızlı başlamak içindir.
+> Bu dosya, Codex ile her oturuma hızlı başlamak içindir.
 > **Her gün sonunda "Oturum Günlüğü" + "Durum" bölümleri güncellenir.**
 
 ---
@@ -313,7 +313,7 @@ istenmeyen bir yan etkidir.
 | 31 Tem (2) | **⭐ Dinamik Özel Kısayol Yöneticisi:** `features/custom_shortcuts.py` (%APPDATA%\ULTRON\custom_shortcuts.json), `kısayol ekle/sil` komutları, dinamik Telegram menüsü (Codex oturumu) | ✅ 351 test yeşil |
 | 31 Tem | **📱 Telegram Hızlı Erişim Butonları & Slash Komutlar:** `hizli_klavye` + `set_bot_commands`, `/ekran` `/enter` `/brifing` `/menu` … (Codex oturumu) | ✅ 348 test yeşil |
 | 30 Tem | **⌨️ Uzaktan Klavye / Tuş Emülasyonu:** `level4_input.send_keyboard_input` (pywinauto + ctypes fallback), `klavye_tusu` aracı, `KEYBOARD_INPUT` niyeti ve güvenlik seviyesi (Codex oturumu) | ✅ 348 test yeşil |
-| 28 Tem | Proje baştan sona analiz edildi · Tüm commit'ler GitHub'a pushlandı (`846a100`) · `user_memory.py` ve `tau_backend.py` veri yolları `%APPDATA%\ULTRON` olarak güncellendi (`2e4369a`) · `CLAUDE.md` güncellendi | ✅ 345 test yeşil, repo temiz ve güncel |
+| 28 Tem | Proje baştan sona analiz edildi · Tüm commit'ler GitHub'a pushlandı (`846a100`) · `user_memory.py` ve `tau_backend.py` veri yolları `%APPDATA%\ULTRON` olarak güncellendi (`2e4369a`) · `AGENTS.md` güncellendi | ✅ 345 test yeşil, repo temiz ve güncel |
 |-------|---------|-------|
 | 22 Tem | Backend/thread/onay fixleri, UWP açma, tray, saat parser'ı, AIP kuruldu, WhatsApp gönderimi, sohbet kalıcılığı, brifing, e-posta, istatistikler, Telegram köprüsü, TTS+wake word, halüsinasyon frenleri, STT insanileştirme, internet/hava/döviz düzeltmeleri | ✅ Canlı doğrulandı |
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |

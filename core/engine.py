@@ -55,6 +55,21 @@ class UltronCoreEngine:
         self.routine_engine = RoutineEngine(db_manager)
         self.self_reflection = SelfReflectionEngine()
 
+        # 🧠 Öğrenme arşivi: `sohbet_gecmisi`ndeki konuşmalar bir kez içeri alınır.
+        # Artımlıdır (son id `meta`da) — ikinci açılışta yalnızca yeni satırlar
+        # okunur, dolayısıyla her başlatmada çağrılması ucuzdur.
+        self._ogrenme_arsivini_hazirla()
+
+    def _ogrenme_arsivini_hazirla(self):
+        try:
+            yol = getattr(self.db, 'db_path', None)
+            if not yol:
+                return
+            from features import chat_learning
+            chat_learning.gecmisi_iceri_al(yol)
+        except Exception as e:
+            print(f"[ULTRON Ogrenme] Arsiv hazirlanamadi: {e}")
+
     def update_config(self, config: dict):
         """Ayarlar kaydedilince yeni config'i canlı uygular (yeniden başlatma gerekmez)."""
         self.config = config or {}
@@ -90,8 +105,12 @@ class UltronCoreEngine:
                 own_conn = None
 
         try:
-            return self._run_pipeline(raw_input, input_type, recent_context, cursor, conn,
-                                      allow_llm, kanal)
+            ctx = self._run_pipeline(raw_input, input_type, recent_context, cursor, conn,
+                                     allow_llm, kanal)
+            # Öğrenme kaydı BURADA: `_run_pipeline`ın erken dönüşleri var
+            # (güvenlik kartı, rutin, plan onayı) — hepsi buradan geçer.
+            self._ogrenmeyi_kaydet(ctx)
+            return ctx
         finally:
             if own_conn is not None:
                 try:
@@ -136,10 +155,27 @@ class UltronCoreEngine:
         ctx = self.l6_security.process(ctx)
 
         # SECURITY INTERCEPT: If confirmation is needed or forbidden, STOP IMMEDIATELY!
+        #
+        # ⚠️ Çok adımlı cümleler hariç: regex sadece BİR intent seçti ama cümlede
+        # birden fazla iş var. Tek intent'in güvenlik kartı tüm pipeline'ı keser ve
+        # planner'a hiç ulaşılamaz.
+        #
+        # Kartı atlamak onayı ATLAMAK DEĞİLDİR: `PlanYurutucu._adim_guvenlik` her
+        # adımın kendi metnini aynı SecurityAnalyzerLayer'dan geçirir; CONFIRM
+        # çıkan adım ONAY_BEKLIYOR olur, FORBIDDEN çıkan adım düşer. (Yalnızca
+        # `arac.risk`e bakmak yetmiyordu — "chrome'u kapat" güvenli etiketli bir
+        # araçla yürütülüyor ama güvenlik katmanı ona CONFIRM veriyor.)
+        # Cümlenin tamamı FORBIDDEN ise burada her zaman durulur.
+        guvenlik_plana_birakildi = False
         if ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM", "FORBIDDEN"):
-            ctx.execution_success = False
-            ctx.execution_result = ctx.security_message
-            return self.l14_response.process(ctx)
+            if ctx.security_level != "FORBIDDEN" and \
+               self.config.get('planner_enabled', True) and \
+               cok_adimli_olabilir(ctx.normalized_input):
+                guvenlik_plana_birakildi = True
+            else:
+                ctx.execution_success = False
+                ctx.execution_result = ctx.security_message
+                return self.l14_response.process(ctx)
 
         # Routine Engine Check (Autonomous Workflows)
         is_routine, routine_output = self.routine_engine.check_and_execute_routine(ctx)
@@ -171,6 +207,12 @@ class UltronCoreEngine:
             ctx, planlandi = self._plani_kur_ve_calistir(ctx, cursor, conn)
 
         if not planlandi:
+            # Planner başarısız olduysa ve güvenlik kontrolü atlanmıştı →
+            # şimdi güvenliği uygula (tek intent'in kartını göster).
+            if guvenlik_plana_birakildi:
+                ctx.execution_success = False
+                ctx.execution_result = ctx.security_message
+                return self.l14_response.process(ctx)
             ctx = self.l12_exec.process(ctx, db_cursor=cursor, db_conn=conn)
             # 12.6 RECOVERY (Faz 4) — hedefe ulaşılamadıysa alternatif üret.
             #
@@ -231,6 +273,14 @@ class UltronCoreEngine:
                 f"{ctx.execution_result}"
             )
 
+        # Öğrenilmiş kalıp devreye girdiyse SÖYLE. Sessiz uygulanan bir kalıp,
+        # yanlış öğrenilmişse kullanıcının fark edemeyeceği bir hatadır —
+        # görürse "şunu unut: ..." diyebilir.
+        if ctx.ogrenme_notu and ctx.execution_result:
+            ctx.execution_result = (
+                f"_(🧠 {ctx.ogrenme_notu})_\n\n{ctx.execution_result}"
+            )
+
         # Bağlamı güncelle — bir sonraki "onu gönder" bunu kullanacak
         self._baglami_kaydet(ctx)
 
@@ -238,6 +288,43 @@ class UltronCoreEngine:
         ctx = self.l14_response.process(ctx)
 
         return ctx
+
+    # =====================================================================
+    # ÖĞRENME YARDIMCISI
+    # =====================================================================
+    def _ogrenmeyi_kaydet(self, ctx):
+        """
+        Turu öğrenme arşivine yazar (features/chat_learning.py).
+
+        Kullanıcının HAM cümlesi saklanır, bağlamla doldurulmuş hâli değil:
+        düzeltmeden öğrenme "kullanıcı gerçekte ne yazdı" sorusuna bakar.
+
+        `basarili` alanı kritiktir — düzeltme tespiti buna dayanır:
+        başarısız tur + hemen ardından gelen başarılı tur = öğrenme fırsatı.
+        """
+        try:
+            from features import chat_learning
+        except Exception as e:
+            print(f"[ULTRON Ogrenme] Modul yuklenemedi: {e}")
+            return
+        try:
+            cevap = ctx.execution_result if ctx.execution_success else ""
+            if not cevap and getattr(ctx, 'llm_generated', False):
+                cevap = ctx.llm_response
+            etiketler = {}
+            if ctx.intent in ("WHATSAPP_MESSAGE", "EMAIL_MESSAGE"):
+                # Kimle konuşuluyor — "en sık mesajlaştığın kişi" örüntüsü için.
+                etiketler['kisi'] = self._aliciyi_coz(ctx)
+            if ctx.intent == "SYSTEM_CONTROL" and (ctx.entities or {}).get('app_name'):
+                etiketler['uygulama'] = ctx.entities['app_name']
+            chat_learning.kaydet(
+                ctx.raw_input, cevap or "", intent=ctx.intent,
+                basarili=bool(ctx.execution_success), kanal=ctx.kanal,
+                etiketler=etiketler,
+                ruh_hali=getattr(ctx, 'ruh_hali', '') or None,
+            )
+        except Exception as e:
+            print(f"[ULTRON Ogrenme] Tur kaydedilemedi: {e}")
 
     # =====================================================================
     # RECOVERY YARDIMCISI (Faz 4)
@@ -390,7 +477,11 @@ class UltronCoreEngine:
             return ctx
 
         self.bekleyen_planlar.pop(ctx.kanal, None)
-        ctx.execution_success = sonuc.basarili
+        # Plan çalıştırıldı → sonucu HER ZAMAN göster. Kısmi başarısızlıkta
+        # execution_success=False yaparsak UI plan sonucunu yok sayıp LLM'e düşer
+        # ve model "yaptım" diye uydurur. Plan özeti zaten ✅/❌ ile hangi adımın
+        # başarılı/başarısız olduğunu gösteriyor — halüsinasyondan çok daha faydalı.
+        ctx.execution_success = True
         ctx.execution_result = f"{plan.ozet()}\n\n{sonuc.ozet()}"
         return ctx
 

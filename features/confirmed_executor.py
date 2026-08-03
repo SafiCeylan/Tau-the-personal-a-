@@ -62,5 +62,16 @@ def onayli_komut_yurut(komut: str, kanal: str = 'desktop'):
     except Exception as e:
         print(f"[Onaylı Yürütücü] E-posta yönlendirme hatası: {e}")
 
-    # 3) Diğer sistem komutları (bilgisayarı kapat, süreç sonlandır…)
+    # 3) Uzaktan klavye tuşu mu? (Alt+F4, Delete, "kilit aç: 1234", "yaz: ...")
+    #    Güvenlik katmanı riskli tuşlara onay kartı açıyor; onay sonrası komut
+    #    BURAYA düşer. Kalıp kontrolü DAR tutulur — "anneme ... yaz" gibi mesaj
+    #    cümleleri klavyeye gitmemeli, WhatsApp/e-posta dalları yukarıda.
+    try:
+        from core.interaction.level4_input import klavye_komutu_mu, send_keyboard_input
+        if klavye_komutu_mu(komut):
+            return send_keyboard_input(komut)
+    except Exception as e:
+        print(f"[Onaylı Yürütücü] Klavye yönlendirme hatası: {e}")
+
+    # 4) Diğer sistem komutları (bilgisayarı kapat, süreç sonlandır…)
     return sistem_komutu_algila(komut)

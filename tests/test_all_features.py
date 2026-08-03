@@ -77,6 +77,20 @@ class TestUltronExhaustiveSuite(unittest.TestCase):
         self.assertTrue(status)
         self.assertTrue("yükseltildi" in resp or "artırıldı" in resp)
 
+    def test_volume_typos_and_max_expressions(self):
+        """'ses seviyesini en yüksek yao' / 'hayır sesi yüksel' / 'sesi fulle'"""
+        status1, resp1 = sistem_komutu_algila("ses seviyesini en yüksek yao")
+        self.assertTrue(status1)
+        self.assertIn("%100", resp1)
+
+        status2, resp2 = sistem_komutu_algila("hayır sesi yüksel")
+        self.assertTrue(status2)
+        self.assertTrue("yükseltildi" in resp2 or "artırıldı" in resp2)
+
+        status3, resp3 = sistem_komutu_algila("sesi fulle")
+        self.assertTrue(status3)
+        self.assertIn("%100", resp3)
+
     def test_youtube_music_song_play(self):
         """'youtube music'ten Barış Manço Dönence çal'"""
         status, resp = sistem_komutu_algila("youtube music'ten Barış Manço Dönence çal")
@@ -441,6 +455,132 @@ class TestGuvenlikZirhi(unittest.TestCase):
         self.assertTrue(status)
         self.assertIn("%80", resp)
         self.assertTrue(cagri_yapildi_mi('volume'))
+
+
+class TestKeyboardInput(unittest.TestCase):
+    """Klavye tuş kombinasyonu ve uzaktan tuş emülasyonu testleri."""
+
+    def _intent(self, cumle):
+        from core.layers.pipeline_layers import IntentAnalyzerLayer
+        from core.context import UltronContext
+        ctx = UltronContext(raw_input=cumle, normalized_input=cumle)
+        IntentAnalyzerLayer().process(ctx)
+        return ctx.intent
+
+    def _guvenlik(self, cumle):
+        from core.layers.pipeline_layers import SecurityAnalyzerLayer
+        from core.context import UltronContext
+        ctx = UltronContext(raw_input=cumle, normalized_input=cumle)
+        ctx.intent = "KEYBOARD_INPUT"
+        return SecurityAnalyzerLayer().process(ctx).security_level
+
+    def test_level4_keyboard_send(self):
+        from core.interaction import level4_input
+        status, msg = level4_input.send_keyboard_input("ctrl+enter")
+        self.assertTrue(status)
+        self.assertIn("CTRL + ENTER", msg)
+
+    def test_keyboard_tool_execution(self):
+        from core.tools import DEFTER
+        arac = DEFTER.getir("klavye_tusu")
+        self.assertIsNotNone(arac)
+        res = arac.calistir(metin="1234 enter")
+        self.assertTrue(res.basarili)
+        self.assertIn("1234{ENTER}", res.mesaj)
+
+    def test_keyboard_intent_matching(self):
+        self.assertEqual(self._intent("ctrl+enter yap"), "KEYBOARD_INPUT")
+        self.assertEqual(self._intent("alt+tab bas"), "KEYBOARD_INPUT")
+        self.assertEqual(self._intent("enter bas"), "KEYBOARD_INPUT")
+        self.assertEqual(self._intent("f5 bas"), "KEYBOARD_INPUT")
+        self.assertEqual(self._intent("tuş: ctrl+s"), "KEYBOARD_INPUT")
+
+    # -- REGRESYON: gevşek kalıp cümleyi ekrana YAZIYORDU -----------------
+    def test_sohbet_cumleleri_tus_komutu_sayilmaz(self):
+        """'yeni tab aç' tuş komutu değil, 'şifre nedir' sorudur."""
+        for cumle in ("yeni tab aç", "şifre nedir", "klavye bozuldu ne yapmalıyım",
+                      "bu dosyayı sil"):
+            self.assertNotEqual(self._intent(cumle), "KEYBOARD_INPUT",
+                                f"'{cumle}' yanlışlıkla tuş komutu sayıldı")
+
+    def test_anlasilmayan_girdi_ekrana_yazilmaz(self):
+        from core.interaction import level4_input
+        from tests.safety import CAGRI_KAYDI, cagri_yapildi_mi
+        CAGRI_KAYDI.clear()
+        status, msg = level4_input.send_keyboard_input("klavye bozuldu ne yapmalıyım")
+        self.assertFalse(status, "Anlaşılmayan girdi için başarı dönmemeli")
+        self.assertIn("hiçbir tuşa basılmadı", msg.lower())
+        self.assertFalse(cagri_yapildi_mi('keyboard.send_keys'),
+                         "Anlaşılmayan cümle aktif pencereye YAZILDI!")
+
+    def test_sifre_sorusu_kilit_acmaz(self):
+        """'şifre nedir' eskiden 'nedir' kelimesini PIN sanıp ekrana yazıyordu."""
+        from core.interaction import level4_input
+        self.assertIsNone(level4_input._kilit_niyeti_coz("şifre nedir"))
+        self.assertIsNone(level4_input._kilit_niyeti_coz("şifremi unuttum"))
+        self.assertEqual(level4_input._kilit_niyeti_coz("kilit aç: 1234"), "1234")
+        self.assertEqual(level4_input._kilit_niyeti_coz("1234 ile kilit aç"), "1234")
+        self.assertEqual(level4_input._kilit_niyeti_coz("kilit aç"), "")
+
+    def test_pin_mesajda_gorunmez(self):
+        """PIN Telegram'a ve sohbet geçmişine düz metin yazılmamalı."""
+        from core.interaction import level4_input
+        status, msg = level4_input.unlock_windows_screen("1234")
+        self.assertTrue(status)
+        self.assertNotIn("1234", msg)
+        self.assertIn("••••", msg)
+
+    def test_yikici_tuslar_onay_ister(self):
+        for cumle in ("alt+f4 bas", "ctrl+w bas", "win+l bas", "delete bas",
+                      "kilit aç: 1234", "yaz: merhaba"):
+            self.assertEqual(self._guvenlik(cumle), "CONFIRM",
+                             f"'{cumle}' onaysız yürütülüyor")
+
+    def test_zararsiz_tuslar_onay_istemez(self):
+        for cumle in ("ctrl+c bas", "enter bas", "alt+tab bas", "f5 bas"):
+            self.assertEqual(self._guvenlik(cumle), "SAFE")
+
+    def test_send_keys_ozel_karakterleri_kacirilir(self):
+        """'%' send_keys'te ALT demektir — metin yazarken kaçırılmalı."""
+        from core.interaction import level4_input
+        self.assertEqual(level4_input.yaziyi_kacir("%50 +1 ^x"), "{%}50 {+}1 {^}x")
+        status, msg = level4_input.send_keyboard_input("yaz: %50 indirim")
+        self.assertTrue(status)
+        self.assertIn("{%}50", msg)
+
+    def test_onayli_klavye_komutu_dogru_module_gider(self):
+        import features.confirmed_executor as ce
+        ok, resp = ce.onayli_komut_yurut("alt+f4 bas")
+        self.assertTrue(ok)
+        self.assertIn("KLAVYE", resp)
+
+
+class TestSesKelimeSiniri(unittest.TestCase):
+    """
+    Ses komutlarında alt dizi araması ('min' in 'sesimin') canlıda yanlış
+    tetikliyordu. Kelime sınırı bunu kilitler.
+    """
+
+    def test_kesinlikle_sesi_susturmaz(self):
+        status, resp = sistem_komutu_algila("sesi kesinlikle yükselt")
+        self.assertTrue(status)
+        self.assertTrue("yükseltildi" in resp or "artırıldı" in resp,
+                        f"'kes' alt dizisi sesi susturdu: {resp}")
+
+    def test_minimum_hala_calisiyor(self):
+        status, resp = sistem_komutu_algila("sesi minimum yap")
+        self.assertTrue(status)
+        self.assertIn("%10", resp)
+
+    def test_alakasiz_sayi_ses_seviyesi_sayilmaz(self):
+        """'ses 5 saniye gecikmeli geliyor' sesi %5'e çekiyordu."""
+        status, resp = sistem_komutu_algila("ses 5 saniye gecikmeli geliyor")
+        self.assertFalse(status, f"Ses seviyesine dokunuldu: {resp}")
+
+    def test_sayi_ile_ayarlama_calisiyor(self):
+        status, resp = sistem_komutu_algila("ses seviyesini 40 yap")
+        self.assertTrue(status)
+        self.assertIn("%40", resp)
 
 
 if __name__ == '__main__':

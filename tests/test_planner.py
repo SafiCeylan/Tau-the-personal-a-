@@ -245,6 +245,38 @@ class YurutucuTest(unittest.TestCase):
         self.assertIsNotNone(sonuc.onay_bekleyen)
         self.assertFalse(sonuc.basarili)
 
+    def test_guvenli_arac_riskli_cumleyle_onay_ister(self):
+        """
+        Motor, çok adımlı cümlede tek intent'in onay kartını atlayıp kararı
+        yürütücüye bırakıyor. `uygulama_calistir` RISK_GUVENLI etiketli ama
+        "chrome'u kapat" güvenlik katmanında CONFIRM 75. Aracın etiketine
+        bakmak, o komutu onaysız çalıştırmaktı.
+        """
+        plan = self._plan(Gorev(1, "uygulama_calistir", {"metin": "chrome kapat"}))
+        with mock.patch.object(DEFTER.getir("uygulama_calistir"), 'calistir') as calistir:
+            sonuc = PlanYurutucu().calistir(plan)
+        calistir.assert_not_called()
+        self.assertEqual(plan.gorevler[0].durum, ONAY_BEKLIYOR)
+        self.assertIsNotNone(sonuc.onay_bekleyen)
+
+    def test_zararsiz_adim_onay_istemez(self):
+        """Güvenlik kontrolü her adımı beklemeye almamalı — akış kilitlenmesin."""
+        plan = self._plan(Gorev(1, "uygulama_calistir", {"metin": "chrome aç"}))
+        with mock.patch.object(DEFTER.getir("uygulama_calistir"), 'calistir',
+                               return_value=AracSonuc.ok("açıldı")) as calistir:
+            sonuc = PlanYurutucu().calistir(plan)
+        calistir.assert_called_once()
+        self.assertTrue(sonuc.basarili)
+
+    def test_yasakli_adim_onaylansa_da_calismaz(self):
+        """FORBIDDEN onaylanabilir bir şey değildir — adım düşer."""
+        plan = self._plan(Gorev(1, "uygulama_calistir", {"metin": "bilgisayarı kapat"}))
+        with mock.patch.object(DEFTER.getir("uygulama_calistir"), 'calistir') as calistir:
+            sonuc = PlanYurutucu(onaylanan_gorevler={1}).calistir(plan)
+        calistir.assert_not_called()
+        self.assertEqual(plan.gorevler[0].durum, BASARISIZ)
+        self.assertIsNone(sonuc.onay_bekleyen)
+
     def test_onay_verilince_calisir(self):
         plan = self._plan(Gorev(1, "dosya_gonder", {"metin": "rapor"}))
         with mock.patch.object(DEFTER.getir("dosya_gonder"), 'calistir',
