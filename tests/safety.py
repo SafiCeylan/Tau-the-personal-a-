@@ -128,6 +128,18 @@ class _SahteCtypes:
 
 
 # ---------------------------------------------------------------------------
+# Sahte requests — testler HTTP isteği yapmasın
+# ---------------------------------------------------------------------------
+class _SahteRequests:
+    """`.get` çağrısı ağa çıkmaz; çağrıyı kaydedip hata yükseltir."""
+
+    @staticmethod
+    def get(url, *args, **kwargs):
+        CAGRI_KAYDI.append(("requests.get", url))
+        raise RuntimeError("Zırh: test sırasında ağ çağrısı engellendi")
+
+
+# ---------------------------------------------------------------------------
 # Kurulum / söküm
 # ---------------------------------------------------------------------------
 def guvenlik_zirhi_kur():
@@ -178,6 +190,16 @@ def guvenlik_zirhi_kur():
     except Exception as e:
         print(f"[Zırh] pywinauto.keyboard yamalanamadı: {e}")
 
+    # 🖱️ AIP Level 3 — OCR ile TIKLAMA. Kendi ctypes'ı var (SetCursorPos +
+    # mouse_event): zırhsız hâlde bir test gerçekten fareyi kapıp kullanıcının
+    # ekranında bir yere basar. Klavyeden daha tehlikeli — nereye bastığı
+    # o an ekranda ne varsa ona bağlı.
+    try:
+        from core.interaction import level3_ocr as _l3
+        hedefler.append(mock.patch.object(_l3, 'ctypes', _SahteCtypes()))
+    except Exception as e:
+        print(f"[Zırh] level3_ocr yamalanamadı: {e}")
+
     # 🧠 ÖĞRENME ARŞİVİ — testler GERÇEK `%APPDATA%\ULTRON\ogrenme.db` dosyasına
     # yazmasın. Zırhsız hâlde niyet katmanından geçen her test cümlesi kullanıcının
     # gerçek arşivine düşüyor ve "ne öğrendin" raporunu test verisiyle kirletiyordu.
@@ -194,6 +216,22 @@ def guvenlik_zirhi_kur():
     # ürettiği için, raporu çağıran HER test gösterilen listeyi diske
     # işaretliyor; kısayol önerisini kabul eden bir test ise kullanıcının
     # menüsüne gerçek bir buton ekler.
+    # 📅 TAKVİM — iki ayrı sızıntı yolu var:
+    #   • `ics_kaynaklari` kullanıcının GERÇEK config.json'ını okur; takvimi
+    #     bağlıysa test koşmak onun Google takvimini internetten çeker.
+    #   • dışa aktarım varsayılan olarak MASAÜSTÜNE .ics bırakır.
+    # Ağ katmanı da kesilir: yerel dosyadan senkron (os.path.exists yolu)
+    # çalışmaya devam eder, sadece HTTP çıkışı kapanır.
+    try:
+        from features import calendar_tools as _ct
+        hedefler.append(mock.patch.object(_ct, 'ics_kaynaklari', lambda: []))
+        hedefler.append(mock.patch.object(_ct, 'requests', _SahteRequests()))
+        hedefler.append(mock.patch.object(
+            _ct, '_varsayilan_ics_yolu',
+            lambda _now=None: _gecici_veri_dosyasi('ultron_takvim.ics')))
+    except Exception as e:
+        print(f"[Zırh] calendar_tools yamalanamadı: {e}")
+
     for _modul_adi in ('suggestions', 'custom_shortcuts'):
         try:
             _modul = __import__(f'features.{_modul_adi}', fromlist=[_modul_adi])
