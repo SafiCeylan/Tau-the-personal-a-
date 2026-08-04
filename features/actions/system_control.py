@@ -178,7 +178,10 @@ def medya_komutu_algila(mesaj: str):
     if any(k in m for k in ["sonraki şarkı", "şarkıyı geç", "diğer şarkı", "next",
                             "sonraki parça", "şarkı geç", "geç bunu", "bunu geç"]):
         return "next"
-    if any(k in m for k in ["önceki şarkı", "geri al", "bir önceki", "previous",
+    # ⚠️ "geri al" BURADA DEĞİL. Türkçede "geri al" ezici çoğunlukla UNDO
+    # (Ctrl+Z) demektir; önceki şarkı için "önceki şarkı"/"başa sar" denir.
+    # Burada durduğu sürece "geri al" komutu klavyeye hiç ulaşamıyordu.
+    if any(k in m for k in ["önceki şarkı", "bir önceki", "previous",
                             "önceki parça", "baştan çal", "başa sar"]):
         return "prev"
     if any(k in m for k in ["müziği durdur", "şarkıyı durdur", "durdur müziği",

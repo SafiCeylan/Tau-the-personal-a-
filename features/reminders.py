@@ -35,7 +35,27 @@ def _saat_ayikla(mesaj_lower):
         if 0 <= h <= 23:
             return h, 0, m.group(0)
 
+    # 4) Sayı yok ama GÜNÜN BÖLÜMÜ söylenmiş: "yarın sabah ilaç içmeyi hatırlat".
+    #    Eskiden bu cümlede saat hiç çözülmüyor ve hatırlatma İÇİNDE BULUNULAN
+    #    saate kuruluyordu — yani "yarın sabah" dediğinde akşam 21:23'te çalıyordu.
+    for kalip, saat in _GUN_BOLUMLERI:
+        m = re.search(kalip, mesaj_lower)
+        if m:
+            return saat, 0, m.group(0)
+
     return None
+
+
+# Günün bölümü → varsayılan saat. Sıra önemli: "öğleden sonra" "öğle"den önce.
+_GUN_BOLUMLERI = (
+    (r'\böğleden\s+sonra\b', 15),
+    (r'\bsabaha\s+karşı\b', 5),
+    (r'\bsabah\w*\b', 8),
+    (r'\böğle\w*\b', 12),
+    (r'\bikindi\w*\b', 16),
+    (r'\bakşam\w*\b', 19),
+    (r'\bgece\w*\b', 22),
+)
 
 
 def _gun_kaydirma(mesaj_lower, now):
@@ -43,6 +63,9 @@ def _gun_kaydirma(mesaj_lower, now):
     Mesajdaki gün ifadesini gün sayısına çevirir.
     Dönen değer: (gün_farkı, eşleşen_kelime) veya (None, None)
     """
+    # "öbür gün" / "ertesi gün" — 'yarın'dan ÖNCE bakılır, iki gün sonrasıdır
+    if re.search(r'\böbür\s+gün\b|\bobur\s+gun\b|\bertesi\s+gün\b', mesaj_lower):
+        return 2, 'öbür gün'
     if 'yarın' in mesaj_lower:
         return 1, 'yarın'
     for gun_adi, gun_idx in GUN_ADLARI.items():
@@ -79,6 +102,11 @@ def hatirlatma_algila(mesaj):
 
     # Özel zaman kelimeleri
     special_times = {
+        # 'yarın'dan ÖNCE: saat verilmeyen "öbür gün ... hatırlat" cümlesi
+        # ÖNCELİK 3'e düşüyor ve burada karşılığı olmadığı için hiç kurulamıyordu.
+        'öbür gün': timedelta(days=2),
+        'obur gun': timedelta(days=2),
+        'ertesi gün': timedelta(days=2),
         'yarın': timedelta(days=1),
         'bugün': timedelta(days=0),
         'bu akşam': timedelta(hours=4),
@@ -139,11 +167,21 @@ def hatirlatma_algila(mesaj):
         hatirlatma_metni = re.sub(r'(\d+)\s*(saniye|dakika|saat|gün|hafta|sn|dk)\w*', '', mesaj_lower)
         for parca in temizlenecekler:
             hatirlatma_metni = hatirlatma_metni.replace(parca, '')
-        for keyword in hatirlatma_keywords + list(special_times.keys()) + ['saat', 'akşam', 'gece', 'öğleden']:
-            hatirlatma_metni = hatirlatma_metni.replace(keyword, '')
 
-        # Gereksiz kelimeleri ve artık kalan ekleri temizle
-        hatirlatma_metni = hatirlatma_metni.replace('içinde', '').replace('sonra', '').strip()
+        # ⚠️ DÜZ replace() KELİME ORTASINDAN KESER. Eski hâli:
+        #     "dolar kuru nedir"  → 'kur' silinir → "dolar u nedir"
+        #     "kurabiye yapacağım" → "abiye yapacağım"
+        # Kullanıcı hatırlatmasını bozulmuş metinle kaydediyordu.
+        #
+        # Kısa anahtarlar (kur) TAM KELİME eşleşmeli; uzun olanlar (hatırlat,
+        # oluştur) Türkçe çekim eki alabildiği için sonrası serbest bırakılır.
+        for keyword in (hatirlatma_keywords + list(special_times.keys()) +
+                        ['saat', 'akşam', 'gece', 'öğleden', 'içinde', 'sonra']):
+            k = re.escape(keyword)
+            kalip = rf'\b{k}\w*\b' if len(keyword) >= 5 else rf'\b{k}\b'
+            hatirlatma_metni = re.sub(kalip, ' ', hatirlatma_metni)
+
+        hatirlatma_metni = hatirlatma_metni.strip()
         hatirlatma_metni = re.sub(r"^['’]?(te|ta|de|da)\b", '', hatirlatma_metni).strip()
         hatirlatma_metni = re.sub(r'\s+', ' ', hatirlatma_metni).strip(" ,.'’")
 

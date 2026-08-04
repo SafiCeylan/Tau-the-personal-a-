@@ -259,18 +259,30 @@ KLAVYE_KALIPLARI = (
     r'^(yaz\s*:|type\s*:|tuş\s*:|tus\s*:|klavye\s*:|press\s*:|kilit\s*:|şifre\s*:|sifre\s*:|pin\s*:)',
     r'\bkili(t|di)\s*(aç|ac)\b',
     r'\b(ctrl|alt|shift|win|windows)\s*\+\s*[a-z0-9]',
+    # Artı işaretini yazmayan kullanıcı: "ctrl c yap", "alt tab". İkinci parça
+    # BİLİNEN bir tuş olmalı — yoksa "alt satır", "alt tarafta" da yakalanırdı.
+    r'\b(ctrl|alt|shift|win|windows)\s+(?:[a-z0-9]|f\d{1,2}|tab|esc|enter|del|delete|space)\b',
     r'\b(tuş|tus|klavye|kombinasyon)\w*\s+(bas|bastır|bastir|gönder|yolla)\b',
-    r"\b(enter|space|tab|esc|escape|backspace|delete|f\d{1,2})(?:'?[a-zçğıöşü]{0,3})?"
-    r"\s*(tuşuna|tusuna)?\s*(bas|bastır|bastir|gönder|yolla)\b",
+    # Tuş adı + eylem. `\s*` ekiyle "f5 e bas" (ayrı yazılmış ek) de girer;
+    # önceden yalnızca bitişik/kesme işaretli hâli ("f5'e bas") kabul ediliyordu.
+    r"\b(enter|space|tab|esc|escape|backspace|delete|insert|home|end|pgup|pgdn"
+    r"|yukarı|yukari|aşağı|asagi|f\d{1,2})(?:\s*'?[a-zçğıöşü]{0,3})?"
+    r"\s*(ok|tuşuna|tusuna)?\s*(bas|bastır|bastir|gönder|yolla)\b",
     # Salt rakam + enter ("1234 enter"): sohbet cümlesi olamaz, PIN/kod yazma biçimi.
     r"^[0-9\s]+enter('?a)?$",
 )
 
 
 def klavye_komutu_mu(metin: str) -> bool:
-    """Cümle açık bir tuş isteği mi? ('yeni tab aç' DEĞİL, 'tab bas' EVET)"""
+    """Cümle açık bir tuş isteği mi? ('yeni tab aç' DEĞİL, 'tab bas' EVET)
+
+    Kalıplara ek olarak doğal dil kısayolları da ("kopyala", "geri al",
+    "sekmeyi kapat") buradan geçer — kullanıcı `ctrl+c` yazmak zorunda değil.
+    """
     t = (metin or '').strip().lower()
-    return any(re.search(kalip, t) for kalip in KLAVYE_KALIPLARI)
+    if any(re.search(kalip, t) for kalip in KLAVYE_KALIPLARI):
+        return True
+    return dogal_kisayol_coz(t) is not None
 
 
 def riskli_tus_mu(metin: str) -> tuple[bool, str]:
@@ -303,7 +315,80 @@ _KEY_MAP = {
     'backspace': '{BACKSPACE}', 'sil': '{BACKSPACE}',
     'delete': '{DELETE}', 'del': '{DELETE}',
     'up': '{UP}', 'down': '{DOWN}', 'left': '{LEFT}', 'right': '{RIGHT}',
+    # Türkçe yön tuşları — "yukarı ok bas" gibi cümleler için
+    'yukari': '{UP}', 'yukarı': '{UP}', 'asagi': '{DOWN}', 'aşağı': '{DOWN}',
+    'sol': '{LEFT}', 'sag': '{RIGHT}', 'sağ': '{RIGHT}',
+    # Gezinme tuşları — hiç tanımlı değildi
+    'home': '{HOME}', 'end': '{END}',
+    'pgup': '{PGUP}', 'pgdn': '{PGDN}', 'pageup': '{PGUP}', 'pagedown': '{PGDN}',
+    'insert': '{INSERT}', 'ins': '{INSERT}',
+    'printscreen': '{PRTSC}', 'prtsc': '{PRTSC}',
 }
+
+# ---------------------------------------------------------------------------
+# DOĞAL DİL KISAYOLLARI
+#
+# Kimse "ctrl+c bas" demez; "kopyala" der. Bu tablo günlük Türkçeyi kanonik
+# kombinasyona çevirir. Kapı (`KLAVYE_KALIPLARI`) da buradan üretilir, yani
+# yeni bir satır eklemek hem anlamayı hem yürütmeyi aynı anda açar.
+#
+# ⚠️ ÇAKIŞMAYA DİKKAT: buraya eklenen ifade başka bir niyetin cümlesini
+# çalmamalı. Bu yüzden "bul" (dosya arama), "kapat" (uygulama kapatma) ve
+# "seç" gibi çıplak fiiller BİLEREK yok — sadece tek anlama gelen kalıplar var.
+# ---------------------------------------------------------------------------
+_DOGAL_KISAYOLLAR = (
+    (r'\bhepsini\s+se[çc]|t[üu]m[üu]n[üu]\s+se[çc]', 'ctrl+a'),
+    (r'\bgeri\s+al\b|\bundo\b', 'ctrl+z'),
+    (r'\bileri\s+al\b|\byinele\b|\bredo\b', 'ctrl+y'),
+    (r'\bkopyala\b', 'ctrl+c'),
+    (r'\byap[ıi]şt[ıi]r\b|\byapistir\b', 'ctrl+v'),
+    # Sadece ÇIPLAK "kes" — "sesi kes" ses kısma komutudur, Ctrl+X değil.
+    (r'^\s*kes\s*$|\bmetni\s+kes\b', 'ctrl+x'),
+    (r'\bkaydet\b', 'ctrl+s'),
+    (r'\byazd[ıi]r\b', 'ctrl+p'),
+    (r'\bsekmeyi\s+kapat\b', 'ctrl+w'),
+    (r'\byeni\s+sekme\b', 'ctrl+t'),
+    (r'\bkapanan\s+sekmeyi\s+a[çc]\b', 'ctrl+shift+t'),
+    (r'\byenile\b|\bsayfay[ıi]\s+yenile\b', 'f5'),
+    (r'\btam\s+ekran\b', 'f11'),
+    (r'\bg[öo]rev\s+y[öo]neticisi', 'ctrl+shift+esc'),
+    # ⚠️ "masaüstünü göster" BİLEREK yok: o cümle "masaüstündeki dosyaları
+    # listele" anlamına da geliyor ve dosya kapısı onu haklı olarak alıyor.
+    # Win+D için tek anlama gelen ifadeler kullanılır.
+    (r'\bmasa[üu]st[üu]ne\s+d[öo]n\b|\bt[üu]m\s+pencereleri\s+k[üu][çc][üu]lt\b', 'win+d'),
+    (r'\buygulama\s+de[ğg]i[şs]tir\b|\balt\s*tab\b', 'alt+tab'),
+    (r'\bsayfa\s+ba[şs][ıi]na\s+git\b|\bba[şs]a\s+git\b', 'ctrl+home'),
+    (r'\bsayfa\s+sonuna\s+git\b|\bsona\s+git\b', 'ctrl+end'),
+    (r'\bsayfa\s+a[şs]a[ğg][ıi]\b', 'pgdn'),
+    (r'\bsayfa\s+yukar[ıi]\b', 'pgup'),
+    (r'\byak[ıi]nla[şs]t[ıi]r\b', 'ctrl+plus'),
+    (r'\buzakla[şs]t[ıi]r\b', 'ctrl+minus'),
+)
+
+
+def dogal_kisayol_coz(metin: str):
+    """'kopyala' → 'ctrl+c'. Eşleşme yoksa None."""
+    m = (metin or '').lower().strip()
+    if not m:
+        return None
+    for kalip, kombinasyon in _DOGAL_KISAYOLLAR:
+        if re.search(kalip, m):
+            return kombinasyon
+    return None
+
+
+def _bosluklu_kombinasyon(metin: str) -> str:
+    """'ctrl c' → 'ctrl+c'. Artı işaretini yazmayan kullanıcı için.
+
+    Sadece İLK kelime bir değiştirici tuşsa uygulanır — "shift ile yaz" gibi
+    cümleler yanlışlıkla kombinasyona çevrilmesin.
+    """
+    parcalar = metin.split()
+    if len(parcalar) < 2 or '+' in metin:
+        return metin
+    if parcalar[0].lower() in _MOD_MAP and all(len(p) <= 12 for p in parcalar):
+        return '+'.join(parcalar)
+    return metin
 
 
 def yaziyi_kacir(metin: str) -> str:
@@ -419,6 +504,17 @@ def send_keyboard_input(combo_text: str) -> tuple[bool, str]:
     # 3. Türkçe dolgu eylemlerini temizle ('bas', 'yap', 'gönder', 'yolla', 'tıkla')
     raw_clean = re.sub(r'\s+(bas|bastır|bastir|yap|gönder|yolla|tıkla)$', '',
                        raw_clean, flags=re.IGNORECASE).strip()
+
+    # 3.5 Doğal dil kısayolu mu? ("kopyala" → ctrl+c, "sekmeyi kapat" → ctrl+w)
+    #     Metin yazma isteğinden ÖNCE bakılır ama 'yaz:' ön ekli cümleler
+    #     zaten aşağıda ayrı ele alınıyor; burada onlara dokunulmaz.
+    if not re.match(r'^(?:yaz|type)\s*:', raw_clean, re.IGNORECASE):
+        dogal = dogal_kisayol_coz(raw_clean)
+        if dogal:
+            raw_clean = dogal
+        else:
+            # "ctrl c" → "ctrl+c" (artı işaretini yazmayan kullanıcı)
+            raw_clean = _bosluklu_kombinasyon(raw_clean)
 
     # 4. Sonda enter var mı? ("1234 enter'a bas")
     press_enter_at_end = False

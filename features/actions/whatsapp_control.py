@@ -34,7 +34,20 @@ KISILER_KEY = 'whatsapp_kisiler'
 WA_TITLE_RE = r'.*WhatsApp.*'
 
 # Gönderim fiilleri ve alıcı ayıklamada elenecek gürültü kelimeleri
-_FIILLER = ('gönder', 'yolla', 'at', 'yaz')
+# ⚠️ Kelime sınırı ŞART: çıplak 'at' alt dizisi "saat/anlat/hayat", 'yaz' ise
+# "ne yazık/yazılım/yaz tatili" içinde geçiyor. Sınırsız hâlde bu cümleler
+# WhatsApp komutu sayılıp kullanıcıya "komutu çözemedim" rehberi basılıyordu.
+# Not: 'de' de bir gönderim fiilidir ("anneme geç kalacağım DE"). Eski sınırsız
+# sürümde bu cümle kapıdan yalnızca "whatsAPP" kelimesinin içindeki 'at' alt
+# dizisi sayesinde geçiyordu — yani doğru sonuç yanlış sebeple çıkıyordu.
+_FIIL_RE = re.compile(
+    r'\b(?:gönder\w*|yolla\w*|at|atar|atsana|yaz|yazar|yazsana|de|dedi|diye|söyle\w*)\b')
+
+
+def _fiil_var_mi(ml: str) -> bool:
+    return bool(_FIIL_RE.search(ml))
+
+
 _NOISE = {'tan', 'dan', 'ten', 'den', 'üzerinden', 'mesaj', 'mesajı', 'whatsapp', 'wp', 'bir'}
 
 
@@ -145,6 +158,30 @@ def _whatsapp_gecinor_mu(ml: str) -> bool:
     return 'whatsapp' in ml or re.search(r'\bwp\b', ml) is not None
 
 
+def kanalsiz_mesaj_ayristir(mesaj: str):
+    """Kanal adı GEÇMEYEN mesaj cümlesini ayrıştırır → (alici, metin) | None.
+
+    "anneme mesaj at: yoldayım" / "anneme yaz geç kalacağım" gibi cümlelerde
+    kullanıcı "whatsapp" demez. Niyet katmanı kanalı zaten REHBERE sorarak
+    belirlediği için (bkz. `_rehberden_kanal_coz`), burada kanal kelimesi
+    aramayız — yoksa niyet WhatsApp'a gelir ama araç cümleyi reddeder ve
+    komut sessizce LLM'e düşerdi.
+    """
+    kaliplar = (
+        r"(\S+?)['’]?[ea]\s+(?:mesaj\s+)?(?:gönder|yolla|yaz|at)\s*:\s*(.+)$",
+        r"(\S+?)['’]?[ea]\s+(?:mesaj\s+)?(?:gönder|yolla|yaz|at)\s+(.+)$",
+    )
+    for kalip in kaliplar:
+        m = re.search(kalip, mesaj, re.IGNORECASE | re.DOTALL)
+        if m:
+            alici = ' '.join(t for t in m.group(1).strip().lower().split()
+                             if t not in _NOISE).strip()
+            metin = m.group(2).strip()
+            if alici and metin:
+                return alici, metin
+    return None
+
+
 def whatsapp_gonderim_ayristir(mesaj: str):
     """
     Gönderim komutunu ayrıştırır → (alici, metin) veya None.
@@ -156,7 +193,7 @@ def whatsapp_gonderim_ayristir(mesaj: str):
     ml = mesaj.lower().strip()
     if not _whatsapp_gecinor_mu(ml):
         return None
-    if not any(f in ml for f in _FIILLER):
+    if not _fiil_var_mi(ml):
         return None
     if 'kişi' in ml:  # rehber komutlarıyla karışmasın
         return None
@@ -168,6 +205,16 @@ def whatsapp_gonderim_ayristir(mesaj: str):
         r"(\S+?)['’]?[ea]\s+(.+?)\s+(?:yazılı|yazan|diye)\s+(?:bir\s+)?mesaj",
         r"whatsapp\S*(?:\s+üzerinden)?\s+(\S+?)['’]?[ea]\s+(.+?)\s+(?:gönder|yolla|yaz|at)\b",
         r"(\S+?)['’]?[ea]\s+whatsapp\S*\s+(.+?)\s+(?:gönder|yolla|yaz|at)\b",
+        # FİİL ORTADA — en doğal yazım, eskiden HİÇ desteklenmiyordu:
+        #   "anneme whatsapp at yarın gelemeyeceğim"
+        #   "seyit'e whatsapp gönder toplantı ertelendi"
+        r"(\S+?)['’]?[ea]\s+whatsapp\S*(?:\s+üzerinden)?\s+"
+        r"(?:gönder|yolla|yaz|at)\s+(.+)$",
+        #   "whatsapp ile anneme geç kalacağım de"
+        r"whatsapp\S*(?:\s+ile|\s+üzerinden)?\s+(\S+?)['’]?[ea]\s+(.+?)\s+de\s*$",
+        #   "whatsapp'tan anneme yaz geç kalacağım"
+        r"whatsapp\S*(?:\s+ile|\s+üzerinden)?\s+(\S+?)['’]?[ea]\s+"
+        r"(?:gönder|yolla|yaz|at)\s+(.+)$",
     ]
     for kalip in dogal_kaliplar:
         m = re.search(kalip, mesaj, re.IGNORECASE)
@@ -197,9 +244,12 @@ def whatsapp_gonderim_ayristir(mesaj: str):
 
     once_l = once.lower()
 
-    # Alıcı: "X'e" / "X'a" kalıbı (\w unicode: Türkçe harfler ve _ dahil)
+    # Alıcı: "X'e" / "Xe" kalıbı.
+    # ⚠️ KESME İŞARETİ ZORUNLU DEĞİL. Eski hâli `['’]` şart koşuyordu; kimse
+    # "annem'e" yazmıyor, "anneme" yazıyor. Bu yüzden BELGELENMİŞ biçim olan
+    # "anneme whatsapp gönder: yoldayım" bile ayrıştırılamıyordu.
     alici = None
-    m = re.search(r"([\w+ ]{2,}?)['’](?:e|a|ye|ya)\b", once_l)
+    m = re.search(r"\b([\wçğıöşü+]{2,}?)['’]?(?:ye|ya|e|a)\b", once_l)
     if m:
         alici = m.group(1).strip()
     else:
@@ -321,6 +371,12 @@ def whatsapp_komutu_algila(mesaj: str):
     """
     ml = mesaj.lower().strip()
     if not _whatsapp_gecinor_mu(ml):
+        # Kanal adı yok ama niyet katmanı rehberden WhatsApp'a karar vermiş
+        # olabilir ("anneme mesaj at: yoldayım"). Alıcı rehberde ÇÖZÜLÜYORSA
+        # üstleniriz; çözülmüyorsa dokunmayız (yanlış kişiye mesaj gitmesin).
+        kanalsiz = kanalsiz_mesaj_ayristir(mesaj)
+        if kanalsiz and kisi_coz(kanalsiz[0]):
+            return whatsapp_mesaj_gonder(*kanalsiz)
         return False, None
 
     # Rehber yönetimi
@@ -345,7 +401,7 @@ def whatsapp_komutu_algila(mesaj: str):
 
     # WhatsApp'la ilgili bir gönderim isteği ama çözülemedi →
     # LLM'e DÜŞÜRME (saçmalıyor); kullanım rehberi göster
-    if 'mesaj' in ml or any(f in ml for f in _FIILLER):
+    if 'mesaj' in ml or _fiil_var_mi(ml):
         return True, ("⚠️ WhatsApp komutunu tam çözemedim. Şu biçimlerden birini kullan:\n"
                       "• `annem'e whatsapp'tan mesaj gönder: iyi akşamlar`\n"
                       "• `anneme iyi akşamlar yazılı mesaj gönder whatsapp üzerinden`\n"

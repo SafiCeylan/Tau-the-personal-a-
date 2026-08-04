@@ -31,11 +31,16 @@ from features.email_control import email_komutu_algila, email_gonderim_ayristir,
 from features.scheduler import zamanlama_komutu_algila
 from features.auto_memory import hafiza_ogren
 from features.file_finder import dosya_arama_niyeti, dosya_bul_ve_islet
+from features.actions.ui_click import tiklama_niyeti_algila
+from features import screen_context
+from features.screen_context import secim_niyeti_algila
+from features.screen_reader import ekran_niyeti_algila
 from features.file_send import (
     dosya_niyeti_coz, dosya_komutu_isle, hedef_dosyayi_coz, indeks_komutu_algila,
     calistirilabilir_mi,
 )
 from features.chat_learning import ogrenme_komutu_algila
+from features.calendar_tools import takvim_niyeti_algila
 from features.clipboard_tools import pano_komutu
 from features.quick_tools import (
     hesapla, hesap_niyeti_algila, saat_tarih_raporu, saat_tarih_niyeti_algila,
@@ -43,6 +48,75 @@ from features.quick_tools import (
     notlari_getir, notlari_sil,
 )
 from features.screenshot_tool import ekran_goruntusu_al
+
+
+# Mesaj gönderme fiilleri. ⚠️ 'at' kelime sınırıyla aranır — düz alt dizi
+# olarak "başlat", "saat", "anlat", "hayat" içinde geçiyor. Bu liste eskiden
+# 'at' fiilini HİÇ içermiyordu; "anneme whatsapp at" (en doğal yazım) kapıdan
+# geçemiyor, WhatsApp'ı UYGULAMA olarak açmaya çalışıyordu.
+_MESAJ_FIIL_RE = re.compile(
+    # ⚠️ 'kişi' değil 'kişi\w*': "whatsapp kişileri listele" cümlesinde kelime
+    # "kişileri" olduğu için düz \bkişi\b eşleşmiyordu.
+    r'\b(?:mesaj\w*|kişi\w*|kisi\w*|rehber\w*'
+    r'|yaz|yazar|yazsana|yazıver|yaziver'
+    r'|gönder\w*|gonder\w*|yolla\w*|ilet|iletir'
+    r'|at|atar|attır|attir|atıver|ativer|atsana)\b'
+)
+
+# Kanal adı AÇIKÇA geçen cümlelerde daha geniş fiil kabul edilir: "whatsapp ile
+# anneme geç kalacağım DE", "... listele". Bu fiiller ('de', 'listele') rehber
+# tabanlı tahmin yolunda KULLANILMAZ — "annem de geldi" cümlesini mesaj sanardı.
+_MESAJ_FIIL_GENIS_RE = re.compile(
+    r'\b(?:mesaj\w*|kişi\w*|kisi\w*|rehber\w*'
+    r'|yaz|yazar|yazsana|yazıver|yaziver'
+    r'|gönder\w*|gonder\w*|yolla\w*|ilet|iletir'
+    r'|at|atar|attır|attir|atıver|ativer|atsana'
+    r'|de|dedi|diye|listele\w*|göster\w*|goster\w*)\b'
+)
+
+# "anneme mesaj at" → alıcı adayı "annem" (yönelme eki kırpılır)
+_ALICI_ADAY_RE = re.compile(r"\b([\wçğıöşüÇĞİÖŞÜ]{2,})['’]?(?:ye|ya|e|a)\b")
+
+
+def _rehberden_kanal_coz(msg: str):
+    """Kanal adı geçmeyen mesaj cümlesini REHBERE sorarak çözer.
+
+    "anneme mesaj at" / "babama yaz geç kalacağım" gibi cümlelerde kullanıcı
+    kanal söylemez. Tahmin yürütmek yerine alıcıyı rehberde ararız:
+    WhatsApp rehberindeyse WhatsApp, e-posta rehberindeyse e-posta.
+    İkisinde de yoksa None döner — uydurmayız, cümle LLM'e kalır.
+
+    Dönen: "WHATSAPP_MESSAGE" | "EMAIL_MESSAGE" | None
+    """
+    if not _MESAJ_FIIL_RE.search(msg):
+        return None
+    adaylar = _ALICI_ADAY_RE.findall(msg)
+    if not adaylar:
+        return None
+
+    try:
+        from features.actions.whatsapp_control import kisi_coz
+        from features.email_control import email_kisiler
+    except Exception:
+        return None
+
+    epostalar = {}
+    try:
+        epostalar = email_kisiler() or {}
+    except Exception:
+        pass
+
+    for aday in adaylar:
+        ad = aday.lower()
+        try:
+            if kisi_coz(ad) or kisi_coz(ad + 'e'):
+                return "WHATSAPP_MESSAGE"
+        except Exception:
+            pass
+        for kayitli in epostalar:
+            if ad == kayitli or ad.rstrip('ıi') == kayitli or kayitli.startswith(ad):
+                return "EMAIL_MESSAGE"
+    return None
 
 
 def _klavye_komutu_mu(msg: str) -> bool:
@@ -123,6 +197,15 @@ class IntentAnalyzerLayer:
             ctx.confidence = 0.95
             return ctx
 
+        # 📅 Takvim — dosya niyetinden ÖNCE bakılır (LEARNING_REPORT ile aynı
+        # gerekçe): "takvimi göster" cümlesindeki "göster" fiili dosya arama
+        # fiilidir ve indekste "takvim" adlı bir dosya varsa komut oraya kaçar.
+        # Kapı DAR: "hatırlat"/"zamanla" geçen cümlelere el koymaz.
+        if takvim_niyeti_algila(ctx.normalized_input):
+            ctx.intent = "CALENDAR"
+            ctx.confidence = 0.93
+            return ctx
+
         # 📎 Dosya bul & gönder — WhatsApp/e-posta niyetlerinden ÖNCE bakılır,
         # çünkü "staj raporunu anneme mail at" cümlesi ikisine birden benziyor.
         # Karar `dosya_niyeti_coz` içinde veriliyor: zayıf sinyalli cümlelerde
@@ -137,22 +220,30 @@ class IntentAnalyzerLayer:
             return ctx
 
         # WhatsApp mesaj/rehber komutları ("whatsapp aç" DEĞİL — o SYSTEM_CONTROL kalır)
-        if ('whatsapp' in msg or re.search(r'\bwp\b', msg)) and \
-                any(k in msg for k in ['mesaj', 'kişi', 'rehber', 'gönder', 'yolla', 'yaz']):
+        if ('whatsapp' in msg or re.search(r'\bwp\b', msg)) and _MESAJ_FIIL_GENIS_RE.search(msg):
             ctx.intent = "WHATSAPP_MESSAGE"
             ctx.confidence = 0.95
-        elif re.search(r'\b(mail|e-posta|eposta)\b', msg) and \
-                any(k in msg for k in ['kişi', 'rehber', 'gönder', 'yolla', 'yaz', ' at']):
+        elif re.search(r'\b(mail|e-posta|eposta)\b', msg) and _MESAJ_FIIL_GENIS_RE.search(msg):
             ctx.intent = "EMAIL_MESSAGE"
             ctx.confidence = 0.95
+        elif _rehberden_kanal_coz(msg):
+            # Kanal adı GEÇMEYEN doğal cümle: "anneme mesaj at", "babama yaz".
+            # Kararı rehber verir — alıcı WhatsApp rehberindeyse WhatsApp,
+            # e-posta rehberindeyse e-posta. İkisinde de yoksa buraya girilmez
+            # ve cümle uydurulmadan LLM'e kalır.
+            ctx.intent = _rehberden_kanal_coz(msg)
+            ctx.confidence = 0.90
         elif any(k in msg for k in ['günaydın', 'sabah brifingi', 'sabah raporu', 'sabah özeti', 'brifing']):
             ctx.intent = "MORNING_BRIEFING"
             ctx.confidence = 0.95
         elif any(k in msg for k in ['akşam raporu', 'gün raporu', 'günün özeti', 'gün özeti', 'akşam özeti']):
             ctx.intent = "EVENING_REPORT"
             ctx.confidence = 0.95
-        elif 'zamanla' in msg or 'zamanlanmış' in msg or 'zamanlama' in msg or \
+        elif re.search(r'\bzamanla\b|\bzamanlanmış\b|\bzamanlama\b', msg) or \
                 re.search(r'\bher\s+(gün|sabah|akşam)\b.*\d{1,2}[:.]\d{2}', msg):
+            # ⚠️ Kelime sınırı şart: çıplak 'zamanla' alt dizisi "zamanlayıcı"
+            # içinde geçiyor ve "10 dakikalık zamanlayıcı başlat" komutunu
+            # sayaç yerine zamanlanmış göreve yolluyordu.
             # "her gün 21:00 dolar kaç" gibi doğal zamanlama da buraya girer
             ctx.intent = "SCHEDULE_TASK"
             ctx.confidence = 0.95
@@ -177,6 +268,11 @@ class IntentAnalyzerLayer:
         elif 'ekran görüntüsü' in msg or 'ekranın fotoğrafı' in msg or 'screenshot' in msg:
             ctx.intent = "SCREENSHOT"
             ctx.confidence = 0.95
+        elif ekran_niyeti_algila(msg):
+            # "ekranda ne yazıyor" — SCREENSHOT'tan SONRA bakılır, yoksa
+            # "ekran görüntüsü al" da buraya düşer (ikisinde de 'ekran' geçiyor).
+            ctx.intent = "SCREEN_READ"
+            ctx.confidence = 0.95
         elif re.search(r'\bpano', msg):
             ctx.intent = "CLIPBOARD"
             ctx.confidence = 0.95
@@ -184,8 +280,13 @@ class IntentAnalyzerLayer:
                 ('odak' in msg and any(k in msg for k in ['durum', 'iptal', 'kaldı', 'süre', 'bitir'])):
             ctx.intent = "FOCUS_MODE"
             ctx.confidence = 0.95
-        elif re.search(r'\bhava\b', msg) and \
-                any(k in msg for k in ['durum', 'nasıl', 'kaç derece', 'yağmur', 'sıcak', 'soğuk', 'kar ']):
+        elif (re.search(r'\bhava\b', msg) and
+              any(k in msg for k in ['durum', 'nasıl', 'kaç derece', 'yağmur',
+                                     'sıcak', 'soğuk', 'kar '])) or \
+                re.search(r'\b(yağmur|kar|güneş|sıcaklık|derece)\w*\s+.{0,20}'
+                          r'(yağ\w*|olacak|var mı|mı)\b', msg):
+            # "yarın yağmur yağacak mı" cümlesinde 'hava' kelimesi geçmiyor —
+            # eski kapı bu en doğal soruyu kaçırıyordu.
             # Hava soruları web aramasına değil doğrudan wttr.in'e gider
             ctx.intent = "WEATHER"
             ctx.confidence = 0.95
@@ -193,7 +294,8 @@ class IntentAnalyzerLayer:
             ctx.intent = "CURRENCY"
             ctx.confidence = 0.95
         # Kelime sınırı ile eşle: "prenses", "seslendirme" gibi kelimeler tetiklemesin
-        elif re.search(r'\b(ses|sesi|sesini|sesim|sesimi|sesine|volume|kökle|fulle|kokle)\b', msg):
+        elif re.search(r'\b(ses|sesi|sesini|sesim|sesimi|sesine|sessiz|sessize'
+                       r'|volume|kökle|fulle|kokle)\b', msg):
             ctx.intent = "SET_VOLUME"
             ctx.confidence = 0.95
         elif medya_komutu_algila(msg):
@@ -216,13 +318,31 @@ class IntentAnalyzerLayer:
         #   • "şifre nedir"  → \bşifre\b eşleşiyor, "nedir" PIN sanılıyordu
         # Bu yüzden ya bir ön ek (`tuş:`), ya bir modifier kombinasyonu,
         # ya da tuş adının ardından açık bir eylem fiili ("bas") aranır.
+        elif secim_niyeti_algila(msg) and screen_context.son_okuma(
+                screen_context.VARSAYILAN_KANAL):
+            # "3'ü aç" / "ikinciyi aç" — SADECE taze bir ekran okuması varken.
+            # Okuma yoksa kapı kapalıdır, yoksa "3'ü aç" gibi cümleler ekran
+            # okumasıyla ilgisi olmadığı hâlde buraya düşerdi.
+            ctx.intent = "SCREEN_SELECT"
+            ctx.confidence = 0.93
+        elif tiklama_niyeti_algila(msg):
+            # "ekranda Kaydet'e tıkla" — KLAVYE kapısından ÖNCE sorulur.
+            # Tıklama dedektörü zaten tuş adlarını (enter, esc, ctrl+…) REDDEDER,
+            # ama klavye kapısı doğal kısayolları tanıdığı için ("kaydet" → Ctrl+S)
+            # sonra sorulursa "ekranda Kaydet'e tıkla" cümlesini o yutuyor.
+            ctx.intent = "SCREEN_CLICK"
+            ctx.confidence = 0.95
         elif _klavye_komutu_mu(msg):
             ctx.intent = "KEYBOARD_INPUT"
             ctx.confidence = 0.95
         elif any(k in msg for k in ["analiz raporu", "haftalık rapor", "aylık rapor", "kişisel analiz", "haftalık özet"]):
             ctx.intent = "ANALYSIS_REPORT"
             ctx.confidence = 0.90
-        elif any(k in msg for k in ["ara:", "internet:", "google:", "haberler"]) or ("nedir" in msg or "kimdir" in msg):
+        elif any(k in msg for k in ["ara:", "internet:", "google:", "haberler"]) or \
+                (("nedir" in msg or "kimdir" in msg) and
+                 not re.search(r'\b(sistem|donanım|ram|cpu|disk|pil|batarya)\b', msg)):
+            # ⚠️ "sistem durumu nedir" internete gitmemeli — "nedir" kelimesi
+            # tek başına web araması sayılırsa yerel donanım raporu hiç çalışmaz.
             ctx.intent = "WEB_SEARCH"
             ctx.confidence = 0.90
         elif any(k in msg for k in ["oku:", "dosya oku:", "kod oku:", "pdf oku:"]):
@@ -739,6 +859,14 @@ class ExecutionEngineLayer:
 # LAYER 9: PROMPT GENERATOR (Canlı Veri & Sohbet Geçmişi Destekli)
 # =========================================================================
 class PromptGeneratorLayer:
+    # Ekran içeriği SADECE bu sağlayıcılara verilir — ikisi de localhost'ta çalışır.
+    # Gemini/TAU Backend buluttur: ekran görüntüsü parola yöneticisi, banka ekranı
+    # veya özel yazışma içerebilir, dışarı çıkmamalı.
+    YEREL_SAGLAYICILAR = ('ollama', 'kobold')
+
+    def __init__(self, config=None):
+        self.config = config or {}
+
     def process(self, ctx: UltronContext) -> UltronContext:
         mem_str = "\n".join([f"- {m}" for m in ctx.user_memories])
         
@@ -769,6 +897,31 @@ class PromptGeneratorLayer:
             web_context_str += (f"\n[PANO İÇERİĞİ]:\n{ctx.entities['pano_icerik'][:3000]}\n"
                                 f"GÖREV: {ctx.entities.get('pano_gorev', '')}\n")
 
+        # 👁️ Ekran okuma (OCR) — GİZLİLİK SINIRI BURADA.
+        # Okunan ekran metni yalnızca YEREL modele verilir; bulut sağlayıcıda
+        # içerik gönderilmez, modele durumu kullanıcıya söylemesi söylenir.
+        if ctx.entities.get('ekran_icerik'):
+            # ⚠️ Anahtar 'ai_provider' — AssistantController da bunu okur.
+            # 'provider' anahtarı config.json'da None olarak duruyor; `get(k, var)`
+            # kullanmak None döndürür (anahtar VAR ama değeri yok) ve yerel Ollama
+            # bulut sanılıp ekran içeriği boşuna bloklanırdı. `or` zinciri şart.
+            saglayici = str(self.config.get('ai_provider')
+                            or self.config.get('provider')
+                            or 'ollama').lower()
+            kaynak = ctx.entities.get('ekran_kaynak') or 'ön plandaki pencere'
+            if saglayici in self.YEREL_SAGLAYICILAR:
+                web_context_str += (
+                    f"\n[EKRAN İÇERİĞİ — kaynak: {kaynak}]:\n"
+                    f"{ctx.entities['ekran_icerik'][:3000]}\n"
+                    f"GÖREV: {ctx.entities.get('ekran_gorev', '')}\n")
+            else:
+                web_context_str += (
+                    "\n[EKRAN İÇERİĞİ GÖNDERİLMEDİ]\n"
+                    "Kullanıcının ekranındaki metin gizlilik gereği bulut modeline "
+                    "iletilmedi. Cevabında SADECE şunu söyle: ekran içeriğini bulut "
+                    "modeline göndermiyorum, Ayarlar'dan yerel modele (Ollama) "
+                    "geçersen ekranı okuyabilirim. Başka bir şey uydurma.\n")
+
         ctx.enriched_prompt = (
             f"[ULTRON SİSTEM]\n"
             f"Sen ULTRON'sun: Türkçe konuşan kişisel bir masaüstü ve Telegram asistanı. "
@@ -777,6 +930,7 @@ class PromptGeneratorLayer:
             f"\n"
             f"GERÇEK YETENEKLERİN (bunları gerçekten yapabilirsin):\n"
             f"• Uygulama açma/kapatma, ses ve sistem kontrolü, ekran görüntüsü alma\n"
+            f"• Ekranda YAZAN metni okuma (OCR): 'ekranda ne yazıyor', 'şu hatayı oku'\n"
             f"• Hatırlatma kurma, sayaç kurma, sabah brifingi, hava durumu ve döviz kuru\n"
             f"• WhatsApp ve e-posta mesajı gönderme (kullanıcı onayıyla)\n"
             f"• İnternette arama, dosya bulma/okuma, müzik çalma, not/hafıza tutma\n"

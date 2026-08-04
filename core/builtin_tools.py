@@ -29,9 +29,13 @@ from features.actions.whatsapp_control import whatsapp_komutu_algila
 from features.briefing import (
     sabah_brifingi_olustur, aksam_raporu_olustur, hava_raporu, doviz_raporu,
 )
+from features.calendar_tools import takvim_komutu_algila
 from features.clipboard_tools import pano_komutu
 from features.email_control import email_komutu_algila
 from features.file_finder import dosya_bul_ve_islet
+from features.actions.ui_click import ekranda_tikla, tiklama_hedefi_coz
+from features import screen_context
+from features.screen_reader import ekran_komutu
 from features.file_reader import dosya_oku_ve_analiz_et, dosya_okuma_niyeti_algila
 from features import file_index
 from features.file_send import dosya_komutu_isle, indeks_komutu_algila
@@ -291,6 +295,20 @@ def web_ara(metin="", sorgu=None, **_):
 # =========================================================================
 
 @arac_kaydet(
+    "takvim_yonet",
+    "Takvime etkinlik ekler, günün/haftanın programını listeler, etkinlik siler, "
+    "dış takvimi (ICS) senkronize eder veya takvimi .ics olarak dışa aktarır.",
+    {"metin": "takvim cümlesi (örn. 'takvime yarın 14:00 toplantı ekle')"},
+    intent="CALENDAR", db_ister=True,
+)
+def takvim_yonet(metin="", db_cursor=None, db_conn=None, **_):
+    if db_cursor is None:
+        return AracSonuc.islenmedi()
+    islendi, cevap = takvim_komutu_algila(metin, db_cursor, db_conn)
+    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+
+
+@arac_kaydet(
     "hatirlatma_kur", "Hatırlatma kaydeder veya kayıtlı hatırlatmaları listeler.",
     {"metin": "hatırlatma cümlesi"}, intent="CREATE_REMINDER", db_ister=True,
 )
@@ -398,6 +416,63 @@ def ekran_goruntusu(metin="", **_):
     if yol:
         return AracSonuc.ok(cevap, screenshot_path=yol)
     return AracSonuc.hata(cevap)
+
+
+@arac_kaydet(
+    "ekranda_sec",
+    "Ekran okumasındaki numaralı öğeyi açar ('3'ü aç', 'ikinciyi aç').",
+    {"metin": "seçim komutu"},
+    risk=RISK_ONAY,   # kullanıcı adına tıklar
+    intent="SCREEN_SELECT",
+)
+def ekranda_sec_araci(metin="", **_):
+    referans = screen_context.secim_referansi_coz(metin)
+    if not referans:
+        return AracSonuc.islenmedi()
+
+    oge, hata = screen_context.ogeyi_sec(referans, screen_context.VARSAYILAN_KANAL)
+    if hata:
+        return AracSonuc.ok(f"🤔 {hata}")
+
+    from core.interaction import level3_ocr
+    x, y = oge['merkez']
+    sonuc = level3_ocr.noktaya_tikla(x, y, oge['baslik'])
+    if sonuc.success:
+        return AracSonuc.ok(f"🖱️ **{oge['sira']}. {oge['baslik'][:60]}** açılıyor.")
+    return AracSonuc.ok(f"⚠️ **{oge['baslik'][:60]}** açılamadı — {sonuc.message}")
+
+
+@arac_kaydet(
+    "ekranda_tikla", "Ekranda adı verilen düğmeye tıklar (önce UIA, olmazsa OCR).",
+    {"metin": "tıklama komutu"},
+    risk=RISK_ONAY,   # kullanıcı adına düğmeye basar — planner tek başına tetikleyemez
+    intent="SCREEN_CLICK",
+)
+def ekranda_tikla_araci(metin="", hedef=None, **_):
+    secilen = hedef or tiklama_hedefi_coz(metin)
+    if not secilen:
+        return AracSonuc.islenmedi()
+    islendi, cevap = ekranda_tikla(secilen)
+    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+
+
+@arac_kaydet(
+    "ekrani_oku", "Ekrandaki yazıyı OCR ile okur; özetler, açıklar veya içinde arar.",
+    {"metin": "ekran okuma komutu"}, intent="SCREEN_READ",
+)
+def ekrani_oku_araci(metin="", **_):
+    sonuc = ekran_komutu(metin)
+    if not sonuc:
+        return AracSonuc.islenmedi()
+    if sonuc['tip'] == 'direct':
+        return AracSonuc.ok(sonuc['sonuc'])
+    # 'ai' → okunan metin LLM'e akmalı: üstlenilmez ama bağlama veri bırakılır.
+    # Bulut sağlayıcıya GÖNDERİLMEZ — kararı PromptGeneratorLayer verir.
+    return AracSonuc(
+        islendi=False, basarili=False,
+        veri={'ekran_icerik': sonuc['icerik'], 'ekran_gorev': sonuc['gorev'],
+              'ekran_kaynak': sonuc.get('baslik', '')},
+    )
 
 
 @arac_kaydet(

@@ -34,8 +34,33 @@ CONFIG_PATH = veri_yolu('config.json')
 # Varsayılan kanal: masaüstünden verilen komutlar bu ada yazılır
 MASAUSTU_KANALI = 'desktop'
 
-_ARAMA_FIILLERI = ('bul', 'ara', 'nerede', 'listele', 'göster')
-_GONDERIM_FIILLERI = ('gönder', 'yolla', 'at', 'ilet', 'paylaş')
+# ⚠️ İKİ AYRI TUZAK — ikisi de bu kapıyı alakasız cümleleri kapar hâle getirmişti:
+#
+# 1) Karşılaştırma `file_index.sadelestir()` ÇIKTISI üzerinde yapılır ("gönder"
+#    → "gonder"). Sabit Türkçe harfle yazılırsa fiil ÖLÜDÜR, hiç eşleşmez.
+#    'gönder', 'paylaş' ve 'göster' tam olarak bu yüzden hiç çalışmıyordu.
+#
+# 2) Düz alt dizi araması ("at" in ml) çok şey yakalar:
+#       at   → başlat, saat, anlat, hayat, rahat, sanat
+#       ara  → araba, para, karar, tarayıcı
+#       bul  → bulut, bulaşık, İstanbul
+#       ilet → iletişim
+#    "10 dakikalık zamanlayıcı başlat" cümlesi bu yüzden dosya komutu sayılıp
+#    indeksten rastgele dosya gönderiyordu. Kelime sınırı ŞART.
+#
+# Türkçe çekim ekleri açıkça yazılır ("gönderir misin", "atar mısın") — serbest
+# `\w*` kullanılırsa 1. maddedeki tuzağa geri düşülür.
+_GONDERIM_RE = re.compile(
+    r'\b(?:gonder|yolla|paylas)(?:ir|ir\s|iver|ebilir|sene|sana)?\w{0,4}\b'
+    r'|\bilet(?:ir|iver|ebilir)?\b'
+    r'|\bat(?:ar|iver|iversene|arak)?\b'
+)
+_ARAMA_RE = re.compile(
+    r'\b(?:goster|listele)\w{0,6}\b'
+    r'|\bbul(?:ur|abilir|sana|uver)?\b'
+    r'|\bara(?:r|yabilir|stir\w{0,4})?\b'
+    r'|\bner[dei]\w{0,2}\b'
+)
 # "aç" fiili SYSTEM_CONTROL ile çakışır ("chrome aç"). Bu yüzden 'ac' işlemi
 # YALNIZCA güçlü dosya sinyali olan cümlelerde üretilir — aşağıya bak.
 #
@@ -132,8 +157,8 @@ def dosya_komutu_ayristir(mesaj: str):
         return None
 
     hedef, alici = _hedef_belirle(ml)
-    gonderim_var = any(f in ml for f in _GONDERIM_FIILLERI) or hedef is not None
-    arama_var = any(f in ml for f in _ARAMA_FIILLERI)
+    gonderim_var = bool(_GONDERIM_RE.search(ml)) or hedef is not None
+    arama_var = bool(_ARAMA_RE.search(ml))
     acma_var = bool(_ACMA_RE.search(ml))
 
     # Sıra numarasıyla seçim: "1'i bana gönder"
@@ -211,7 +236,12 @@ def dosya_niyeti_coz(mesaj: str, kanal=MASAUSTU_KANALI):
 
 def _tur_bul(ml: str):
     for tur in _TUR_SOZLUGU:
-        if re.search(r'\b' + file_index.sadelestir(tur), ml):
+        # ⚠️ KAPANIŞ sınırı olmadan '\bses' kalıbı "seslen" kelimesini yakalıyordu:
+        # "bana 5 dakika sonra seslen" → tur='ses' → "telegram'a ses dosyası
+        # gönder" sanılıyor ve kullanıcıya rastgele bir mp3 düşüyordu.
+        # Çekim ekleri açıkça sayılır; "seslen"deki '-len' listede yok.
+        if re.search(r'\b' + re.escape(file_index.sadelestir(tur)) +
+                     r'(?:ler|lar|leri|lari|li|i|im|ini|inin)?\b', ml):
             return tur
     m = re.search(r'\.(\w{2,5})\b', ml)
     return '.' + m.group(1) if m else None

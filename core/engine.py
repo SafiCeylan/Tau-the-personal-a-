@@ -44,7 +44,7 @@ class UltronCoreEngine:
         self.l6_security = SecurityAnalyzerLayer()
         self.l7_planner = TaskPlannerLayer()
         self.l8_tools = ToolSelectionEngineLayer()
-        self.l9_prompt = PromptGeneratorLayer()
+        self.l9_prompt = PromptGeneratorLayer(self.config)
         self.l10_llm = LLMCoreLayer(self.config)
         self.l11_action = ActionPlannerLayer()
         self.l12_exec = ExecutionEngineLayer()
@@ -75,6 +75,7 @@ class UltronCoreEngine:
         self.config = config or {}
         self.l3_intent.config = self.config
         self.l5_memory.config = self.config
+        self.l9_prompt.config = self.config   # ekran okuma gizlilik sınırı buna bakar
         self.l10_llm.config = self.config
 
     def process(self, raw_input: str, input_type: str = "text", recent_context: list = None,

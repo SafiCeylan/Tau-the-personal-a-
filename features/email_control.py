@@ -31,7 +31,15 @@ CONFIG_PATH = veri_yolu('config.json')
 EMAIL_KEY = 'email_kisiler'
 VARSAYILAN_KONU = 'ULTRON Asistan Mesajı'
 
-_FIILLER = ('gönder', 'yolla', 'at', 'yaz')
+# ⚠️ Kelime sınırı ŞART: çıplak 'at' alt dizisi "saat/anlat/hayat", 'yaz' ise
+# "ne yazık/yazılım" içinde geçiyor. Sınırsız hâlde "mail yazılımı bozuldu"
+# gibi sıradan cümleler e-posta komutu sayılıp kullanıcıya kullanım rehberi
+# basılıyordu.
+_FIIL_RE = re.compile(r'\b(?:gönder\w*|yolla\w*|at|atar|atsana|yaz|yazar|yazsana)\b')
+
+
+def _fiil_var_mi(ml: str) -> bool:
+    return bool(_FIIL_RE.search(ml))
 _NOISE = {'tan', 'dan', 'ten', 'den', 'üzerinden', 'mail', 'maili', 'eposta', 'e-posta', 'bir'}
 _EMAIL_RE = re.compile(r'^[\w.+-]+@[\w-]+\.[\w.-]+$')
 
@@ -136,6 +144,27 @@ def _email_gecinor_mu(ml: str) -> bool:
     return re.search(r'\b(mail|e-posta|eposta)\b', ml) is not None
 
 
+def _konu_icerik_ayir(govde: str):
+    """"Konu | içerik" → (konu, içerik). Ayıraç yoksa konu varsayılan olur."""
+    govde = (govde or '').strip()
+    # "konu: staj raporu" → konu başlığı belirtilmiş. Ayrı bir gövde yoksa
+    # içerik olarak da aynı metin kullanılır (boş mail göndermeyelim).
+    m = re.match(r'^konu\s*:\s*(.+)$', govde, re.IGNORECASE | re.DOTALL)
+    if m:
+        kalan = m.group(1).strip()
+        if '|' in kalan:
+            konu, _, icerik = kalan.partition('|')
+            return konu.strip(), (icerik.strip() or konu.strip())
+        return kalan, kalan
+    if '|' in govde:
+        konu, _, icerik = govde.partition('|')
+        konu, icerik = konu.strip(), icerik.strip()
+        if not icerik:
+            icerik, konu = konu, VARSAYILAN_KONU
+        return konu, icerik
+    return VARSAYILAN_KONU, govde.strip()
+
+
 def email_gonderim_ayristir(mesaj: str):
     """
     Gönderim komutunu ayrıştırır → (alici, konu, icerik) veya None.
@@ -145,15 +174,45 @@ def email_gonderim_ayristir(mesaj: str):
     ml = mesaj.lower().strip()
     if not _email_gecinor_mu(ml):
         return None
-    if not any(f in ml for f in _FIILLER):
+    if not _fiil_var_mi(ml):
         return None
     if 'kişi' in ml:
         return None
 
+    # ── DOĞAL (iki noktasız) KALIPLAR ──
+    # Kimse "anneme mail gönder: yarın gelemem" diye yazmıyor; iki noktasız
+    # yazıyor. Eski sürüm ':' yoksa HİÇ ayrıştırmıyordu — e-posta pratikte
+    # yalnızca belgelenmiş biçimle çalışıyordu.
+    #   "anneme mail at yarın gelemeyeceğim"      → fiil ortada
+    #   "mail at anneme toplantı ertelendi"       → ters diziliş
+    dogal_kaliplar = [
+        r"(\S+?)['’]?[ea]\s+(?:mail|e-?posta)\S*(?:\s+üzerinden)?\s+"
+        r"(?:gönder|yolla|at|yaz)\s+(.+)$",
+        r"(?:mail|e-?posta)\S*(?:\s+ile|\s+üzerinden)?\s+"
+        r"(?:gönder|yolla|at|yaz)\s+(\S+?)['’]?[ea]\s+(.+)$",
+    ]
+    for kalip in dogal_kaliplar:
+        dm = re.search(kalip, mesaj, re.IGNORECASE | re.DOTALL)
+        if dm:
+            alici_ham = dm.group(1).strip().lower()
+            govde = dm.group(2).strip()
+            # "konu: X | içerik" yine desteklensin
+            konu, icerik = _konu_icerik_ayir(govde)
+            if alici_ham and icerik:
+                return alici_ham, konu, icerik
+
+    # ── KLASİK ':' KALIBI ──
+    # ⚠️ "konu:" bir GÖVDE ayıracı değil, konu başlığı işaretidir. Düz partition
+    # kullanılırsa "hocama mail at konu: staj raporu" cümlesinde alıcı "konu"
+    # olarak okunuyordu — yani mail yanlış kişiye gidiyordu.
+    m_konu = re.search(r'\bkonu\s*:\s*(.+)$', mesaj, re.IGNORECASE | re.DOTALL)
     m = re.search(r'\b(?:gönder|yolla|at|yaz)\s*:\s*(.+)$', mesaj, re.IGNORECASE | re.DOTALL)
     if m:
         govde = m.group(1).strip()
         once = mesaj[:m.start()]
+    elif m_konu:
+        govde = m_konu.group(1).strip()
+        once = mesaj[:m_konu.start()]
     else:
         once, sep, govde = mesaj.partition(':')
         if not sep:
@@ -162,18 +221,14 @@ def email_gonderim_ayristir(mesaj: str):
     if not govde:
         return None
 
-    # "Konu | içerik" ayrımı
-    if '|' in govde:
-        konu, _, icerik = govde.partition('|')
-        konu, icerik = konu.strip(), icerik.strip()
-        if not icerik:
-            icerik, konu = konu, VARSAYILAN_KONU
-    else:
-        konu, icerik = VARSAYILAN_KONU, govde
+    konu, icerik = _konu_icerik_ayir(govde)
 
     once_l = once.lower()
     alici = None
-    m = re.search(r"([\w.+\-@ ]{2,}?)['’](?:e|a|ye|ya)\b", once_l)
+    # ⚠️ Kesme işareti ZORUNLU DEĞİL — "anneme" yazımı "annem'e" kadar geçerli.
+    # Şart koşulduğu sürece belgelenmiş "kendime mail gönder: Konu | içerik"
+    # biçimi bile ayrıştırılamıyordu.
+    m = re.search(r"\b([\wçğıöşü.+\-@]{2,}?)['’]?(?:ye|ya|e|a)\b", once_l)
     if m:
         alici = m.group(1).strip()
     else:
@@ -278,7 +333,7 @@ def email_komutu_algila(mesaj: str):
         return email_gonder(*parsed)
 
     # E-postayla ilgili gönderim isteği ama çözülemedi → LLM'e düşürme, rehber göster
-    if any(f in ml for f in _FIILLER):
+    if _fiil_var_mi(ml):
         return True, ("⚠️ E-posta komutunu tam çözemedim. Şu biçimlerden birini kullan:\n"
                       "• `annem'e mail gönder: iyi akşamlar`\n"
                       "• `annem'e mail gönder: Konu Başlığı | mesaj içeriği`\n"

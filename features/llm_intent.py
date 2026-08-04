@@ -20,7 +20,7 @@ import re
 # LLM'in dönebileceği GEÇERLİ niyetler (regex katmanıyla aynı etiketler)
 GECERLI_NIYETLER = {
     "PLAY_MUSIC", "SYSTEM_CONTROL", "WEB_SEARCH", "CREATE_REMINDER",
-    "WEATHER", "CURRENCY", "SCREENSHOT", "GENERAL_CONVERSATION",
+    "WEATHER", "CURRENCY", "SCREENSHOT", "SCREEN_READ", "GENERAL_CONVERSATION",
     "MEDIA_CONTROL", "NOTE_TAKE", "TIMER", "CALCULATOR", "TIME_DATE",
 }
 
@@ -37,7 +37,9 @@ Niyetler:
 - CREATE_REMINDER: hatırlatma/alarm kurma. param yok.
 - WEATHER: hava durumu sorusu. param yok.
 - CURRENCY: döviz/dolar/euro kuru sorusu. param yok.
-- SCREENSHOT: ekran görüntüsü alma. param yok.
+- SCREENSHOT: ekran görüntüsü alma (fotoğraf kaydetme). param yok.
+- SCREEN_READ: ekranda YAZAN metni okuma/özetleme/açıklama ("ekranda ne yazıyor",
+  "şu hatayı oku"). Fotoğraf değil, METİN istiyorsa buradadır. param yok.
 - MEDIA_CONTROL: ÇALAN müziği kontrol. param: "aksiyon" = pause|play|next|prev|stop.
 - NOTE_TAKE: not alma isteği. param: "not" = not içeriği.
 - TIMER: sayaç/zamanlayıcı kurma. param: "dakika" = süre (sayı).
