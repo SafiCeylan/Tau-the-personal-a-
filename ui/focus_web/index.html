@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ULTRON NEURAL AI CORE v4.0</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body class="theme-gold">
+
+    <!-- Sci-Fi Background -->
+    <div class="cyber-bg">
+        <div class="bg-vignette"></div>
+        <div class="bg-grid"></div>
+    </div>
+
+    <div class="app-container">
+
+        <!-- TOP HEADER BAR -->
+        <header class="top-bar pywebview-drag-region">
+            <div class="header-left">
+                <span class="status-dot pulsing"></span>
+                <span class="header-title">ULTRON NEURAL OVERLAY v4.0</span>
+                <span class="header-separator">//</span>
+                <span class="header-subtitle">MATRIX STREAM ACTIVE</span>
+            </div>
+
+            <!-- HEADER ACTIONS & RADIAL MENU TRIGGER -->
+            <div class="header-right">
+                <button class="glass-btn radial-trigger-btn" id="btn-toggle-radial" title="Hızlı Hologram Menüsünü Aç/Kapat">
+                    <span>⚡ Radial HUD Menü</span>
+                </button>
+
+                <button class="glass-btn theme-btn" id="btn-toggle-theme" title="Hologram Temasını Değiştir">
+                    <span id="theme-icon">🎨</span> 
+                    <span id="theme-label">Ultron Gold</span>
+                </button>
+
+                <button class="glass-btn mode-btn" id="btn-toggle-view">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>Standart Görünüme Dön</span>
+                </button>
+
+                <!-- WINDOW ACTION BUTTONS -->
+                <div class="window-action-buttons">
+                    <button class="win-btn win-min" id="win-btn-min" title="Küçült">−</button>
+                    <button class="win-btn win-max" id="win-btn-max" title="Büyüt / Kapla">▢</button>
+                    <button class="win-btn win-close" id="win-btn-close" title="Kapat">✕</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- CENTER VIEWPORT -->
+        <div class="main-viewport">
+
+            <!-- RADIAL CPU & RAM HUD GAUGES -->
+            <div class="floating-top-right-metrics">
+                <div class="radial-gauges-container glass-badge">
+                    <div class="radial-gauge-item" title="Canlı İşlemci Yükü">
+                        <svg class="radial-svg" viewBox="0 0 36 36">
+                            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path class="circle-progress cpu-progress" id="svg-cpu-bar" stroke-dasharray="35, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="gauge-text"><span id="val-cpu">35</span>%<br><small>CPU</small></div>
+                    </div>
+
+                    <div class="radial-gauge-item" title="Canlı Bellek Kullanımı">
+                        <svg class="radial-svg" viewBox="0 0 36 36">
+                            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path class="circle-progress ram-progress" id="svg-ram-bar" stroke-dasharray="58, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="gauge-text"><span id="val-ram">58</span>%<br><small>RAM</small></div>
+                    </div>
+                </div>
+
+                <div class="glass-badge state-badge">
+                    <span class="badge-label">[STATE:</span>
+                    <span class="badge-value neon-text-blue" id="lbl-state">IDLE</span>
+                    <span class="badge-label">]</span>
+                </div>
+                <div class="compact-audio-widget glass-badge">
+                    <canvas id="canvas-top-spikes" width="130" height="24"></canvas>
+                </div>
+            </div>
+
+            <!-- 3D GYROSCOPE CANVAS CONTAINER -->
+            <div class="canvas-3d-wrapper" id="canvas-3d-wrapper">
+                <canvas id="canvas-3d"></canvas>
+
+                <!-- HIGH-TECH SCI-FI HOLOGRAPHIC RADIAL HUD MENU OVERLAY -->
+                <div class="core-radial-hud hidden" id="core-radial-menu">
+                    <!-- HUD Background Rings & Crosshairs -->
+                    <div class="hud-outer-ring"></div>
+                    <div class="hud-inner-ring"></div>
+                    <div class="hud-center-crosshair">
+                        <div class="cross-line h-line"></div>
+                        <div class="cross-line v-line"></div>
+                        <span class="center-tag">ULTRON ARC</span>
+                    </div>
+
+                    <!-- 6 Hexagonal Holographic Action Nodes -->
+                    <div class="radial-node-wrapper pos-n1">
+                        <button class="radial-hex-node" data-action="youtube">
+                            <span class="node-icon">⚡</span>
+                            <span class="node-title">YOUTUBE</span>
+                            <span class="node-sub">[STREAM]</span>
+                        </button>
+                        <div class="node-beam-line"></div>
+                    </div>
+
+                    <div class="radial-node-wrapper pos-n2">
+                        <button class="radial-hex-node" data-action="google">
+                            <span class="node-icon">🌐</span>
+                            <span class="node-title">GOOGLE</span>
+                            <span class="node-sub">[NET SEARCH]</span>
+                        </button>
+                        <div class="node-beam-line"></div>
+                    </div>
+
+                    <div class="radial-node-wrapper pos-n3">
+                        <button class="radial-hex-node" data-action="threat">
+                            <span class="node-icon">🛡️</span>
+                            <span class="node-title">TEHDİT TARAMASI</span>
+                            <span class="node-sub">[SECURITY]</span>
+                        </button>
+                        <div class="node-beam-line"></div>
+                    </div>
+
+                    <div class="radial-node-wrapper pos-n4">
+                        <button class="radial-hex-node" data-action="reminder">
+                            <span class="node-icon">⏰</span>
+                            <span class="node-title">HATIRLATMA</span>
+                            <span class="node-sub">[ALARM]</span>
+                        </button>
+                        <div class="node-beam-line"></div>
+                    </div>
+
+                    <div class="radial-node-wrapper pos-n5">
+                        <button class="radial-hex-node" data-action="telemetry">
+                            <span class="node-icon">📊</span>
+                            <span class="node-title">SİSTEM RADARI</span>
+                            <span class="node-sub">[DIAGNOSTICS]</span>
+                        </button>
+                        <div class="node-beam-line"></div>
+                    </div>
+
+                    <div class="radial-node-wrapper pos-n6">
+                        <button class="radial-hex-node" data-action="chat">
+                            <span class="node-icon">💬</span>
+                            <span class="node-title">ULTRON SOHBET</span>
+                            <span class="node-sub">[AI DIALOG]</span>
+                        </button>
+                        <div class="node-beam-line"></div>
+                    </div>
+                </div>
+
+                <!-- 360° INTERACTIVE HINT -->
+                <div class="gyro-overlay-hint">
+                    <span class="drag-hint pulsing-hint">🖱️ 360° Sürükle & Döndür (Veya Sağ Tıkla)</span>
+                </div>
+            </div>
+
+            <!-- HIGH-CONTRAST FROSTED LOG CHAT OVERLAY -->
+            <div class="minimal-chat-overlay" id="ai-chat-body">
+                <p class="chat-msg system-msg" id="initial-welcome-msg">
+                    Ben <strong class="neon-text-red">ULTRON Nöral Çekirdeği</strong>. Sistem protokolleri aktif. Nasıl bir komut vermek istersiniz? <span class="hex-inline">[0x5F]</span>
+                </p>
+            </div>
+
+        </div>
+
+        <!-- BOTTOM ACTION BAR -->
+        <div class="bottom-action-bar">
+            <div class="quick-chips">
+                <button class="chip-btn" data-action="youtube">
+                    <span class="chip-icon">⚡</span>
+                    <span>YouTube Aç</span>
+                </button>
+                <button class="chip-btn" data-action="reminder">
+                    <span class="chip-icon">⏰</span>
+                    <span>Hatırlatma Ekle</span>
+                </button>
+                <button class="chip-btn" data-action="threat">
+                    <span class="chip-icon">🛡️</span>
+                    <span>Tehdit Raporu</span>
+                </button>
+                <button class="chip-btn" data-action="google">
+                    <span class="chip-icon">🌐</span>
+                    <span>Google Git</span>
+                </button>
+            </div>
+
+            <div class="telemetry-readouts">
+                <div class="tel-item">
+                    <span class="tel-label">[FREQ:</span>
+                    <span class="tel-val" id="tel-freq">4.33GHz</span>
+                    <span class="tel-label">]</span>
+                </div>
+                <div class="tel-item">
+                    <span class="tel-label">[TEMP:</span>
+                    <span class="tel-val" id="tel-temp">312K</span>
+                    <span class="tel-label">]</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- HERO NEURAL INPUT BAR -->
+        <footer class="bottom-input-bar hero-input">
+            <form id="command-form" onsubmit="return false;">
+                <div class="input-glow-container">
+                    <span class="input-prompt-icon">❯</span>
+                    <input 
+                        type="text" 
+                        id="cmd-input" 
+                        placeholder="Ultron Nöral Çekirdeğine emredin..." 
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                    <button type="submit" class="action-mic-btn" id="btn-submit" title="Komut Gönder">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </footer>
+
+    </div>
+
+    <script src="js/qwebchannel.js"></script>
+    <script>
+        /* ULTRON ↔ Python köprüsü (görsel etkisi yoktur).
+           Python'daki her @pyqtSlot otomatik olarak Promise dönen bir fonksiyona
+           sarılır — yeni slot eklemek için burayı düzenlemeye gerek yok. */
+        (function() {
+            var resolveReady;
+            window.UltronBridge = {
+                api: null,
+                ready: new Promise(function(res) { resolveReady = res; }),
+                available: function() { return !!window.UltronBridge.api; }
+            };
+
+            function wrapSlot(bridge, name) {
+                return function() {
+                    var args = Array.prototype.slice.call(arguments);
+                    return new Promise(function(resolve, reject) {
+                        try {
+                            bridge[name].apply(bridge, args.concat([function(res) {
+                                if (typeof res !== 'string') { resolve(res); return; }
+                                try { resolve(JSON.parse(res)); } catch (e) { resolve(res); }
+                            }]));
+                        } catch (e) { reject(e); }
+                    });
+                };
+            }
+
+            function finish(api) {
+                window.UltronBridge.api = api;
+                window.pywebview = api ? { api: api } : undefined;  // geriye dönük ad
+                resolveReady(api);
+                window.dispatchEvent(new Event('ultronbridgeready'));
+            }
+
+            if (typeof qt === 'undefined' || !qt.webChannelTransport) {
+                console.warn('[ULTRON] qt.webChannelTransport yok — tarayıcı/demo modu.');
+                finish(null);
+                return;
+            }
+
+            new QWebChannel(qt.webChannelTransport, function(channel) {
+                var bridge = channel.objects.pybridge;
+                if (!bridge) {
+                    console.error('[ULTRON] "pybridge" nesnesi kanalda kayıtlı değil.');
+                    finish(null);
+                    return;
+                }
+                window.pybridge = bridge;
+                var api = {};
+                for (var key in bridge) {
+                    if (key.indexOf('__') === 0) continue;
+                    if (typeof bridge[key] === 'function') api[key] = wrapSlot(bridge, key);
+                }
+                console.log('[ULTRON] Köprü kuruldu. Slotlar:', Object.keys(api).join(', '));
+                finish(api);
+            });
+        })();
+    </script>
+    <script src="js/audio_fx.js"></script>
+    <script src="js/audio_visualizer.js"></script>
+    <script src="js/three_core.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>

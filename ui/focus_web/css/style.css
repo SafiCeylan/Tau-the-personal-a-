@@ -1,0 +1,825 @@
+/* ==========================================================================
+   ULTRON HIGH-TECH HOLOGRAPHIC TACTICAL HUD RADIAL WHEEL v4.0
+   ========================================================================== */
+
+/* 1. DEFAULT THEME: GOLD & CRIMSON (ULTRON GOLD) */
+:root {
+    --bg-dark: #030408;
+    --bg-gradient: radial-gradient(circle at 50% 45%, rgba(255, 42, 75, 0.12) 0%, rgba(255, 183, 0, 0.06) 40%, rgba(3, 4, 8, 0.98) 85%);
+    --holo-primary: #ffb700;
+    --holo-primary-glow: rgba(255, 183, 0, 0.75);
+    --holo-secondary: #ff2a4b;
+    --holo-secondary-glow: rgba(255, 42, 75, 0.75);
+    --holo-glass: rgba(12, 8, 6, 0.94);
+    --holo-border-primary: rgba(255, 183, 0, 0.65);
+    --holo-border-secondary: rgba(255, 42, 75, 0.65);
+    --text-main: #ffffff;
+    --text-dim: #cca885;
+    --font-heading: 'Orbitron', sans-serif;
+    --font-body: 'Rajdhani', sans-serif;
+    --font-mono: 'Share Tech Mono', monospace;
+}
+
+/* 2. THEME PRESET: ELECTRIC CYAN & ICE BLUE */
+body.theme-cyan {
+    --bg-dark: #020612;
+    --bg-gradient: radial-gradient(circle at 50% 45%, rgba(0, 240, 255, 0.15) 0%, rgba(0, 119, 255, 0.08) 40%, rgba(2, 6, 18, 0.98) 85%);
+    --holo-primary: #00f0ff;
+    --holo-primary-glow: rgba(0, 240, 255, 0.75);
+    --holo-secondary: #70e0ff;
+    --holo-secondary-glow: rgba(112, 224, 255, 0.75);
+    --holo-glass: rgba(4, 14, 28, 0.94);
+    --holo-border-primary: rgba(0, 240, 255, 0.65);
+    --holo-border-secondary: rgba(112, 224, 255, 0.65);
+    --text-main: #ffffff;
+    --text-dim: #99d6ff;
+}
+
+/* 3. THEME PRESET: MATRIX EMERALD GREEN */
+body.theme-matrix {
+    --bg-dark: #020c06;
+    --bg-gradient: radial-gradient(circle at 50% 45%, rgba(0, 255, 102, 0.15) 0%, rgba(0, 180, 80, 0.08) 40%, rgba(2, 12, 6, 0.98) 85%);
+    --holo-primary: #00ff66;
+    --holo-primary-glow: rgba(0, 255, 102, 0.75);
+    --holo-secondary: #70ffb0;
+    --holo-secondary-glow: rgba(112, 255, 176, 0.75);
+    --holo-glass: rgba(4, 24, 12, 0.94);
+    --holo-border-primary: rgba(0, 255, 102, 0.65);
+    --holo-border-secondary: rgba(112, 255, 176, 0.65);
+    --text-main: #ffffff;
+    --text-dim: #99ffb8;
+}
+
+/* 4. THEME PRESET: SOFT AURORA */
+body.theme-aurora {
+    --bg-dark: #080814;
+    --bg-gradient: radial-gradient(circle at 50% 45%, rgba(184, 112, 255, 0.14) 0%, rgba(255, 133, 160, 0.08) 45%, rgba(8, 8, 20, 0.98) 85%);
+    --holo-primary: #b870ff;
+    --holo-primary-glow: rgba(184, 112, 255, 0.65);
+    --holo-secondary: #ff85a0;
+    --holo-secondary-glow: rgba(255, 133, 160, 0.65);
+    --holo-glass: rgba(18, 12, 28, 0.94);
+    --holo-border-primary: rgba(184, 112, 255, 0.55);
+    --holo-border-secondary: rgba(255, 133, 160, 0.55);
+    --text-main: #ffffff;
+    --text-dim: #d8c2e6;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: var(--font-body);
+    font-size: 15px;
+    transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* BACKGROUND LAYER WITH SCANLINES */
+.cyber-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: var(--bg-gradient);
+    transition: background 0.5s ease;
+}
+
+.bg-vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center, transparent 25%, rgba(2, 2, 4, 0.96) 95%);
+    pointer-events: none;
+}
+
+.bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image: 
+        linear-gradient(var(--holo-border-primary) 1px, transparent 1px),
+        linear-gradient(90deg, var(--holo-border-primary) 1px, transparent 1px);
+    background-size: 45px 45px;
+    pointer-events: none;
+    opacity: 0.18;
+}
+
+.cyber-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(rgba(255, 255, 255, 0) 50%, var(--holo-border-primary) 50%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    opacity: 0.12;
+}
+
+/* MAIN CONTAINER */
+.app-container {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    padding: 10px 18px;
+}
+
+/* FRAMELESS TOP BAR */
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 40px;
+    padding: 0 4px;
+    -webkit-app-region: drag;
+}
+
+.top-bar button, .top-bar .window-action-buttons {
+    -webkit-app-region: no-drag;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--holo-secondary);
+    box-shadow: 0 0 12px var(--holo-secondary);
+    transition: background-color 0.4s ease;
+}
+
+.status-dot.pulsing {
+    animation: pulse-dot 2s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 10px var(--holo-secondary); }
+    50% { transform: scale(1.3); opacity: 0.6; box-shadow: 0 0 20px var(--holo-secondary); }
+}
+
+.header-title {
+    color: var(--holo-secondary);
+    text-shadow: 0 0 10px var(--holo-secondary-glow);
+    transition: color 0.4s ease;
+}
+
+.header-separator {
+    color: var(--text-dim);
+    opacity: 0.6;
+}
+
+.header-subtitle {
+    color: var(--holo-primary);
+    font-size: 12px;
+    text-shadow: 0 0 8px var(--holo-primary-glow);
+    transition: color 0.4s ease;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.glass-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--holo-glass);
+    border: 1px solid var(--holo-border-primary);
+    color: var(--holo-primary);
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    transition: all 0.3s ease;
+    box-shadow: 0 0 15px var(--holo-primary-glow);
+}
+
+.glass-btn:hover {
+    background: var(--holo-primary-glow);
+    border-color: var(--holo-primary);
+    color: #ffffff;
+    box-shadow: 0 0 25px var(--holo-primary-glow);
+}
+
+/* CUSTOM WINDOW ACTION BUTTONS */
+.window-action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.win-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: var(--holo-glass);
+    border: 1px solid var(--holo-border-primary);
+    color: var(--holo-primary);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(8px);
+}
+
+.win-btn:hover {
+    background: var(--holo-primary-glow);
+    border-color: var(--holo-primary);
+    color: #ffffff;
+    box-shadow: 0 0 14px var(--holo-primary-glow);
+}
+
+.win-btn.win-close:hover {
+    background: var(--holo-secondary-glow);
+    border-color: var(--holo-secondary);
+    color: #ffffff;
+    box-shadow: 0 0 18px var(--holo-secondary-glow);
+}
+
+/* CENTER VIEWPORT */
+.main-viewport {
+    position: relative;
+    flex: 1;
+    display: flex;
+    margin: 6px 0;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+}
+
+/* FLOATING TOP RIGHT METRICS & RADIAL CPU/RAM GAUGES */
+.floating-top-right-metrics {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    -webkit-app-region: no-drag;
+}
+
+.radial-gauges-container {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 6px 12px;
+}
+
+.radial-gauge-item {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.radial-svg {
+    width: 44px;
+    height: 44px;
+    transform: rotate(-90deg);
+}
+
+.circle-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 3.2;
+}
+
+.circle-progress {
+    fill: none;
+    stroke: var(--holo-primary);
+    stroke-width: 3.2;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.5s ease, stroke 0.4s ease;
+    filter: drop-shadow(0 0 4px var(--holo-primary));
+}
+
+.circle-progress.ram-progress {
+    stroke: var(--holo-secondary);
+    filter: drop-shadow(0 0 4px var(--holo-secondary));
+}
+
+.gauge-text {
+    position: absolute;
+    inset: 0;
+    /* Chromium 83 'inset' kısayolunu tanımıyor → uzun yazım (bkz. dosya sonu) */
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 0.9;
+    color: var(--text-main);
+    text-align: center;
+}
+
+.gauge-text small {
+    font-size: 8px;
+    color: var(--text-dim);
+}
+
+.glass-badge {
+    background: var(--holo-glass);
+    border: 1px solid var(--holo-border-primary);
+    padding: 5px 14px;
+    border-radius: 4px;
+    font-family: var(--font-heading);
+    font-size: 12px;
+    font-weight: 700;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 0 16px var(--holo-primary-glow);
+}
+
+.compact-audio-widget {
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#canvas-top-spikes {
+    width: 130px;
+    height: 24px;
+    display: block;
+}
+
+.badge-label {
+    color: var(--text-dim);
+    margin: 0 2px;
+}
+
+.neon-text-blue {
+    color: var(--holo-primary);
+    text-shadow: 0 0 10px var(--holo-primary-glow);
+}
+
+.neon-text-red {
+    color: var(--holo-secondary);
+    text-shadow: 0 0 10px var(--holo-secondary-glow);
+}
+
+/* ==========================================================================
+   HIGH-TECH SCI-FI HOLOGRAPHIC TACTICAL HUD RADIAL WHEEL OVERLAY
+   ========================================================================== */
+.core-radial-hud {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 480px;
+    height: 480px;
+    z-index: 15;
+    pointer-events: auto;
+    animation: hud-radial-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.core-radial-hud.hidden {
+    display: none;
+}
+
+@keyframes hud-radial-pop {
+    0% { transform: translate(-50%, -50%) scale(0.2) rotate(-60deg); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* HUD BACKGROUND RINGS */
+.hud-outer-ring {
+    position: absolute;
+    inset: 10px;
+    border-radius: 50%;
+    border: 2px dashed var(--holo-border-primary);
+    animation: spin-hud-ring 30s linear infinite;
+    box-shadow: 
+        0 0 35px var(--holo-primary-glow),
+        inset 0 0 25px var(--holo-primary-glow);
+}
+
+.hud-inner-ring {
+    position: absolute;
+    inset: 70px;
+    border-radius: 50%;
+    border: 1px double var(--holo-border-secondary);
+    animation: spin-hud-ring-rev 20s linear infinite;
+}
+
+@keyframes spin-hud-ring {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes spin-hud-ring-rev {
+    0% { transform: rotate(360deg); }
+    100% { transform: rotate(0deg); }
+}
+
+/* HUD CENTER CROSSHAIR */
+.hud-center-crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: rgba(12, 8, 6, 0.88);
+    border: 1px solid var(--holo-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 0 25px var(--holo-primary-glow);
+}
+
+.cross-line {
+    position: absolute;
+    background: var(--holo-secondary);
+    opacity: 0.6;
+}
+
+.cross-line.h-line { width: 100%; height: 1px; }
+.cross-line.v-line { width: 1px; height: 100%; }
+
+.center-tag {
+    font-family: var(--font-heading);
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--holo-primary);
+    text-shadow: 0 0 10px var(--holo-primary-glow);
+    letter-spacing: 1px;
+}
+
+/* 6 RADIAL HEXAGONAL ACTION NODES (Symmetrical 60° Spacing) */
+.radial-node-wrapper {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.radial-hex-node {
+    position: relative;
+    z-index: 2;
+    min-width: 120px;
+    padding: 8px 14px;
+    background: var(--holo-glass);
+    border: 1.5px solid var(--holo-border-primary);
+    border-radius: 8px;
+    color: var(--text-main);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(18px);
+    box-shadow: 
+        0 8px 24px rgba(0, 0, 0, 0.7),
+        0 0 20px var(--holo-primary-glow);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.radial-hex-node:hover {
+    background: var(--holo-primary-glow);
+    border-color: #ffffff;
+    color: #ffffff;
+    transform: scale(1.15);
+    box-shadow: 
+        0 12px 36px rgba(0, 0, 0, 0.9),
+        0 0 35px var(--holo-primary-glow);
+}
+
+.node-icon {
+    font-size: 22px;
+    margin-bottom: 2px;
+    filter: drop-shadow(0 0 6px var(--holo-primary));
+}
+
+.node-title {
+    font-family: var(--font-heading);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+
+.node-sub {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 2px;
+}
+
+/* NODE BEAM LINES CONNECTING TO CENTER */
+.node-beam-line {
+    position: absolute;
+    z-index: 1;
+    height: 1.5px;
+    background: linear-gradient(90deg, var(--holo-primary) 0%, transparent 100%);
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* 6 NODE POSITIONS AROUND 480px WHEEL */
+/* Node 1: Top (90°) */
+.pos-n1 { top: 0%; left: 50%; transform: translate(-50%, -10%); }
+/* Node 2: Top Right (30°) */
+.pos-n2 { top: 22%; right: 0%; transform: translate(25%, -50%); }
+/* Node 3: Bottom Right (330°) */
+.pos-n3 { bottom: 22%; right: 0%; transform: translate(25%, 50%); }
+/* Node 4: Bottom (270°) */
+.pos-n4 { bottom: 0%; left: 50%; transform: translate(-50%, 10%); }
+/* Node 5: Bottom Left (210°) */
+.pos-n5 { bottom: 22%; left: 0%; transform: translate(-25%, 50%); }
+/* Node 6: Top Left (150°) */
+.pos-n6 { top: 22%; left: 0%; transform: translate(-25%, -50%); }
+
+
+/* HIGH-CONTRAST FROSTED LOG CHAT OVERLAY */
+.minimal-chat-overlay {
+    position: absolute;
+    bottom: 20px;
+    left: 15px;
+    z-index: 12;
+    max-width: 440px;
+    background: rgba(10, 8, 6, 0.94);
+    border: 1px solid var(--holo-border-primary);
+    border-radius: 6px;
+    padding: 12px 16px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 25px var(--holo-primary-glow);
+    max-height: 140px;
+    overflow-y: auto;
+    -webkit-app-region: no-drag;
+}
+
+.chat-msg {
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 500;
+}
+
+.hex-inline {
+    font-family: var(--font-mono);
+    color: var(--holo-primary);
+    font-size: 12px;
+}
+
+/* 3D CANVAS WRAPPER */
+.canvas-3d-wrapper {
+    position: absolute;
+    inset: 0;
+    /* Qt 5.15 = Chromium 83 → 'inset' kısayolunu TANIMIYOR (Chrome 87'de geldi).
+       Aynı kuralın uzun yazımı: kutu artık pencereyi takip ediyor.
+       Bu satırlar olmadan sarmalayıcı 300x150'de kilitleniyordu. */
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-app-region: no-drag;
+}
+
+#canvas-3d {
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    -webkit-app-region: no-drag;
+}
+
+#canvas-3d:active {
+    cursor: grabbing;
+}
+
+/* PROMINENT PULSING 360° INTERACTIVE HINT */
+.gyro-overlay-hint {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 5;
+}
+
+.drag-hint {
+    background: rgba(12, 8, 6, 0.92);
+    border: 1px solid var(--holo-primary);
+    color: var(--holo-primary);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    padding: 6px 20px;
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 20px var(--holo-primary-glow);
+}
+
+.pulsing-hint {
+    animation: hint-pulse 2.5s infinite ease-in-out;
+}
+
+@keyframes hint-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 16px var(--holo-primary-glow); }
+    50% { transform: scale(1.08); box-shadow: 0 0 30px var(--holo-primary-glow); }
+}
+
+/* BOTTOM ACTION BAR */
+.bottom-action-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 40px;
+    padding: 0 4px;
+    z-index: 10;
+    -webkit-app-region: no-drag;
+}
+
+.quick-chips {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--holo-glass);
+    border: 1px solid var(--holo-border-primary);
+    color: var(--text-main);
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: all 0.25s ease;
+    -webkit-app-region: no-drag;
+}
+
+.chip-btn:hover {
+    background: var(--holo-primary-glow);
+    border-color: var(--holo-primary);
+    color: #ffffff;
+    box-shadow: 0 0 20px var(--holo-primary-glow);
+    transform: translateY(-2px);
+}
+
+.telemetry-readouts {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
+.tel-label {
+    color: var(--text-dim);
+}
+
+.tel-val {
+    color: var(--holo-secondary);
+    text-shadow: 0 0 10px var(--holo-secondary-glow);
+    font-weight: 700;
+}
+
+/* HERO PROMINENT NEURAL INPUT BAR */
+.bottom-input-bar.hero-input {
+    z-index: 10;
+    margin-top: 6px;
+    -webkit-app-region: no-drag;
+}
+
+.input-glow-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: rgba(12, 8, 6, 0.96);
+    border: 2px solid var(--holo-secondary);
+    border-radius: 8px;
+    padding: 6px 8px 6px 20px;
+    backdrop-filter: blur(20px);
+    box-shadow: 
+        0 0 35px var(--holo-secondary-glow),
+        inset 0 0 20px var(--holo-secondary-glow);
+    transition: all 0.3s ease;
+    -webkit-app-region: no-drag;
+}
+
+.input-prompt-icon {
+    color: var(--holo-secondary);
+    font-size: 18px;
+    font-weight: 800;
+    margin-right: 12px;
+    text-shadow: 0 0 10px var(--holo-secondary-glow);
+}
+
+.input-glow-container:focus-within {
+    box-shadow: 
+        0 0 50px var(--holo-secondary-glow),
+        inset 0 0 30px var(--holo-secondary-glow);
+    border-color: var(--holo-primary);
+}
+
+.input-glow-container input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #ffffff;
+    font-family: var(--font-body);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    -webkit-app-region: no-drag;
+}
+
+.input-glow-container input::placeholder {
+    color: var(--text-dim);
+    font-style: italic;
+    font-weight: 400;
+}
+
+.action-mic-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--holo-secondary) 0%, #b80d28 100%);
+    border: none;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 0 25px var(--holo-secondary);
+    transition: all 0.25s ease;
+    -webkit-app-region: no-drag;
+}
+
+.action-mic-btn:hover {
+    transform: scale(1.10);
+    box-shadow: 0 0 35px var(--holo-secondary);
+}
+
+/* ==========================================================================
+   QT 5.15 (CHROMIUM 83) UYUMLULUK KATMANI
+   --------------------------------------------------------------------------
+   Bu sürüm flexbox'ta `gap` DESTEKLEMİYOR (Chromium 84'te geldi) — yukarıdaki
+   9 `gap` kuralı sessizce 0 olarak uygulanıyordu, yani butonlar birbirine
+   yapışıktı. Aşağısı aynı boşlukları kardeş marjıyla üretir; tasarım değeri
+   birebir yukarıdaki `gap` değerleriyle aynıdır.
+
+   ⚠️ Qt/WebEngine ileride yükseltilirse (Chromium 84+) `gap` çalışmaya başlar
+   ve boşluklar İKİYE KATLANIR → o gün bu bloğu silmen yeterli.
+   ========================================================================== */
+
+/* Yatay (row) diziler */
+.header-left > * + *            { margin-left: 10px; }
+.header-right > * + *           { margin-left: 10px; }
+.glass-btn > * + *              { margin-left: 8px; }
+.window-action-buttons > * + *  { margin-left: 6px; }
+.radial-gauges-container > * + * { margin-left: 14px; }
+.quick-chips > * + *            { margin-left: 10px; }
+.chip-btn > * + *               { margin-left: 6px; }
+.telemetry-readouts > * + *     { margin-left: 18px; }
+
+/* Dikey (column) dizi */
+.floating-top-right-metrics > * + * { margin-top: 8px; }

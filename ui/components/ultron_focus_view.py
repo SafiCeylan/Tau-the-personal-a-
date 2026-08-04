@@ -1,97 +1,117 @@
-import html
-import re
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame, QLineEdit, QPushButton,
-    QScrollArea, QGraphicsOpacityEffect, QSizePolicy
-)
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtGui import QColor
+import os
+import json
+import psutil
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFrame, QLabel, QPushButton, QHBoxLayout
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot, QUrl, QObject
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
+from PyQt5.QtWebChannel import QWebChannel
 
-from ui.ai_core_widget import AICoreWidget
 
-class FloatingMessageBubble(QFrame):
-    """Holografik Ultron sohbet balonu — tam saydam havada yüzen kart"""
-    def __init__(self, sender: str, text: str, parent=None):
+class FocusBridge(QObject):
+    """Python-JS Bridge for Web-based Ultron Focus Overlay"""
+    message_sent = pyqtSignal(str)
+    switch_mode_requested = pyqtSignal()
+    min_window_requested = pyqtSignal()
+    max_window_requested = pyqtSignal()
+    close_window_requested = pyqtSignal()
+    voice_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.sender = sender
-        self.raw_text = text
-        self.displayed_text = ""
-        self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self.opacity_effect)
-        self.typewriter_timer = None
-        self.init_ui()
+        # psutil'in ilk ölçümü her zaman 0.0 döner — burada bir kez ısıtıyoruz
+        # ki arayüzdeki ilk CPU değeri yanlış olmasın.
+        try:
+            psutil.cpu_percent(interval=None)
+        except Exception:
+            pass
+        self._last_cpu = 0.0
+        self._last_ram = 0.0
 
-    def init_ui(self):
-        is_user = self.sender == "user"
-        
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 4, 12, 4)
+    @pyqtSlot(result=str)
+    def get_initial_state(self):
+        return json.dumps({
+            "status": "active",
+            "system_name": "ULTRON NEURAL OVERLAY v4.0",
+            "matrix_stream": "ACTIVE",
+            "state": "IDLE",
+            "core_health": 99,
+            "telegram_bot": "@Ultrontau_bot",
+            "welcome_message": "Ben ULTRON Nöral Çekirdeği. Sistem protokolleri aktif. Nasıl bir komut vermek istersiniz?"
+        })
 
-        bubble_box = QFrame()
-        bubble_box.setMaximumWidth(720)
-        bubble_layout = QVBoxLayout(bubble_box)
-        bubble_layout.setContentsMargins(16, 12, 16, 12)
-        bubble_layout.setSpacing(6)
+    @pyqtSlot(result=str)
+    def get_telemetry(self):
+        # Ölçüm alınamazsa uydurma değer basmayız; son bilinen değerde kalırız.
+        try:
+            self._last_cpu = psutil.cpu_percent(interval=None)
+            self._last_ram = psutil.virtual_memory().percent
+        except Exception:
+            pass
 
-        if is_user:
-            title = QLabel("📡 KULLANICI İLETİSİ")
-            title.setStyleSheet("color: #ff4d58; font-weight: 900; font-size: 10px; letter-spacing: 1.5px;")
-            bubble_box.setStyleSheet("""
-                QFrame {
-                    background: rgba(35, 8, 12, 0.78);
-                    border: 1px solid rgba(255, 77, 88, 0.75);
-                    border-radius: 12px;
-                }
-            """)
-            bubble_layout.addWidget(title)
-        else:
-            title = QLabel("🔴 ULTRON NEURAL SYSTEM")
-            title.setStyleSheet("color: #ff1a26; font-weight: 900; font-size: 10px; letter-spacing: 2px;")
-            bubble_box.setStyleSheet("""
-                QFrame {
-                    background: rgba(14, 3, 5, 0.88);
-                    border: 1px solid rgba(255, 26, 38, 0.85);
-                    border-radius: 12px;
-                }
-            """)
-            bubble_layout.addWidget(title)
+        cpu = self._last_cpu
+        ram = self._last_ram
+        freq_str = f"{4.20 + (cpu / 100.0) * 0.6:.2f}GHz"
+        temp_str = f"{300 + int(cpu * 0.8)}K"
 
-        self.txt_lbl = QLabel()
-        self.txt_lbl.setWordWrap(True)
-        self.txt_lbl.setStyleSheet("color: #ffffff; font-size: 14px; font-family: Consolas, sans-serif; line-height: 1.4;")
-        bubble_layout.addWidget(self.txt_lbl)
+        return json.dumps({
+            "cpu": cpu,
+            "ram": ram,
+            "core_load": min(99, max(12, int(cpu * 0.95 + 15))),
+            "freq": freq_str,
+            "temp": temp_str
+        })
 
-        if is_user:
-            self.txt_lbl.setText(self.raw_text)
-            layout.addStretch()
-            layout.addWidget(bubble_box)
-        else:
-            # Start Typewriter Animation for Ultron responses
-            self.char_index = 0
-            self.typewriter_timer = QTimer(self)
-            self.typewriter_timer.setInterval(15)  # Fast typewriter
-            self.typewriter_timer.timeout.connect(self._typewriter_step)
-            self.typewriter_timer.start()
+    @pyqtSlot(str, result=str)
+    def send_command(self, text):
+        """Komutu ana pencereye iletir. Cevap ASENKRON gelir (add_message ile);
+        burada sahte bir 'başarılı' metni döndürmeyiz."""
+        if not text or not text.strip():
+            return json.dumps({"status": "error", "message": "Boş komut."})
+        self.message_sent.emit(text.strip())
+        return json.dumps({"status": "ok"})
 
-            layout.addWidget(bubble_box)
-            layout.addStretch()
+    @pyqtSlot(str, result=str)
+    def execute_quick_action(self, action_id):
+        actions = {
+            "youtube": "YouTube aç",
+            "google": "Google aç",
+            "threat": "Bugünkü duygu durumum nedir?",
+            "reminder": "Yarın saat 10:00'da su içmeyi hatırlat",
+            "telemetry": "Sistem durumunu göster",
+            "chat": "Ultron merhaba"
+        }
+        cmd = actions.get(action_id, action_id)
+        if not cmd:
+            return json.dumps({"status": "error", "message": "Tanımsız hızlı işlem."})
+        self.message_sent.emit(cmd)
+        return json.dumps({"status": "ok", "command": cmd})
 
-    def _typewriter_step(self):
-        if self.char_index <= len(self.raw_text):
-            self.displayed_text = self.raw_text[:self.char_index]
-            self.txt_lbl.setText(self.displayed_text)
-            self.char_index += 2
-        else:
-            if self.typewriter_timer:
-                self.typewriter_timer.stop()
+    @pyqtSlot(result=str)
+    def start_voice_input(self):
+        """Komut kutusu boşken mikrofon butonu buraya düşer."""
+        self.voice_requested.emit()
+        return json.dumps({"status": "ok"})
 
-    def set_fade_level(self, opacity: float):
-        """0.0 (tam saydam) ile 1.0 (tam görünür) arasında opaklığı günceller"""
-        self.opacity_effect.setOpacity(max(0.0, min(1.0, opacity)))
+    @pyqtSlot(str, result=str)
+    def toggle_view_mode(self, mode):
+        self.switch_mode_requested.emit()
+        return json.dumps({"status": "ok", "mode": mode})
+
+    @pyqtSlot()
+    def minimize_window(self):
+        self.min_window_requested.emit()
+
+    @pyqtSlot()
+    def maximize_window(self):
+        self.max_window_requested.emit()
+
+    @pyqtSlot()
+    def close_window(self):
+        self.close_window_requested.emit()
 
 
 class ConfirmationCardWidget(QFrame):
-    """Holografik Ultron Güvenlik Onay Kartı — Tıklanabilir Onay / İptal Butonları"""
+    """Holografik Ultron Güvenlik Onay Kartı Overlay"""
     def __init__(self, message_text: str, on_confirm, on_cancel, parent=None):
         super().__init__(parent)
         self.on_confirm = on_confirm
@@ -104,7 +124,7 @@ class ConfirmationCardWidget(QFrame):
                 background: rgba(30, 5, 8, 0.95);
                 border: 2px solid #ff1a26;
                 border-radius: 14px;
-                padding: 10px;
+                padding: 12px;
             }
         """)
         layout = QVBoxLayout(self)
@@ -114,10 +134,10 @@ class ConfirmationCardWidget(QFrame):
         title.setStyleSheet("color: #ff4d58; font-size: 11px; font-weight: 900; letter-spacing: 1.5px;")
         layout.addWidget(title)
 
-        body = QLabel(message_text)
-        body.setWordWrap(True)
-        body.setStyleSheet("color: #ffffff; font-size: 13px; font-family: Consolas, sans-serif;")
-        layout.addWidget(body)
+        self.body = QLabel(message_text)
+        self.body.setWordWrap(True)
+        self.body.setStyleSheet("color: #ffffff; font-size: 13px; font-family: Consolas, sans-serif;")
+        layout.addWidget(self.body)
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
@@ -134,9 +154,7 @@ class ConfirmationCardWidget(QFrame):
                 font-weight: bold;
                 font-size: 12px;
             }
-            QPushButton:hover {
-                background: #ff4d58;
-            }
+            QPushButton:hover { background: #ff4d58; }
         """)
         confirm_btn.clicked.connect(self._do_confirm)
 
@@ -152,9 +170,7 @@ class ConfirmationCardWidget(QFrame):
                 font-weight: bold;
                 font-size: 12px;
             }
-            QPushButton:hover {
-                background: rgba(255, 255, 255, 0.3);
-            }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.3); }
         """)
         cancel_btn.clicked.connect(self._do_cancel)
 
@@ -176,224 +192,149 @@ class ConfirmationCardWidget(QFrame):
 
 
 class UltronFocusViewWidget(QWidget):
+    """Direct 1:1 Web Engine Ultron Focus View Widget"""
     message_sent = pyqtSignal(str)
     switch_mode_requested = pyqtSignal()
+    minimize_requested = pyqtSignal()
+    maximize_requested = pyqtSignal()
+    close_requested = pyqtSignal()
+    voice_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.bubbles = []
+        self._page_ready = False
+        self._js_queue = []
+        self._confirm_card = None
         self.init_ui()
 
-    def add_confirmation_card(self, message_text: str, on_confirm, on_cancel):
-        """Ekrana tıklanabilir güvenlik onay kartını basar"""
-        card = ConfirmationCardWidget(message_text, on_confirm, on_cancel)
-        count = self.bubbles_layout.count()
-        self.bubbles_layout.insertWidget(count - 1, card)
-        QTimer.singleShot(50, lambda: self.scroll_area.verticalScrollBar().setValue(
-            self.scroll_area.verticalScrollBar().maximum()
-        ))
-
     def init_ui(self):
-        grid = QGridLayout(self)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Layer 0 (BACKGROUND): Fullscreen Animated Ultron AI Core Visualizer Canvas
-        self.ai_core = AICoreWidget(self)
-        grid.addWidget(self.ai_core, 0, 0)
+        from PyQt5.QtGui import QColor
+        self.setStyleSheet("background-color: #030408;")
 
-        # Layer 1 (OVERLAY): Transparent Container for UI Controls & Floating Bubbles
-        overlay_widget = QWidget(self)
-        overlay_widget.setStyleSheet("background: transparent;")
-        
-        overlay_layout = QVBoxLayout(overlay_widget)
-        overlay_layout.setContentsMargins(24, 16, 24, 16)
-        overlay_layout.setSpacing(10)
+        self.web_view = QWebEngineView(self)
+        self.web_view.setContextMenuPolicy(Qt.NoContextMenu)
+        self.web_view.setStyleSheet("background-color: #030408;")
+        self.web_view.page().setBackgroundColor(QColor("#030408"))
 
-        # Top Header Bar (HUD Telemetry & Mode Switcher)
-        top_bar = QHBoxLayout()
-        
-        hud_info = QLabel("🔴 ULTRON NEURAL OVERLAY v4.0 // MATRIX STREAM ACTIVE")
-        hud_info.setStyleSheet("""
-            background: rgba(14, 3, 5, 0.75);
-            color: #ff4d58;
-            border: 1px solid rgba(255, 26, 38, 0.5);
-            border-radius: 6px;
-            padding: 4px 10px;
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: 1.5px;
-        """)
+        # Setup QWebChannel Bridge
+        self.bridge = FocusBridge(self)
+        self.bridge.message_sent.connect(self.message_sent.emit)
+        self.bridge.switch_mode_requested.connect(self.switch_mode_requested.emit)
+        self.bridge.min_window_requested.connect(self.minimize_requested.emit)
+        self.bridge.max_window_requested.connect(self.maximize_requested.emit)
+        self.bridge.close_window_requested.connect(self.close_requested.emit)
+        self.bridge.voice_requested.connect(self.voice_requested.emit)
 
-        mode_btn = QPushButton("🎛️ Standart Görünüme Dön")
-        mode_btn.setCursor(Qt.PointingHandCursor)
-        mode_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255, 26, 38, 0.25);
-                color: #ffffff;
-                border: 1px solid rgba(255, 26, 38, 0.7);
-                border-radius: 6px;
-                padding: 6px 14px;
-                font-weight: 800;
-                font-size: 11px;
-                letter-spacing: 1px;
-            }
-            QPushButton:hover {
-                background: rgba(255, 26, 38, 0.5);
-                border-color: #ff1a26;
-            }
-        """)
-        mode_btn.clicked.connect(self.switch_mode_requested.emit)
+        self.channel = QWebChannel(self)
+        self.channel.registerObject("pybridge", self.bridge)
+        self.web_view.page().setWebChannel(self.channel)
 
-        top_bar.addWidget(hud_info)
-        top_bar.addStretch()
-        top_bar.addWidget(mode_btn)
-        overlay_layout.addLayout(top_bar)
+        # Sayfa yüklenmeden çalıştırılan JS sessizce kaybolur → kuyruğa alıyoruz.
+        self.web_view.loadFinished.connect(self._on_load_finished)
 
-        # Floating Messages Scroll Area (Floats over the center core!)
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("QScrollArea, QScrollArea > QWidget, QScrollArea #qt_scrollarea_viewport { border: none; background: transparent; }")
-        self.scroll_area.viewport().setStyleSheet("background: transparent;")
+        # Load html file from ui/focus_web/index.html
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        html_path = os.path.join(base_dir, "focus_web", "index.html")
+        self.web_view.load(QUrl.fromLocalFile(html_path))
 
-        self.scroll_content = QWidget()
-        self.scroll_content.setStyleSheet("background: transparent;")
-        self.bubbles_layout = QVBoxLayout(self.scroll_content)
-        self.bubbles_layout.setContentsMargins(30, 20, 30, 10)
-        self.bubbles_layout.setSpacing(14)
-        self.bubbles_layout.addStretch()
+        layout.addWidget(self.web_view)
 
-        self.scroll_area.setWidget(self.scroll_content)
-        overlay_layout.addWidget(self.scroll_area, 1)
+    # ------------------------------------------------------------------
+    # JS köprüsü (Python → sayfa)
+    # ------------------------------------------------------------------
+    def _on_load_finished(self, ok: bool):
+        if not ok:
+            print("[ULTRON] Odak sayfası yüklenemedi (focus_web/index.html).")
+            return
+        self._page_ready = True
+        queued, self._js_queue = self._js_queue, []
+        for code in queued:
+            self.web_view.page().runJavaScript(code)
 
-        # Quick Protocol Actions floating above input bar
-        quick_layout = QHBoxLayout()
-        quick_layout.setSpacing(8)
-
-        suggestions = [
-            ("⚡ YouTube Aç", "YouTube aç"),
-            ("⏰ Hatırlatma Ekle", "Yarın saat 10:00'da su içmeyi hatırlat"),
-            ("🎭 Tehdit Raporu", "Bugünkü duygu durumum nedir?"),
-            ("🌐 Google Git", "Google aç"),
-        ]
-
-        for label, text in suggestions:
-            btn = QPushButton(label)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(255, 26, 38, 0.15);
-                    color: #ff4d58;
-                    border: 1px solid rgba(255, 26, 38, 0.4);
-                    border-radius: 6px;
-                    padding: 5px 10px;
-                    font-size: 10px;
-                    font-weight: 700;
-                }
-                QPushButton:hover {
-                    background: rgba(255, 26, 38, 0.35);
-                    border-color: #ff1a26;
-                    color: #ffffff;
-                }
-            """)
-            msg_text = text
-            btn.clicked.connect(lambda _, t=msg_text: self.send_suggestion(t))
-            quick_layout.addWidget(btn)
-
-        quick_layout.addStretch()
-        overlay_layout.addLayout(quick_layout)
-
-        # Floating Input Bar at Bottom
-        input_frame = QFrame()
-        input_frame.setStyleSheet("""
-            QFrame {
-                background: rgba(14, 3, 5, 0.94);
-                border: 1px solid rgba(255, 26, 38, 0.85);
-                border-radius: 18px;
-                padding: 4px;
-            }
-        """)
-        input_layout = QHBoxLayout(input_frame)
-        input_layout.setContentsMargins(14, 4, 14, 4)
-
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Ultron Nöral Çekirdeğine emredin...")
-        self.input_field.setStyleSheet("""
-            QLineEdit {
-                background: transparent;
-                border: none;
-                color: #ffffff;
-                font-size: 14px;
-                font-family: Consolas, sans-serif;
-                font-weight: 600;
-            }
-        """)
-        self.input_field.returnPressed.connect(self._on_send)
-
-        send_btn = QPushButton("⚡")
-        send_btn.setFixedSize(36, 36)
-        send_btn.setCursor(Qt.PointingHandCursor)
-        send_btn.setStyleSheet("""
-            QPushButton {
-                background: #ff1a26;
-                color: #ffffff;
-                border: none;
-                border-radius: 18px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #ff4d58;
-            }
-        """)
-        send_btn.clicked.connect(self._on_send)
-
-        input_layout.addWidget(self.input_field, 1)
-        input_layout.addWidget(send_btn)
-
-        overlay_layout.addWidget(input_frame)
-
-        grid.addWidget(overlay_widget, 0, 0)
-
-    def _on_send(self):
-        txt = self.input_field.text().strip()
-        if txt:
-            self.input_field.clear()
-            self.message_sent.emit(txt)
-
-    def send_suggestion(self, text: str):
-        self.message_sent.emit(text)
+    def _run_js(self, code: str):
+        if self._page_ready:
+            self.web_view.page().runJavaScript(code)
+        elif len(self._js_queue) < 200:
+            self._js_queue.append(code)
 
     def add_message(self, sender: str, text: str):
-        """Yeni balonu en alta ekler ve eski balonları yukarı itip Ultron çekirdeği üstünde saydamlaştırır"""
-        bubble = FloatingMessageBubble(sender, text)
-        self.bubbles.append(bubble)
-
-        count = self.bubbles_layout.count()
-        self.bubbles_layout.insertWidget(count - 1, bubble)
-
-        # Recalculate fading for all floating bubbles over the animated background
-        total = len(self.bubbles)
-        for idx, b in enumerate(self.bubbles):
-            pos_from_end = total - 1 - idx
-            if pos_from_end == 0:
-                op = 1.0
-            elif pos_from_end == 1:
-                op = 0.70
-            elif pos_from_end == 2:
-                op = 0.40
-            elif pos_from_end == 3:
-                op = 0.18
-            else:
-                op = 0.0
-
-            b.set_fade_level(op)
-            if op == 0.0:
-                b.hide()
-
-        QTimer.singleShot(50, lambda: self.scroll_area.verticalScrollBar().setValue(
-            self.scroll_area.verticalScrollBar().maximum()
-        ))
+        safe_text = json.dumps(text)
+        fn = "appendUserMsg" if sender == "user" else "appendSystemMsg"
+        self._run_js(f"if (typeof window.{fn} === 'function') window.{fn}({safe_text});")
 
     def set_ai_state(self, state: str):
-        self.ai_core.set_state(state)
+        safe_state = json.dumps(str(state).upper())
+        self._run_js(f"if (typeof window.setCoreState === 'function') window.setCoreState({safe_state});")
+
+    # --- Canlı akış (Ollama streaming) ---
+    def begin_stream(self):
+        self._run_js("if (typeof window.beginStreamMsg === 'function') window.beginStreamMsg();")
+
+    def update_stream(self, partial: str):
+        safe = json.dumps(partial)
+        self._run_js(f"if (typeof window.updateStreamMsg === 'function') window.updateStreamMsg({safe});")
+
+    def end_stream(self, full_text: str):
+        safe = json.dumps(full_text)
+        self._run_js(f"if (typeof window.endStreamMsg === 'function') window.endStreamMsg({safe});")
+
+    def set_active(self, active: bool):
+        """Sayfa görünmüyorken 3D render ve telemetri anketini durdurur."""
+        flag = "true" if active else "false"
+        self._run_js(f"if (typeof window.setUltronActive === 'function') window.setUltronActive({flag});")
+
+    # ------------------------------------------------------------------
+    # Güvenlik onay kartı (web sayfasının ÜSTÜNDE duran Qt katmanı)
+    # ------------------------------------------------------------------
+    def add_confirmation_card(self, message_text: str, on_confirm, on_cancel):
+        self.hide_confirmation_card()
+
+        def _wrap(cb):
+            def _inner():
+                self.hide_confirmation_card()
+                if cb:
+                    cb()
+            return _inner
+
+        card = ConfirmationCardWidget(message_text, _wrap(on_confirm), _wrap(on_cancel), self)
+        self._confirm_card = card
+        self._place_confirmation_card()
+        card.show()
+        card.raise_()
+
+    def hide_confirmation_card(self):
+        if self._confirm_card is not None:
+            card, self._confirm_card = self._confirm_card, None
+            card.hide()
+            card.deleteLater()
+
+    def _place_confirmation_card(self):
+        """Kart eskiden (0,0)'da boyutsuz duruyordu — ortala ve komut çubuğunun
+        üstüne yerleştir."""
+        card = self._confirm_card
+        if card is None:
+            return
+        width = max(360, min(720, self.width() - 80))
+        card.setFixedWidth(width)
+        card.body.setFixedWidth(width - 44)
+        card.adjustSize()
+        x = max(0, (self.width() - card.width()) // 2)
+        y = max(20, self.height() - card.height() - 120)
+        card.move(x, y)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_confirmation_card()
+
+    # Sayfa değişimini QStackedWidget zaten show/hide olayıyla bildirir —
+    # duraklatmayı buna bağlamak switch_page çağrısına güvenmekten daha sağlam.
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.set_active(True)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.set_active(False)
