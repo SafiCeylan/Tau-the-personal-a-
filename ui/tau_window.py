@@ -77,7 +77,11 @@ PROVIDER_LABELS = {
 
 # Bekleyen güvenlik onayı SADECE bu mesajlarla (tam eşleşme) onaylanabilir.
 # Substring eşleşmesi ("tamam kanka başka şey soracağım" gibi) kabul edilmez.
-CONFIRM_PHRASES = {"onaylıyorum", "onayla", "evet", "evet onaylıyorum", "çalıştır", "tamam"}
+CONFIRM_PHRASES = {
+    "onaylıyorum", "onayliyorum", "onayla", "evet", "evet onaylıyorum", "çalıştır", "tamam",
+    "izin veriyorum", "izin verdim", "izin ver", "kabul", "kabul ediyorum", "ok", "okay",
+    "peki", "olur", "devam", "başlat", "baslat"
+}
 
 # Onay kartı bu süre içinde yanıtlanmazsa bekleyen komut otomatik iptal edilir (ms)
 CONFIRMATION_TIMEOUT_MS = 60_000
@@ -441,6 +445,7 @@ class TelegramWorkerThread(QThread):
                 token, chat_id,
                 "🔴 **ULTRON NEURAL CORE — Telegram Kategorili Komut Menüsü**\n\n"
                 "Aşağıdaki menü kategorilerinden birini seçerek veya kısayol butonlarını kullanarak bilgisayarınızı uzaktan yönetebilirsiniz:\n\n"
+                "• 👁️ **Ekranı Oku & Seç** (`/ekran` — ekranı anla, numarayla seç)\n"
                 "• 🖥️ **Pencere & Gezinme** (`/pencere` — Alt+Tab, Win+D, Win+E)\n"
                 "• ✍️ **Yazı & Düzenleme** (`/duzenleme` — Ctrl+C, Ctrl+V, Ctrl+Z)\n"
                 "• 🌐 **Tarayıcı & Sekme** (`/tarayici` — Ctrl+T, Ctrl+W, F5)\n"
@@ -450,6 +455,26 @@ class TelegramWorkerThread(QThread):
                 reply_markup=tg.ana_menu_klavyesi()
             )
             return
+
+        # 👁️ Ekranı Oku & Seç Menüsü (OCR)
+        if cmd_lower in ('/ekran', '👁️ ekranı oku & seç', '👁️ ekrani oku & sec'):
+            tg.send_message(
+                token, chat_id,
+                "👁️ **EKRANI OKU VE SEÇ**\n\n"
+                "Ultron ekranını okur, gördüklerini **numaralı liste** hâlinde sunar; "
+                "sonra numarayla seçersin.\n\n"
+                "**Akış:** `Ekranda Ne Var` → liste gelir → `3'ü Aç`\n\n"
+                "_Not: PC'de hedef pencere önde olmalı — Ultron kendi penceresini değil, "
+                "senin baktığın pencereyi okur._",
+                reply_markup=tg.ekran_klavyesi()
+            )
+            return
+
+        # Numara butonları: "3️⃣ 3'ü Aç" → "3'ü aç"  (ayrıştırma tg katmanında)
+        sade = tg.menu_butonu_coz(text)
+        if sade.lower() != cmd_lower:
+            text = sade
+            cmd_lower = sade.lower()
 
         # 🖥️ Pencere & Gezinme Menüsü
         if cmd_lower in ('/pencere', '🖥️ pencere & gezinme'):
@@ -1103,6 +1128,7 @@ class TauMainWindow(QMainWindow):
         self._stream_timer = None
 
         self.init_ui()
+        self._koyu_baslik_cubugu()
         self.refresh_all_data()
 
         # 🔴 System Tray: pencere kapansa da Ultron arka planda yaşar
@@ -1194,6 +1220,11 @@ class TauMainWindow(QMainWindow):
         self.ultron_focus_view = UltronFocusViewWidget()
         self.ultron_focus_view.message_sent.connect(self.on_user_send_message)
         self.ultron_focus_view.switch_mode_requested.connect(lambda: self.switch_page(0))
+        # Overlay'in kendi −/▢/✕ ve mikrofon butonları ana pencereye bağlanır
+        self.ultron_focus_view.minimize_requested.connect(self.showMinimized)
+        self.ultron_focus_view.maximize_requested.connect(self._toggle_maximized)
+        self.ultron_focus_view.close_requested.connect(self.close)
+        self.ultron_focus_view.voice_requested.connect(self.on_mic_clicked)
         self.pages.addWidget(self.ultron_focus_view)
 
         # Page 7: Dynamic Mode & Routine Manager
@@ -1224,6 +1255,8 @@ class TauMainWindow(QMainWindow):
         welcome = "Ben **ULTRON Nöral Çekirdeği**. Sistem protokolleri aktif. Nasıl bir komut vermek istersiniz?"
         self.chat_view.add_message("assistant", welcome, now_str)
         self.ultron_focus_view.add_message("assistant", welcome)
+        # Açılışta sohbet sayfasındayız — odak hologramı beklemede kalsın
+        self.ultron_focus_view.set_active(False)
 
     def switch_page(self, index: int):
         if index == 6:
@@ -1231,7 +1264,44 @@ class TauMainWindow(QMainWindow):
         else:
             self.sidebar.show()
         self.pages.setCurrentIndex(index)
+        # Not: odak sayfasının 3D/telemetri duraklatması artık widget'ın kendi
+        # show/hide olaylarında — burada ekstra bir şey yapmaya gerek yok.
         self.refresh_all_data()
+
+    def _toggle_maximized(self):
+        """Overlay'deki ▢ butonu: tam ekran ↔ normal."""
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def _koyu_baslik_cubugu(self):
+        """Windows'un başlık çubuğunu uygulamanın koyusuna boyar.
+
+        Qt 5.15 sistem temasını başlık çubuğuna taşımıyor: açık temada üstte
+        beyaz bir şerit kalıyordu (tam ekranda çok belli oluyor). DWM ile
+        doğrudan #030408 yapıyoruz — uygulamanın arka planıyla aynı renk.
+        Desteklemeyen sürümlerde sessizce atlanır, hiçbir şey bozulmaz.
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            dwm = ctypes.windll.dwmapi
+
+            def ayarla(attr, deger):
+                v = ctypes.c_int(deger)
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+
+            # COLORREF = 0x00BBGGRR  →  #030408 = 0x00080403
+            KOYU = 0x00080403
+            ayarla(20, 1)        # DWMWA_USE_IMMERSIVE_DARK_MODE (Win10 2004+)
+            ayarla(35, KOYU)     # DWMWA_CAPTION_COLOR  (Win11 22000+)
+            ayarla(34, KOYU)     # DWMWA_BORDER_COLOR
+            ayarla(36, 0x00E0E0E0)  # DWMWA_TEXT_COLOR — açık gri başlık yazısı
+        except Exception as e:
+            print(f"[TAU] Koyu başlık çubuğu uygulanamadı (önemsiz): {e}")
 
     def start_new_chat(self):
         self.pages.setCurrentIndex(0)
@@ -1327,6 +1397,7 @@ class TauMainWindow(QMainWindow):
         cmd_to_run = self.pending_confirmation_cmd
         self.pending_confirmation_cmd = None
         self.pending_confirmation_timer.stop()
+        self.ultron_focus_view.hide_confirmation_card()
         if not cmd_to_run:
             return
 
@@ -1356,6 +1427,7 @@ class TauMainWindow(QMainWindow):
     def _cancel_pending_confirmation(self, reason_msg: str):
         self.pending_confirmation_cmd = None
         self.pending_confirmation_timer.stop()
+        self.ultron_focus_view.hide_confirmation_card()
         self._post_assistant(reason_msg)
         self._set_ai_state("idle")
 
@@ -1474,6 +1546,7 @@ class TauMainWindow(QMainWindow):
         self._set_ai_state("speaking")
         now_str = datetime.now().strftime("%H:%M")
         self._stream_bubble = self.chat_view.add_message("assistant", "▌", now_str)
+        self.ultron_focus_view.begin_stream()
         self._stream_parts = []
         self._stream_dirty = False
 
@@ -1497,8 +1570,10 @@ class TauMainWindow(QMainWindow):
     def _flush_stream(self):
         if self._stream_dirty and self._stream_bubble is not None:
             self._stream_dirty = False
-            self._stream_bubble.update_text(''.join(self._stream_parts) + " ▌")
+            partial = ''.join(self._stream_parts)
+            self._stream_bubble.update_text(partial + " ▌")
             self.chat_view.scroll_to_bottom()
+            self.ultron_focus_view.update_stream(partial)
 
     def _on_stream_done(self, user_text: str, full: str):
         self._stream_timer.stop()
@@ -1509,7 +1584,7 @@ class TauMainWindow(QMainWindow):
 
         # Balonu zaten canlı bastık — _post_assistant'ın yeniden basmaması için
         # geçmiş/log/TTS işlemlerini burada elle yapıyoruz
-        self.ultron_focus_view.add_message("assistant", full)
+        self.ultron_focus_view.end_stream(full)
         self.recent_chat_history.append({"role": "assistant", "text": full})
         self._trim_history()
         self.controller.log(user_text, full)
@@ -1523,6 +1598,7 @@ class TauMainWindow(QMainWindow):
         if self._stream_bubble is not None:
             self._stream_bubble.update_text(f"⚠️ {err}")
         self._stream_bubble = None
+        self.ultron_focus_view.end_stream(f"⚠️ {err}")
         self._set_ai_state("idle")
 
     def on_ai_response(self, user_prompt: str, ai_answer: str, updated_context):
@@ -1614,6 +1690,64 @@ class TauMainWindow(QMainWindow):
         self.check_due_reminders()
         self.check_scheduled_tasks()
         self.check_file_index()
+        self.check_calendar_sync()
+
+    def check_calendar_sync(self):
+        """
+        📅 Bağlı dış takvimi (ICS) 30 dakikada bir tazeler.
+
+        Ağ çağrısı arka plandadır — senkron UI thread'inde yapılırsa yavaş bir
+        ICS sunucusu tüm pencereyi dondurur.
+        """
+        if getattr(self, '_takvim_calisiyor', False):
+            return
+        try:
+            from features import calendar_tools
+            if not calendar_tools.ics_kaynaklari():
+                return   # bağlı dış takvim yok — boşuna dönme
+        except Exception as e:
+            print(f"[Takvim] Kaynak listesi okunamadı: {e}")
+            return
+
+        son = getattr(self, '_takvim_son_senkron', None)
+        if son and (datetime.now() - son).total_seconds() < 1800:
+            return
+        # Zaman damgası DENEMEDEN önce yazılır: kaynak erişilemezse her 30
+        # saniyede bir yeniden denenmesin.
+        self._takvim_son_senkron = datetime.now()
+        self._takvim_calisiyor = True
+
+        db_yolu = self.db_manager.db_path
+
+        def _senkron():
+            # ⚠️ SQLite bağlantısı thread'ler arası paylaşılamaz (proje kuralı 4)
+            # → arka plan kendi bağlantısını açar, controller'ınkine dokunmaz.
+            import sqlite3
+            conn = sqlite3.connect(db_yolu)
+            try:
+                return calendar_tools.ics_senkronize(conn.cursor(), conn)
+            finally:
+                conn.close()
+
+        self._takvim_worker = FuncWorkerThread(_senkron)
+        self._takvim_worker.finished_signal.connect(self._on_takvim_senkron)
+        self._takvim_worker.error_signal.connect(self._on_takvim_senkron_hata)
+        self._takvim_worker.start()
+
+    def _on_takvim_senkron(self, sonuc):
+        self._takvim_calisiyor = False
+        try:
+            sayi, hatalar = sonuc
+            if sayi:
+                print(f"[Takvim] {sayi} etkinlik senkronize edildi")
+            if hatalar:
+                print(f"[Takvim] Ulaşılamayan kaynak: {', '.join(hatalar)}")
+        except Exception:
+            pass
+
+    def _on_takvim_senkron_hata(self, hata):
+        self._takvim_calisiyor = False
+        print(f"[Takvim] Senkron hatası: {hata}")
 
     def check_file_index(self):
         """

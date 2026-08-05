@@ -26,6 +26,7 @@ Tıklamadan sonra fare imleci ESKİ KONUMUNA döndürülür.
 """
 
 import ctypes
+import re
 import sys
 import time
 from ctypes import wintypes
@@ -144,13 +145,18 @@ def metne_tikla(metin, sira=None, odak_zorunlu=True, okuma=None) -> InteractionR
 
     # KİLİT 1 — çok eşleşme: tahmin yürütme
     if len(eslesmeler) > 1 and sira is None:
-        adaylar = ", ".join(f"[{i}] ({e['merkez'][0]},{e['merkez'][1]})"
-                            for i, e in enumerate(eslesmeler[:6]))
-        return InteractionResult(
-            False, "vision",
-            f"'{metin}' {len(eslesmeler)} yerde geçiyor — hangisi olduğu belirsiz, "
-            f"tıklamadım. Adaylar: {adaylar}",
-            detail={'matches': eslesmeler})
+        # İSTİSNA: Hedef rakam/sıra numarası ise ("1", "1'e", "1'yi aç", "1. video")
+        # kullanıcı açıkça ekrandaki ilk eşleşmeyi (0. aday) istemektedir.
+        if re.search(r'\b\d+\b', metin):
+            sira = 0
+        else:
+            adaylar = ", ".join(f"[{i}] ({e['merkez'][0]},{e['merkez'][1]})"
+                                for i, e in enumerate(eslesmeler[:6]))
+            return InteractionResult(
+                False, "vision",
+                f"'{metin}' {len(eslesmeler)} yerde geçiyor — hangisi olduğu belirsiz, "
+                f"tıklamadım. Adaylar: {adaylar}",
+                detail={'matches': eslesmeler})
 
     secilen = eslesmeler[sira or 0] if (sira or 0) < len(eslesmeler) else None
     if secilen is None:
@@ -162,6 +168,16 @@ def metne_tikla(metin, sira=None, odak_zorunlu=True, okuma=None) -> InteractionR
     # KİLİT 2 — odak koruması
     if odak_zorunlu and hedef_pencere:
         onplan = _onplan_basligi()
+        if "ultron" in onplan.lower() and "ultron" not in hedef_pencere.lower():
+            # Ultron onay almak için öne geçmişti; hedef pencereyi tekrar öne getir
+            try:
+                from core.world_state import uygun_pencereyi_odakla
+                uygun_pencereyi_odakla(hedef_pencere)
+                time.sleep(0.3)
+                onplan = _onplan_basligi()
+            except Exception:
+                pass
+
         if hedef_pencere.lower() not in onplan.lower():
             return InteractionResult(
                 False, "vision",

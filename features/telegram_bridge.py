@@ -93,10 +93,11 @@ def ana_menu_klavyesi() -> dict:
     """Telegram Ana Kategori Menüsü."""
     return {
         "keyboard": [
-            [{"text": "🖥️ Pencere & Gezinme"}, {"text": "✍️ Yazı & Düzenleme"}],
-            [{"text": "🌐 Tarayıcı & Sekme"}, {"text": "🎵 Medya & Ses"}],
-            [{"text": "💻 Sistem & Güç"}, {"text": "📊 Bilgi & Brifing"}],
-            [{"text": "⭐ Özel Kısayollarım"}, {"text": "📸 Ekran Görüntüsü Al"}, {"text": "🎛️ Menüyü Kapat"}]
+            [{"text": "👁️ Ekranı Oku & Seç"}, {"text": "🖥️ Pencere & Gezinme"}],
+            [{"text": "✍️ Yazı & Düzenleme"}, {"text": "🌐 Tarayıcı & Sekme"}],
+            [{"text": "🎵 Medya & Ses"}, {"text": "💻 Sistem & Güç"}],
+            [{"text": "📊 Bilgi & Brifing"}, {"text": "⭐ Özel Kısayollarım"}],
+            [{"text": "📸 Ekran Görüntüsü Al"}, {"text": "🎛️ Menüyü Kapat"}]
         ],
         "resize_keyboard": True,
         "is_persistent": True
@@ -125,6 +126,49 @@ def ozel_klavye() -> dict:
 
     return {
         "keyboard": buttons,
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
+
+def menu_butonu_coz(text: str) -> str:
+    """Menü butonu etiketini düz komuta çevirir.
+
+    Telegram butonları emoji taşır ("3️⃣ 3'ü Aç"); niyet katmanı emojiyi
+    tanımaz. Burada sadeleştirilir.
+
+    ⚠️ Bu iş bilerek `tau_window` içinde DEĞİL: orada `re` fonksiyon içinde
+    import ediliyor ve fonksiyonun başında `re.` kullanmak UnboundLocalError
+    veriyor — yani her Telegram komutu çökerdi. Buton ayrıştırması zaten
+    Telegram katmanının işi ve burada test edilebilir.
+    """
+    t = (text or '').strip()
+    if not t:
+        return t
+    # Keycap emoji ("3️⃣") = '3' + U+FE0F + U+20E3. Görünmez birleşenler
+    # temizlenmezse regex'e takılır.
+    sade = t.replace('️', '').replace('⃣', '').strip()
+    # "3️⃣ 3'ü Aç" → "3'ü aç"   (butonlarda baş harf BÜYÜK gelir → IGNORECASE)
+    m = re.match(r'^\s*\d?\s*(\d{1,2})\s*([\'’]?\w*?)\s*(aç|ac)\s*$',
+                 sade, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}{m.group(2)} aç".strip().lower()
+    return t
+
+
+def ekran_klavyesi() -> dict:
+    """👁️ Ekranı Oku & Seç — OCR tabanlı ekran anlama menüsü.
+
+    Akış: "Ekranda Ne Var" → numaralı liste gelir → "1'i Aç" / "2'yi Aç" …
+    """
+    return {
+        "keyboard": [
+            [{"text": "👁️ Ekranda Ne Var"}, {"text": "📖 Ekranı Özetle"}],
+            [{"text": "🩺 Ekrandaki Hatayı Açıkla"}, {"text": "🌍 Ekranı Çevir"}],
+            [{"text": "1️⃣ 1'i Aç"}, {"text": "2️⃣ 2'yi Aç"}, {"text": "3️⃣ 3'ü Aç"}],
+            [{"text": "4️⃣ 4'ü Aç"}, {"text": "5️⃣ 5'i Aç"}, {"text": "6️⃣ 6'yı Aç"}],
+            [{"text": "🏠 Ana Menü"}]
+        ],
         "resize_keyboard": True,
         "is_persistent": True
     }

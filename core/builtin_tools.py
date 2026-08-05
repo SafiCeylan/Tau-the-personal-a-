@@ -399,6 +399,7 @@ def medya(metin="", aksiyon=None, **_):
     intent=("SYSTEM_CONTROL", "SET_VOLUME", "PLAY_MUSIC"),
 )
 def uygulama_calistir(metin="", uygulama=None, sarki=None, **_):
+    import time
     # Planner/LLM kanonik parametre verdiyse regex'in anlayacağı komuta çevir.
     if sarki:
         komut = f"{sarki} çal"
@@ -407,6 +408,8 @@ def uygulama_calistir(metin="", uygulama=None, sarki=None, **_):
     else:
         komut = metin
     islendi, cevap = sistem_komutu_algila(komut)
+    if islendi and cevap and ("başlatılıyor" in cevap or "açılıyor" in cevap):
+        time.sleep(1.2)  # Uygulamanın penceresini açıp odağı alması için bekleme
     return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
 
 
@@ -449,7 +452,7 @@ def ekranda_sec_araci(metin="", **_):
     intent="SCREEN_CLICK",
 )
 def ekranda_tikla_araci(metin="", hedef=None, **_):
-    secilen = hedef or tiklama_hedefi_coz(metin)
+    secilen = hedef or tiklama_hedefi_coz(metin) or (metin.strip() if metin else None)
     if not secilen:
         return AracSonuc.islenmedi()
     islendi, cevap = ekranda_tikla(secilen)

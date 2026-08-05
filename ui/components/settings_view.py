@@ -107,6 +107,17 @@ class SettingsViewWidget(QWidget):
         self.tg_chat_in = QLineEdit(str(self.config.get("telegram_chat_id", "") or ""))
         self.tg_chat_in.setPlaceholderText("Bota mesaj atınca söylediği Chat ID")
 
+        # 📅 Takvim (ICS aboneliği — OAuth/anahtar gerektirmez, TEK YÖNLÜ okuma)
+        ics_ham = self.config.get("takvim_ics_url", "") or ""
+        if isinstance(ics_ham, (list, tuple)):
+            ics_ham = ", ".join(str(p) for p in ics_ham)
+        self.takvim_ics_in = QLineEdit(ics_ham)
+        self.takvim_ics_in.setPlaceholderText(
+            "Google Takvim → Ayarlar → Gizli iCal adresi (virgülle birden fazla)")
+        self.takvim_hatirlatma_in = QLineEdit(
+            str(self.config.get("takvim_hatirlatma_dk", 15)))
+        self.takvim_hatirlatma_in.setPlaceholderText("Etkinlikten kaç dk önce uyarayım (0 = kapalı)")
+
         form.addRow("Aktif AI Sağlayıcı:", self.provider_combo)
         form.addRow("Ollama Sunucu URL:", self.ollama_url_in)
         # Ollama model satırı: açılır menü + yükle/yenile butonu
@@ -133,6 +144,8 @@ class SettingsViewWidget(QWidget):
         form.addRow("Gmail Uygulama Şifresi:", self.smtp_pass_in)
         form.addRow("Telegram Bot Token:", self.tg_token_in)
         form.addRow("Telegram Chat ID:", self.tg_chat_in)
+        form.addRow("Takvim ICS Adresi:", self.takvim_ics_in)
+        form.addRow("Takvim Ön-uyarı (dk):", self.takvim_hatirlatma_in)
 
         # 🔊 Ses Ayarları
         self.tts_check = QCheckBox("Cevapları sesli oku")
@@ -352,6 +365,9 @@ class SettingsViewWidget(QWidget):
             "wake_enabled": self.wake_check.isChecked(),
             "llm_intent_enabled": self.llm_intent_check.isChecked(),
             "mic_device_index": self.mic_combo.currentData(),
+            "takvim_ics_url": self.takvim_ics_in.text().strip(),
+            "takvim_hatirlatma_dk": self._pozitif_sayi(
+                self.takvim_hatirlatma_in.text(), 15),
         })
         new_config.setdefault("tau_timeout", 30)
         new_config.setdefault("tau_endpoint", "/chat")

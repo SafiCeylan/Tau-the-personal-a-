@@ -191,6 +191,24 @@ def _doviz():
     return f"💵 **Döviz:** Dolar **{usd_try:.2f} ₺** • Euro **{eur_try:.2f} ₺**"
 
 
+def _bugunku_etkinlikler(cursor):
+    """
+    Brifingin takvim bölümü.
+
+    ⚠️ ASLA None dönmez: brifing döngüsü boş cevabı HATA sayıp
+    "Takvim okunamadı" yazar. "Etkinlik yok" ile "takvim okunamadı" farklı
+    şeylerdir — ikincisi kullanıcıyı boşuna telaşlandırır.
+    """
+    if cursor is None:
+        return "📅 **Bugünkü etkinlikler:** —"
+    try:
+        from features.calendar_tools import gun_ozeti
+        return gun_ozeti(cursor, 0) or "📅 **Bugünkü etkinlikler:** Takvim boş. 🎉"
+    except Exception as e:
+        print(f"[Ultron Takvim] Brifing bölümü atlandı: {e}")
+        return "📅 **Bugünkü etkinlikler:** okunamadı."
+
+
 def _bugunku_hatirlatmalar(cursor):
     if cursor is None:
         return None
@@ -246,15 +264,23 @@ def aksam_raporu_olustur(cursor=None) -> str:
             pass
 
         try:
+            from features.calendar_tools import gun_ozeti
+            yarinki = gun_ozeti(cursor, 1)
+            if yarinki:
+                satirlar.append(yarinki)
+        except Exception as e:
+            print(f"[Ultron Takvim] Akşam raporu takvim bölümü atlandı: {e}")
+
+        try:
             cursor.execute("""SELECT metin, hedef_tarih FROM hatirlatmalar
                               WHERE durum = 'bekliyor' AND hedef_tarih LIKE ?
                               ORDER BY hedef_tarih""", (yarin + '%',))
             rows = cursor.fetchall()
             if rows:
                 liste = "\n".join(f"  • {(t or '')[11:16]} — {m}" for m, t in rows)
-                satirlar.append(f"📅 **Yarının hatırlatmaları:**\n{liste}")
+                satirlar.append(f"⏰ **Yarının hatırlatmaları:**\n{liste}")
             else:
-                satirlar.append("📅 Yarın için bekleyen hatırlatma yok.")
+                satirlar.append("⏰ Yarın için bekleyen hatırlatma yok.")
         except Exception:
             pass
 
@@ -273,6 +299,7 @@ def sabah_brifingi_olustur(cursor=None):
     for uretici, hata_etiketi in (
         (_hava_durumu, "🌤️ Hava durumu alınamadı"),
         (_doviz, "💵 Döviz kurları alınamadı"),
+        (lambda: _bugunku_etkinlikler(cursor), "📅 Takvim okunamadı"),
         (lambda: _bugunku_hatirlatmalar(cursor), "⏰ Hatırlatmalar okunamadı"),
     ):
         try:

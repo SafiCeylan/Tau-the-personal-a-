@@ -162,6 +162,14 @@ class KoordinatTest(unittest.TestCase):
     def test_okuma_basarisizsa_arama_patlamaz(self):
         self.assertEqual(sr.metni_bul("x", sonuc={"ok": False}), [])
 
+    def test_metni_bul_eki_ve_sayiyi_temizler(self):
+        """'1'yi aç' aranırken ekranda '1'e' varsa sayı yedeklemesiyle bulunmalı."""
+        sonuc = sahte_ocr([("1'e", 10, 10, 20, 20), ("Aç", 40, 10, 30, 20)])
+        sonuc["ok"] = True
+        bulunan = sr.metni_bul("1'yi aç", sonuc=sonuc)
+        self.assertTrue(bool(bulunan))
+        self.assertIn("1'e", bulunan[0]["metin"])
+
 
 class KomutSonucuTest(unittest.TestCase):
     """direct (kullanıcıya doğrudan) vs ai (LLM'e akmalı) ayrımı."""

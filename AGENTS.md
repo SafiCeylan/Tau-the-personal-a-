@@ -230,7 +230,7 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 
 ---
 
-## 📊 Durum (son güncelleme: 3 Ağu 2026 — 2. tur)
+## 📊 Durum (son güncelleme: 5 Ağu 2026)
 
 ### ✅ Çalışan ve canlıda doğrulanmış
 WhatsApp gönderimi · Gmail gönderimi · Telegram köprüsü (@Ultrontau_bot: metin, sesli mesaj,
@@ -239,12 +239,30 @@ ekran görüntüsü, dosya alma, hızlı butonlar + slash komutlar) · uzaktan k
 zamanlanmış görevler · otomatik hafıza · dosya bulucu · pano sihirbazı · pomodoro ·
 streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi · installer/exe ·
 **öğrenme katmanı (geçmiş sohbet arşivi + alışkanlık + düzeltmeden öğrenme)** ·
-**öneri motoru (alışkanlıktan zamanlanmış görev / kısayol)**.
+**öneri motoru (alışkanlıktan zamanlanmış görev / kısayol)** ·
+**👁️ OCR ekran okuma & tıklama (Windows.Media.Ocr)** ·
+**📅 Takvim entegrasyonu (Yerel DB + Keysiz ICS aboneliği)**.
 
-⚠️ **exe GÜNCEL DEĞİL** (28 Tem derlemesi): 30–31 Tem ve 3 Ağu işleri (uzaktan klavye,
-Telegram hızlı butonlar, özel kısayollar, akıllı ses, öğrenme katmanı, öneri motoru)
+⚠️ **exe GÜNCEL DEĞİL** (28 Tem derlemesi): 30–31 Tem, 3 Ağu ve 4-5 Ağu işleri (uzaktan klavye,
+Telegram hızlı butonlar, özel kısayollar, öğrenme katmanı, öneri motoru, OCR, Takvim)
 yalnızca `python main.py` ile çalışan sürümde. Masaüstü/Başlangıç kısayolları eski
 sürüme bakıyor — yeniden derleyip `C:\Users\memoc\UltronApp\ULTRON`'a taşımak gerekiyor.
+
+### 📅 TAKVİM — `features/calendar_tools.py` (5 Ağu 2026)
+
+Üç parçalı takvim altyapısı:
+1. **Yerel Takvim:** `takvim_etkinlikleri` SQLite tablosu. İnternetsiz ekle/sil/sorgula.
+2. **ICS Aboneliği:** Google Calendar / Outlook "gizli iCal adresi" üzerinden tek yönlü okuma (OAuth/API key gerektirmez). `tau_window.py` içinde 30 dakikada bir otomatik arka plan senkronizasyonu.
+3. **ICS Dışa Aktarım:** Yerel etkinlikleri `.ics` dosyası yapıp dışa aktarabilme.
+4. **Hatırlatma Köprüsü:** Etkinlik eklenince `hatirlatmalar` tablosuna N dakika öncesine kayıt yazılır — mevcut bildirim/Telegram/toast sistemi doğrudan kullanılır.
+
+### 👁️ OCR EKRAN OKUMA & SEÇME — `features/screen_reader.py`, `screen_context.py`, `level3_ocr.py` (4 Ağu 2026)
+
+Windows yerleşik OCR motoru (`Windows.Media.Ocr`) kullanılarak 0.2 saniyede model indirmesiz ve internetsiz ekran anlama:
+- Ultron'un arkasındaki pencereyi yakalar.
+- Kelime çöplüğü yerine uzamsal yakınlığa göre numaralı seçilebilir öğe listesi sunar ("ekranda ne var" → "3'ü aç").
+- Gizlilik: Ekran içeriği **sadece yerel modellere** (Ollama/Kobold) iletilir, Gemini'ye gönderilmez.
+- AIP Level 3 Vision: Düğme koordinatını tespit edip güvenli tıklama sağlar (çakışma/pencere kayması durumunda tıklamayı iptal eder).
 
 ### 🧠 ÖĞRENME KATMANI — `features/chat_learning.py` (3 Ağu 2026)
 
@@ -282,17 +300,15 @@ Komutlar: `önerilerin` · `bekleyen öneri var mı` · `1. öneriyi uygula` · 
 belirsiz seçimde tahmin YOK · reddedilen bir daha sorulmaz · zaten kurulu olan
 önerilmez · doğrulanamıyorsa (cursor yok) öneri üretilmez · beyaz liste
 `chat_learning.OGRENILEBILIR_INTENTLER` ile ORTAK (mesaj gönderen niyet öneriye dönüşmez) ·
-yalnızca tek komutla geri alınabilir eylemler.
+yanlızca tek komutla geri alınabilir eylemler.
 
 Zamanlanabilir niyetler `ZAMANLANABILIR` sözlüğünde: brifing, akşam raporu, hava, döviz,
 analiz raporu. **`PLAY_MUSIC` bilerek YOK** — kullanıcı uyanmadan müzik başlatmak
 istenmeyen bir yan etkidir.
 
 ### 🔨 Eksik kalanlar / Raftakiler
-1. Takvim entegrasyonu (Google/Outlook/ICS).
-2. Vision / OCR (RAM sınırları nedeniyle beklemede).
-3. exe'nin yeniden derlenmesi (yukarıdaki uyarı).
-4. Öneri motoru sonraki adım: önerinin **proaktif** sunulması (şu an kullanıcı sormalı
+1. exe'nin yeniden derlenmesi (yukarıdaki uyarı).
+2. Öneri motoru sonraki adım: önerinin **proaktif** sunulması (şu an kullanıcı sormalı
    ya da raporu açmalı). Akşam raporuna tek satır iliştirmek doğal yer olur —
    ama dırdır sınırı (aynı öneri kaç günde bir) önce kararlaştırılmalı.
 
@@ -307,6 +323,8 @@ istenmeyen bir yan etkidir.
 
 | Tarih | Yapılan | Sonuç |
 |-------|---------|-------|
+| 5 Ağu | **🧠 PLANNER MOTORU REVİZYONU, TAKVİM, ODAK & OCR FİKSİ:** `core/planner.py` — `cok_adimli_olabilir` kapısına eylemsel bağlaç (`aç ve`, `yaz ve`, `oku ve`), sıra kelimeleri ve numaralı liste regex'leri eklendi. `PLANNER_ISTEMI` prompt'una 2/3 adımlı few-shot JSON örnekleri entegre edildi. `plan_executor.py` adımlar arası dinamik bağlam aktarımı (`birikmis_veri` → `bulunan_dosya` ikamesi). `features/calendar_tools.py` ICS senkronu. **🖥️ Pencere Odaklama Motoru (`core/world_state.py`):** `acik_pencereleri_listele`, `pencereyi_one_getir`, `uygun_pencereyi_odakla`. **👁️ Vision OCR Fiksi:** `metni_bul` yönelme ekleri ('1'yi aç' → '1'e'/'1') ve rakamlı hedeflerde ilk adaya (`sira=0`) otomatik tıklama kuralı. `KOMUTLAR.md` güncellemesi | ✅ **631 test yeşil** (20 sn) |
+| 4 Ağu | **👁️ OCR & ODAK FIX & DOĞAL DİL:** `features/screen_reader.py`, `screen_context.py`, `level3_ocr.py` (Windows.Media.Ocr ile model/internetsiz 0.2sn ekran okuma, "ekranda ne var" numaralı seçim listesi, yerel model gizlilik kuralı, AIP Level 3 Vision tıklama). Odak modu Web Overlay qwebchannel protocol fix + Chromium 83 CSS uyumu. Doğal dil niyet regex'leri & araç içi ayrıştırma düzeltmeleri (%75 → %100 niyet routing) | ✅ 455+ test yeşil + canlı doğrulandı |
 | 3 Ağu (2) | **💡 ÖĞRENME KATMANI FAZ 2:** `features/suggestions.py` — örüntüden zamanlanmış görev / kısayol önerisi (sorar, kurmaz; reddedilen geri gelmez; numara gösterilen sıradan çözülür). Arşive **ruh hâli damgası** + rapora ruh hâli bölümü (prompt'a girmez). İstatistik sayfasına 3 öğrenme kartı. `chat_learning`'e `ornek`/`saat` alanları — rapor artık ASCII değil kullanıcının kendi cümlesini gösteriyor. Zırha JSON durum dosyaları eklendi. `tests/test_suggestions.py` (26 test) + 6 ruh hâli testi. **Kullanıcının canlı testinde iki hata çıktı ve düzeltildi:** (1) `[Telegram] ` kanal öneki `ornek` üzerinden öneriye sızıyordu → `kanalsiz()`; (2) aynı iş için iki kısayol öneriliyordu → niyet başına tek. İkisi de teste bağlandı | ✅ **455 test yeşil** + canlı: alışkanlık → öneri → kabul → görev kuruldu, kurulan tekrar sorulmadı, "film önerilerin var mı" komuta dönüşmedi |
 | 3 Ağu | **🧠 ÖĞRENME KATMANI:** `features/chat_learning.py` — ayrı `ogrenme.db` (FTS5+BM25 geri çağırma, örüntü çıkarımı, düzeltmeden öğrenme, sır filtresi). Motor/niyet/prompt/UI entegrasyonu, `LEARNING_REPORT` niyeti + `ogrenme_raporu` aracı, `IntentAnalyzerLayer(hafif=)` ile geçmiş sınıflandırma, `tests/safety.py`'ye kalıcı veri koruması, `tests/test_chat_learning.py` (53 test) | ✅ **423 test yeşil** + canlı: 296 geçmiş konuşma arşive alındı (0.6 sn), geri çağırma 1-3 ms, qwen2.5:7b "kedinin adı Pamuk"/"Dark dizisini seviyorsunuz" diye HATIRLADI |
 | 31 Tem (3) | **🔊 Akıllı Ses Kontrolü & Yazım/Kalıp İyileştirmesi:** `system_control.py` + `pipeline_layers.py`; `yao`→`yap`, `yüksel`→`yükselt`, `arttir`→`artır` yazım hataları ve `en yüksek`, `fulle`, `kökle`, `son ses` seviye ifadeleri eklendi (Codex oturumu) | ✅ 352 test yeşil + canlı doğrulandı |

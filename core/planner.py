@@ -150,6 +150,13 @@ KURALLAR:
   Koşulsuz adımlar sırayla çalışır.
 - Kullanıcıya soru sorma, açıklama yazma. Sadece planı üret.
 
+ÖRNEKLER:
+Örnek 1 ("zen aç ve youtube yaz"):
+{{"hedef": "Zen açıp YouTube arat", "gorevler": [{{"id": 1, "eylem": "uygulama_calistir", "parametreler": {{"uygulama": "zen"}}}}, {{"id": 2, "eylem": "klavye_tusu", "parametreler": {{"metin": "youtube yaz enter bas"}}}}]}}
+
+Örnek 2 ("staj raporunu bul, bulamazsan indeksi güncelle"):
+{{"hedef": "Staj raporunu bul veya indeksi güncelle", "gorevler": [{{"id": 1, "eylem": "dosya_ara", "parametreler": {{"sorgu": "staj raporu"}}}}, {{"id": 2, "eylem": "indeks_yonet", "parametreler": {{"islem": "guncelle"}}, "kosul": {{"tip": "basarisiz_ise", "gorev_id": 1}}}}]}}
+
 KULLANILABİLİR ARAÇLAR:
 {katalog}
 
@@ -255,11 +262,21 @@ def plani_dogrula(ham: Dict[str, Any]) -> Plan:
 # =========================================================================
 # Planner kapısı — planner NE ZAMAN çalışmalı
 # =========================================================================
+import re
+
 _COK_ADIMLI_ISARETLER = (
     " sonra ", " ardından", " ve sonra", " bulamazsan", " bulursan",
     " olmazsa", " yoksa", " sonrasında", " peşinden", " daha sonra",
     " önce ", " en son", " bittikten sonra",
 )
+
+_EYLEM_BAGLACLARI_REGEX = re.compile(
+    r'\b(?:aç|yaz|tıkla|oku|bul|bak|at|gönder|kapat|sil|ekle|özetle|ara|başlat)\b'
+    r'\s+(?:ve|,|;)\s+',
+    re.IGNORECASE
+)
+
+_NUMARALI_ADIM_REGEX = re.compile(r'\b[1-9][\.\)]\s+', re.IGNORECASE)
 
 
 def cok_adimli_olabilir(metin: str) -> bool:
@@ -267,7 +284,7 @@ def cok_adimli_olabilir(metin: str) -> bool:
     Planner'ın kapı bekçisi.
 
     Planner 25 saniye sürüyor; "chrome aç" için çalıştırmak kabul edilemez.
-    Sadece cümlede sıralama/koşul işareti varsa planlamaya değer.
+    Sadece cümlede sıralama/koşul işareti veya iki eylem arası bağlaç/sıra varsa planlamaya değer.
 
     NOT: Bu kapı, regex intent'i KAÇIRDIKTAN sonra bakılır. Deterministik yol
     her zaman önce gelir (projenin 1 numaralı geliştirme kuralı).
@@ -275,10 +292,13 @@ def cok_adimli_olabilir(metin: str) -> bool:
     if not metin:
         return False
     kucuk = f" {metin.lower()} "
-    # SADECE açık sıralama/koşul ifadesi kapıyı açar. Virgül yeterli DEĞİLDİR:
-    # "iyi günler, nasılsın" gibi sıradan cümleler 25 saniyelik planlamaya
-    # girerdi.
-    return any(isaret in kucuk for isaret in _COK_ADIMLI_ISARETLER)
+    if any(isaret in kucuk for isaret in _COK_ADIMLI_ISARETLER):
+        return True
+    if _NUMARALI_ADIM_REGEX.search(metin):
+        return True
+    if _EYLEM_BAGLACLARI_REGEX.search(metin):
+        return True
+    return False
 
 
 # =========================================================================

@@ -1,6 +1,8 @@
 import os
 import sys
 
+from PyQt5.QtCore import Qt
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
 
@@ -25,6 +27,7 @@ def _zaten_calisiyor_mu() -> bool:
 
 
 def main():
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     # Tray modu: pencere kapansa da uygulama arka planda yaşamaya devam eder
     app.setQuitOnLastWindowClosed(False)

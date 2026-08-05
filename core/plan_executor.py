@@ -129,7 +129,7 @@ class PlanYurutucu:
                 break
 
             gorev.durum = CALISIYOR
-            arac_sonucu = self._araci_calistir(arac, gorev)
+            arac_sonucu = self._araci_calistir(arac, gorev, birikmis_veri=sonuc.veri)
 
             if arac_sonucu.veri:
                 sonuc.veri.update(arac_sonucu.veri)
@@ -224,17 +224,35 @@ class PlanYurutucu:
         return False
 
     # ---------------------------------------------------------------
-    def _araci_calistir(self, arac, gorev: Gorev):
+    def _araci_calistir(self, arac, gorev: Gorev, birikmis_veri: Dict[str, Any] = None):
         from core.tools import AracSonuc
 
         argumanlar = dict(gorev.parametreler)
+        birikmis = birikmis_veri or {}
+
+        # Önceki adımlardan dosya/nesne bağlamı aktarımı
+        if 'bulunan_dosya' in birikmis and ('dosya' not in argumanlar or not argumanlar['dosya']):
+            argumanlar['dosya'] = birikmis['bulunan_dosya']
+
         # Araçlar ham cümleyi de bekler (regex ayrıştırıcılar onu kullanır).
-        argumanlar.setdefault('metin', self._metin_tahmini(gorev))
+        ham_metin = self._metin_tahmini(gorev)
+        if 'bulunan_dosya' in birikmis and ('onu' in ham_metin.lower() or 'o dosyayı' in ham_metin.lower()):
+            ham_metin = ham_metin + " " + str(birikmis['bulunan_dosya'])
+        argumanlar.setdefault('metin', ham_metin)
+
         if arac.db_ister:
             argumanlar['db_cursor'] = self.db_cursor
             argumanlar['db_conn'] = self.db_conn
         if arac.ad == 'dosya_gonder':
             argumanlar.setdefault('kanal', self.kanal)
+
+        if arac.ad in ("klavye_tusu", "ekranda_tikla", "ekranda_sec", "ekrani_oku"):
+            try:
+                from core.world_state import uygun_pencereyi_odakla
+                ipucu = (self._metin_tahmini(gorev) + " " + getattr(self.plan, 'hedef', '')).strip()
+                uygun_pencereyi_odakla(ipucu)
+            except Exception as e:
+                print(f"[Ultron Plan] Otomatik pencere odağı hatası: {e}")
 
         try:
             return arac.calistir(**argumanlar)

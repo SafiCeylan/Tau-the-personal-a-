@@ -27,6 +27,7 @@ _TUS_ADLARI = {
     'enter', 'return', 'esc', 'escape', 'tab', 'space', 'boşluk', 'delete', 'del',
     'backspace', 'home', 'end', 'insert', 'pgup', 'pgdn', 'up', 'down', 'left',
     'right', 'yukarı', 'aşağı', 'sol', 'sağ', 'ctrl', 'alt', 'shift', 'win',
+    'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
 }
 _FIIL = r'(?:t[ıi]kla(?:r\s+m[ıi]s[ıi]n)?|bas(?:ar\s+m[ıi]s[ıi]n)?|bast[ıi]r)'
 _EK = r"(?:['’](?:e|a|ye|ya|ne|na))?"
@@ -37,11 +38,11 @@ _NESNE = r'(?:butonuna|butonu|dü[ğg]mesine|dü[ğg]mesi|yaz[ıi]s[ıi]na|sekme
 
 _KALIPLAR = (
     # tırnaklı hedef her şeyden önce gelir: ekranda "İzin Ver"e tıkla
-    r'["\'`“”]\s*(?P<hedef>[^"\'`“”]{2,40}?)\s*["\'`“”]\s*' + _EK_SERBEST + r'\s*' + _NESNE + r'\s*' + _FIIL,
+    r'["\'`“”]\s*(?P<hedef>[^"\'`“”]{1,40}?)\s*["\'`“”]\s*' + _EK_SERBEST + r'\s*' + _NESNE + r'\s*' + _FIIL,
     # ekranda Kaydet'e tıkla · ekranda Tamam butonuna bas
-    r'ekranda(?:ki)?\s+(?P<hedef>.{2,40}?)\s*' + _EK + r'\s*' + _NESNE + r'\s*' + _FIIL,
+    r'ekranda(?:ki)?\s+(?P<hedef>.{1,40}?)\s*' + _EK + r'\s*' + _NESNE + r'\s*' + _FIIL,
     # Kaydet butonuna tıkla  (ekran kelimesi olmadan — 'butonuna' zorunlu)
-    r'(?P<hedef>.{2,40}?)\s*' + _EK + r'\s*(?:butonuna|dü[ğg]mesine)\s*' + _FIIL,
+    r'(?P<hedef>.{1,40}?)\s*' + _EK + r'\s*(?:butonuna|dü[ğg]mesine)\s*' + _FIIL,
 )
 
 
@@ -61,13 +62,23 @@ def tiklama_hedefi_coz(mesaj):
             continue
         hedef = (eslesme.group('hedef') or "").strip(" '\"`’“”\t")
         # Türkçe yönelme eki temizliği: "Kaydet'e" → "Kaydet"
-        hedef = re.sub(r"['’](?:e|a|ye|ya|ne|na)$", "", hedef, flags=re.IGNORECASE).strip()
-        if len(hedef) < 2:
-            return None
+        hedef = re.sub(r"['’](?:e|a|ye|ya|ne|na|i|ı|u|ü)$", "", hedef, flags=re.IGNORECASE).strip()
+        if not hedef:
+            continue
         # Tuş adıysa bu KLAVYE komutudur, bize ait değil
         if hedef.lower() in _TUS_ADLARI or '+' in hedef:
             return None
         return hedef
+
+    # 🛠️ YEDEK YOL: Yalnızca tıklama fiili geçen kısa cümlelerde ("1'e tıkla", "3'e bas")
+    if re.search(_FIIL, m, re.IGNORECASE):
+        temiz = re.sub(r'^\s*(?:ekranda(?:ki)?\s+)?', '', m, flags=re.IGNORECASE)
+        temiz = re.sub(r"\s*(?:['’]?(?:e|a|ye|ya|ne|na|i|ı|u|ü))?\s*" + _NESNE + r"\s*" + _FIIL + r"\s*$", "", temiz, flags=re.IGNORECASE).strip(" '\"`’“”\t")
+        temiz = re.sub(r"['’](?:e|a|ye|ya|ne|na|i|ı|u|ü)$", "", temiz, flags=re.IGNORECASE).strip()
+
+        if temiz and temiz.lower() not in _TUS_ADLARI and '+' not in temiz:
+            return temiz
+
     return None
 
 

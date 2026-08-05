@@ -339,26 +339,47 @@ def metni_bul(aranan, sonuc=None, tum_ekran=False):
     if not sonuc.get("ok"):
         return []
 
-    kelimeler = sonuc["kelimeler"]
-    parcalar = [_katla(p) for p in aranan.split()]
-    bulunanlar = []
+    def _ara(hedef_metin):
+        kelimeler = sonuc["kelimeler"]
+        parcalar = [_katla(p) for p in hedef_metin.split() if p.strip()]
+        if not parcalar:
+            return []
+        bulunanlar = []
+        for i in range(len(kelimeler) - len(parcalar) + 1):
+            dilim = kelimeler[i:i + len(parcalar)]
+            if not all(p in _katla(d["metin"]) or _katla(d["metin"]) in p for p, d in zip(parcalar, dilim)):
+                continue
+            sol = min(d["x"] for d in dilim)
+            ust = min(d["y"] for d in dilim)
+            sag = max(d["x"] + d["w"] for d in dilim)
+            alt = max(d["y"] + d["h"] for d in dilim)
+            bulunanlar.append({
+                "metin": " ".join(d["metin"] for d in dilim),
+                "x": sol, "y": ust, "w": sag - sol, "h": alt - ust,
+                "merkez": (sol + (sag - sol) // 2, ust + (alt - ust) // 2),
+            })
+        bulunanlar.sort(key=lambda d: (d["y"], d["x"]))
+        return bulunanlar
 
-    for i in range(len(kelimeler) - len(parcalar) + 1):
-        dilim = kelimeler[i:i + len(parcalar)]
-        if not all(p in _katla(d["metin"]) for p, d in zip(parcalar, dilim)):
-            continue
-        sol = min(d["x"] for d in dilim)
-        ust = min(d["y"] for d in dilim)
-        sag = max(d["x"] + d["w"] for d in dilim)
-        alt = max(d["y"] + d["h"] for d in dilim)
-        bulunanlar.append({
-            "metin": " ".join(d["metin"] for d in dilim),
-            "x": sol, "y": ust, "w": sag - sol, "h": alt - ust,
-            "merkez": (sol + (sag - sol) // 2, ust + (alt - ust) // 2),
-        })
+    res = _ara(aranan)
+    if res:
+        return res
 
-    bulunanlar.sort(key=lambda d: (d["y"], d["x"]))
-    return bulunanlar
+    # Ek temizliği: "1'yi aç" -> "1 aç" / "1'e" -> "1"
+    temiz = re.sub(r"['’](?:e|a|ye|ya|ne|na|i|ı|u|ü|yi|yı|yu|yü)", "", aranan, flags=re.IGNORECASE)
+    if temiz != aranan:
+        res = _ara(temiz)
+        if res:
+            return res
+
+    # Sadece ilk sayı / anahtar kelime dene (örn. "1'yi aç" -> "1")
+    m_sayi = re.search(r'\b(\d+)\b', aranan)
+    if m_sayi:
+        res = _ara(m_sayi.group(1))
+        if res:
+            return res
+
+    return []
 
 
 # ----------------------------------------------------------------------------

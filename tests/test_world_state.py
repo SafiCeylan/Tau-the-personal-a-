@@ -223,3 +223,27 @@ class InternetKontrolTest(unittest.TestCase):
                         side_effect=[OSError, mock.MagicMock()]) as baglan:
             self.assertTrue(world_state.internet_var_mi())
         self.assertEqual(baglan.call_count, 2)
+
+
+class PencereOdakTest(unittest.TestCase):
+
+    def test_uygun_pencere_tek_eslesme_odaklar(self):
+        pencereler = [
+            {'hwnd': 101, 'title': 'Zen Browser - YouTube'},
+            {'hwnd': 102, 'title': 'Visual Studio Code'}
+        ]
+        with mock.patch.object(world_state, 'acik_pencereleri_listele', return_value=pencereler), \
+             mock.patch.object(world_state, 'pencereyi_one_getir', return_value=True) as odak:
+            res = world_state.uygun_pencereyi_odakla("zen")
+            self.assertEqual(res['durum'], 'odaklandi')
+            odak.assert_called_once_with(101)
+
+    def test_uygun_pencere_birden_fazla_eslesmede_sorar(self):
+        pencereler = [
+            {'hwnd': 101, 'title': 'Zen Browser - YouTube'},
+            {'hwnd': 102, 'title': 'Google Chrome - YouTube'}
+        ]
+        with mock.patch.object(world_state, 'acik_pencereleri_listele', return_value=pencereler):
+            res = world_state.uygun_pencereyi_odakla("youtube")
+            self.assertEqual(res['durum'], 'sor')
+            self.assertEqual(len(res['adaylar']), 2)

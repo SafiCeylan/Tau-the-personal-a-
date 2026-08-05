@@ -16,13 +16,21 @@ whatsapp kişi sil: annem
 ```
 > Numara biçimleri hepsi kabul: `0555 111 22 33` · `05551112233` · `+905551112233`
 
-### Mesaj gönderme (4 farklı yazım — hepsi çalışır)
+### Mesaj gönderme (nasıl yazarsan yaz anlar)
 ```
-annem'e whatsapp'tan mesaj gönder: iyi akşamlar
-anneme iyi akşamlar yazılı mesaj gönder whatsapp üzerinden
+anneme whatsapp at yarın gelemeyeceğim        ← fiil ortada, iki nokta yok
+anneme whatsapp'tan yaz akşam geliyorum
+whatsapp ile anneme geç kalacağım de
 whatsapp'tan anneme naber kanka gönder
 anneme whatsapptan geliyorum yaz
+annem'e whatsapp'tan mesaj gönder: iyi akşamlar
+anneme iyi akşamlar yazılı mesaj gönder whatsapp üzerinden
+anneme mesaj at: yoldayım                     ← "whatsapp" demeden de olur
 ```
+> **Kesme işareti gerekmez:** "anneme" de "annem'e" kadar geçerli.
+> **"whatsapp" demeden** yazarsan kanalı REHBERDEN bulur: alıcı WhatsApp
+> rehberindeyse WhatsApp'tan, e-posta rehberindeyse mailden gider.
+> İkisinde de yoksa **tahmin yürütmez** — önce `whatsapp kişi ekle:` ile ekle.
 > "anneme" yazsan da rehberdeki "annem"i bulur (ek toleransı).
 > Rehberde olmayan kişiye ham numarayla da gönderebilirsin:
 > `05321234567'ye whatsapp'tan mesaj gönder: selam`
@@ -68,11 +76,15 @@ mail kişi sil: annem
 
 ### Mail gönderme
 ```
+anneme mail at yarın gelemeyeceğim                   ← iki nokta gerekmez
+patronuma mail gönder toplantı ertelendi
+hocama mail at konu: staj raporu                     ← "konu:" başlık olur
+kendime mail gönder: Toplantı | yarın 14:00'te       ← "|" öncesi KONU, sonrası İÇERİK
 annem'e mail gönder: naber nasılsın                  ← konu otomatik olur
-annem'e mail gönder: Toplantı | yarın 14:00'te       ← "|" öncesi KONU, sonrası İÇERİK
-patron'a mail yolla: Rapor | rapor ektedir
-x@y.com'a eposta yolla: selam                        ← rehbersiz, doğrudan adrese
+x@y.com'a eposta yolla merhaba                       ← rehbersiz, doğrudan adrese
 ```
+> Kesme işareti gerekmez ("anneme" = "annem'e"). `konu:` yazdığın yer başlık
+> olur, alıcı sanılmaz.
 
 ---
 
@@ -83,8 +95,12 @@ cuma akşam 8'de maç var hatırlat          ← akşam 8 = 20:00 anlar
 pazartesi 10:00 rapor için alarm kur      ← hafta günleri çalışır
 saat 23 de ilaç içmeyi hatırlat
 10 dakika sonra çay demle hatırlat
+yarın sabah ilaç içmeyi hatırlat          ← sabah=08:00 öğlen=12:00 akşam=19:00 gece=22:00
+öbür gün doktora gitmeyi hatırlat         ← 2 gün sonrası
 hatırlatmalarımı göster
 ```
+> Saat söylemezsen günün bölümünden varsayılan saat kurulur. Açık saat
+> verirsen o kazanır: "akşam 8'de" → 20:00.
 
 ## 🤖 ZAMANLANMIŞ GÖREVLER (her gün otomatik)
 ```
@@ -278,6 +294,58 @@ panoyu açıkla
 panoya yaz: merhaba dünya
 ```
 
+## 👁️ EKRAN OKUMA VE SEÇME (OCR)
+
+**Ana akış — ekranı anla, numarayla seç:**
+```
+ekranda ne var                            ← numaralı öğe listesi verir
+  →  1. Tarkan - Kuzu Kuzu (Official Video)
+     2. Sezen Aksu - Şarkı Söylemek Lazım
+     3. Barış Manço - Gülpembe
+     Hangisini açayım?
+3'ü aç · 2'yi aç · ikinciyi aç · sonuncuyu aç · kuzu kuzu olanı aç
+```
+> Kelime çöplüğü değil **seçilebilir öğe listesi** döner. Liste 5 dakika
+> hatırlanır; ekran değişirse bayatlar ve yeniden okuman istenir.
+> Masaüstünden okuyup **Telegram'dan seçebilirsin** — ekran tektir.
+
+**Diğer:**
+```
+ekranda ne yazıyor · ekranı oku           ← aynı akış
+ekrandaki hatayı açıkla                   ← hatayı okur + çözüm önerir
+ekranı özetle · ekrandaki metni çevir
+ekranda kaydet var mı                     ← bulursa tıklama koordinatını verir
+tüm ekranı oku                            ← tek pencere değil, her şey
+```
+> Telegram'da `/ekran` menüsünden butonlarla da yapabilirsin.
+> **Hangi pencere okunur?** Ultron'un kendi penceresi değil — **arkasındaki**
+> ilk gerçek pencere. "Ekranda ne yazıyor" derken sohbet kutunu kastetmiyorsun.
+>
+> **Gizlilik:** Okunan metin **sadece yerel modele** (Ollama/Kobold) gider.
+> Sağlayıcı Gemini ise ekran içeriği **gönderilmez**, Ultron bunu söyler.
+>
+> Windows'un yerleşik OCR'ı kullanılır: model indirmesi yok, internet yok,
+> ~0.2 saniye. Kurulu tek dil Türkçe — İngilizce arayüzlerde hata payı artar.
+
+## 🖱️ EKRANDAKİ DÜĞMEYE TIKLAMA
+```
+ekranda Kaydet'e tıkla
+ekranda Tamam butonuna bas
+ekranda "İzin Ver"e tıkla                 ← boşluklu adlar için tırnak
+Gönder butonuna tıkla
+```
+> **Önce fareSİZ dener.** Düğmeyi erişilebilirlik ağacında bulursa (Level 2)
+> fare hiç oynamaz. Bulamazsa (Electron, oyun, uzak masaüstü) ekranda OCR ile
+> görüp koordinatına tıklar (Level 3). Göremezse **hiçbir şey yapmaz** —
+> "bir yere kör tıklama" diye bir seçenek yok.
+>
+> **Tıklamayı iptal eden dört durum:** ① yazı ekranda birden çok yerde geçiyor
+> (hangisi olduğu belirsiz) ② hedef pencere ön planda değil ③ pencere okuma ile
+> tıklama arasında taşındı ④ o noktanın sahibi başka bir pencere (araya bildirim
+> girmiş). Dördünde de sana tıklamadığını söyler.
+>
+> `enter bas`, `ctrl+s bas` bu komut DEĞİLDİR — onlar ⌨️ tuş komutlarıdır.
+
 ## 🎯 ODAK MODU (Pomodoro)
 ```
 25 dakika odaklan                         ← ses %20'ye iner
@@ -334,7 +402,25 @@ tuş: alt+f4                   ← Aktif pencereyi kapatır (Alt+F4)
 1 2 3 4 enter                 ← Ekrana 1 2 3 4 yazıp Enter'a basar
 1234 enter'a bas              ← Ekrana 1234 yazıp Enter'a basar
 yaz: merhaba dunya enter      ← Metni yazıp Enter basar
+enter bas · f5 e bas · escape'e bas · yukarı ok bas
+ctrl c yap · alt tab          ← artı işareti yazmak zorunda değilsin
 ```
+
+### Günlük dille kısayollar (`ctrl+` yazmadan)
+```
+kopyala           → Ctrl+C          yapıştır          → Ctrl+V
+kes               → Ctrl+X          geri al           → Ctrl+Z
+ileri al          → Ctrl+Y          hepsini seç       → Ctrl+A
+kaydet            → Ctrl+S          yazdır            → Ctrl+P
+yenile            → F5              tam ekran         → F11
+yeni sekme        → Ctrl+T          sekmeyi kapat     → Ctrl+W
+kapanan sekmeyi aç→ Ctrl+Shift+T    görev yöneticisi  → Ctrl+Shift+Esc
+alt tab           → Alt+Tab         masaüstüne dön    → Win+D
+sayfa başına git  → Ctrl+Home       sayfa sonuna git  → Ctrl+End
+sayfa aşağı/yukarı→ PgDn / PgUp     yakınlaştır       → Ctrl++
+```
+> `sesi kes` bir ses komutudur (Ctrl+X değil), `masaüstünü göster` dosya
+> listeleme komutudur — ikisi de bilerek bu tablonun dışında.
 > Telegram'dan ekran görüntüsü alıp ekrandaki onay penceresini gördüğünde bu komutlarla uzaktan doğrudan yanıt verebilirsin.
 
 ---

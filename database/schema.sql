@@ -97,3 +97,28 @@ CREATE TABLE IF NOT EXISTS notlar (
     metin TEXT NOT NULL,
     olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Takvim Etkinlikleri (yerel takvim + ICS aboneliğinden gelenler)
+--
+-- `kaynak` ayrımı önemlidir: 'yerel' satırlar kullanıcının kendi yazdığı ve
+-- SİLİNMEMESİ gereken kayıtlardır. ICS senkronu yalnızca kendi kaynağının
+-- satırlarını tazeler (dış takvim orada tek doğru kaynaktır).
+--
+-- `dis_uid` tekilleştirme içindir: aynı ICS iki kez çekilince etkinlik
+-- çoğalmasın. Yerel kayıtlarda NULL'dur — SQLite'ta NULL'lar UNIQUE
+-- kısıtında birbirinden farklı sayılır, bu yüzden yerel kayıtlar çakışmaz.
+CREATE TABLE IF NOT EXISTS takvim_etkinlikleri (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    baslik TEXT NOT NULL,
+    baslangic TIMESTAMP NOT NULL,   -- 'YYYY-MM-DD HH:MM:SS' (yerel saat)
+    bitis TIMESTAMP,
+    tum_gun INTEGER DEFAULT 0,
+    yer TEXT,
+    aciklama TEXT,
+    kaynak TEXT DEFAULT 'yerel',    -- 'yerel' | 'ics:<takvim adı>'
+    dis_uid TEXT,                   -- ICS UID (yinelenende '<uid>#<tarih>')
+    olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(kaynak, dis_uid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_takvim_baslangic ON takvim_etkinlikleri(baslangic);

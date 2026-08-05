@@ -22,8 +22,15 @@ from core.reflection import yansit
 # Onay bekleyen planlar kanal başına tutulur. Telefondan başlatılan bir planın
 # onayı masaüstünde verilmemeli (dosya arama sonuçlarındaki kanal ayrımıyla
 # aynı gerekçe).
-_ONAY_KELIMELERI = ("evet", "onaylıyorum", "onayla", "tamam", "olur", "yap", "devam")
-_RET_KELIMELERI = ("hayır", "hayir", "iptal", "vazgeç", "vazgec", "dur", "yapma")
+_ONAY_KELIMELERI = (
+    "evet", "onaylıyorum", "onayliyorum", "onayla", "tamam", "olur", "yap", "devam",
+    "izin veriyorum", "izin verdim", "izin ver", "kabul", "kabul ediyorum",
+    "ok", "okay", "peki", "başlat", "baslat", "çalıştır", "calistir"
+)
+_RET_KELIMELERI = (
+    "hayır", "hayir", "iptal", "vazgeç", "vazgec", "dur", "yapma",
+    "verme", "vermiyorum", "istemiyorum", "reddet"
+)
 
 
 class UltronCoreEngine:
@@ -496,13 +503,13 @@ class UltronCoreEngine:
         plan, onaylananlar = self.bekleyen_planlar[ctx.kanal]
         kucuk = (ctx.normalized_input or "").lower().strip(" .!?")
 
-        if any(k == kucuk or kucuk.startswith(k + " ") for k in _RET_KELIMELERI):
+        if any(k in kucuk for k in _RET_KELIMELERI):
             self.bekleyen_planlar.pop(ctx.kanal, None)
             ctx.execution_success = True
             ctx.execution_result = "❌ Plan iptal edildi."
             return True, ctx
 
-        if not any(k == kucuk or kucuk.startswith(k + " ") for k in _ONAY_KELIMELERI):
+        if not any(k in kucuk for k in _ONAY_KELIMELERI):
             # Konu değişti — planı düşür ve mesajı normal akışa bırak
             self.bekleyen_planlar.pop(ctx.kanal, None)
             return False, ctx

@@ -100,6 +100,15 @@ class TiklamaKilitleriTest(unittest.TestCase):
         self.assertTrue(sonuc.success, sonuc.message)
         self.assertEqual((sonuc.detail['x'], sonuc.detail['y']), (430, 510))
 
+    def test_rakamli_hedefte_ilk_eslesmeye_tiklar(self):
+        """'1'yi aç' gibi sıra numarası verilen hedeflerde ilk adaya otomatik tıklar."""
+        sonuc = l3.metne_tikla("1'yi aç", okuma=okuma([
+            ("1'e", 100, 200, 20, 20),
+            ("1'e", 800, 200, 20, 20),
+        ]))
+        self.assertTrue(sonuc.success, sonuc.message)
+        self.assertEqual((sonuc.detail['x'], sonuc.detail['y']), (110, 210))
+
     # --- KİLİT 2 ---
     def test_odak_disindaysa_tiklamaz(self):
         with mock.patch.object(l3, '_onplan_basligi', return_value="Banka - Chrome"):

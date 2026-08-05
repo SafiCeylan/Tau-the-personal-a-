@@ -16,7 +16,43 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QWidget, QSizePolicy
 
-# Ultron Palette
+# Ultron Theme Palettes
+THEME_PALETTES = {
+    "crimson": {
+        "hot": QColor("#ffffff"),
+        "bright": QColor("#ff4d58"),
+        "crimson": QColor("#ff1a26"),
+        "deep": QColor("#99000f"),
+        "dark": QColor("#2b0004"),
+        "bg": QColor("#050204"),
+    },
+    "gold": {
+        "hot": QColor("#ffffff"),
+        "bright": QColor("#ffd700"),
+        "crimson": QColor("#ffaa00"),
+        "deep": QColor("#b8860b"),
+        "dark": QColor("#2b2004"),
+        "bg": QColor("#050402"),
+    },
+    "cyan": {
+        "hot": QColor("#ffffff"),
+        "bright": QColor("#00f0ff"),
+        "crimson": QColor("#0099ff"),
+        "deep": QColor("#0055aa"),
+        "dark": QColor("#001a33"),
+        "bg": QColor("#020406"),
+    },
+    "obsidian": {
+        "hot": QColor("#ffffff"),
+        "bright": QColor("#e040ff"),
+        "crimson": QColor("#d000ff"),
+        "deep": QColor("#7000aa"),
+        "dark": QColor("#200033"),
+        "bg": QColor("#040205"),
+    }
+}
+
+# Fallback default colors for backward compatibility
 RED_HOT = QColor("#ffffff")
 RED_BRIGHT = QColor("#ff4d58")
 RED_CRIMSON = QColor("#ff1a26")
@@ -46,6 +82,7 @@ class AICoreWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self._state = "idle"
+        self._theme = "crimson"
         self._t = 0.0
         self._rng = random.Random(2026)
 
@@ -68,6 +105,11 @@ class AICoreWidget(QWidget):
         self._timer.setInterval(16)  # 60 fps
         self._timer.timeout.connect(self._on_tick)
         self._timer.start()
+
+    def set_theme(self, theme_name: str):
+        if theme_name in THEME_PALETTES:
+            self._theme = theme_name
+            self.update()
 
     def set_state(self, state: str):
         if state in STATE_CONFIG and state != self._state:
@@ -154,8 +196,15 @@ class AICoreWidget(QWidget):
         cx = w / 2.0
         cy = h / 2.0
 
-        # Background pitch obsidian
-        painter.fillRect(self.rect(), QColor("#050204"))
+        palette = THEME_PALETTES.get(self._theme, THEME_PALETTES["crimson"])
+        RED_HOT = palette["hot"]
+        RED_BRIGHT = palette["bright"]
+        RED_CRIMSON = palette["crimson"]
+        RED_DEEP = palette["deep"]
+        RED_DARK = palette["dark"]
+
+        # Background pitch obsidian / theme bg
+        painter.fillRect(self.rect(), palette["bg"])
 
         scale = min(w, h) / BASE_SIZE
         painter.translate(cx, cy)
@@ -301,15 +350,6 @@ class AICoreWidget(QWidget):
         brk_sz = 14
         for bx, by in [(-160, -135), (146, -135), (-160, 125), (146, 125)]:
             painter.drawRect(QRectF(bx, by, brk_sz, brk_sz))
-
-        # Telemetry Text Labels
-        painter.setFont(QFont("Consolas", 8, QFont.Bold))
-        painter.setPen(_alpha(RED_BRIGHT, 0.9))
-        
-        painter.drawText(QPointF(-170, -143), f"[CORE: {int(98 + pulse*2)}%]")
-        painter.drawText(QPointF(100, -143), f"[STATE: {self._state.upper()}]")
-        painter.drawText(QPointF(-170, 150), "[FREQ: 432Hz]")
-        painter.drawText(QPointF(105, 150), f"[TEMP: {int(310 + pulse*5)}K]")
 
         # -------------------------------------------------------------
         # 9. Quantum Embers

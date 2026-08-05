@@ -434,6 +434,19 @@ class MotorPlannerTest(unittest.TestCase):
         self.assertIn("gönderildi", ctx.execution_result)
         self.assertNotIn("desktop", self.motor.bekleyen_planlar)
 
+    def test_izin_veriyorum_deyince_plan_devam_eder(self):
+        """Kullanıcının 'izin veriyorum' yanıtı plan onayını çözmeli."""
+        plan = self._plan(Gorev(1, "dosya_gonder", {"metin": "rapor"}))
+        with mock.patch("core.engine.plan_uret", return_value=(plan, None)), \
+             mock.patch.object(DEFTER.getir("dosya_gonder"), 'calistir',
+                               return_value=AracSonuc.ok("gönderildi")) as gonder:
+            self.motor.process("raporu bul sonra anneme gönder", allow_llm=False)
+            gonder.assert_not_called()
+            ctx = self.motor.process("izin veriyorum", allow_llm=False)
+        gonder.assert_called_once()
+        self.assertIn("gönderildi", ctx.execution_result)
+        self.assertNotIn("desktop", self.motor.bekleyen_planlar)
+
     def test_hayir_deyince_plan_iptal(self):
         plan = self._plan(Gorev(1, "dosya_gonder", {"metin": "rapor"}))
         with mock.patch("core.engine.plan_uret", return_value=(plan, None)), \
@@ -478,3 +491,13 @@ class MotorPlannerTest(unittest.TestCase):
             self.assertEqual(hava.call_count, 1)
             self.motor.process("evet", allow_llm=False)
         self.assertEqual(hava.call_count, 1, "tamamlanan adım onaydan sonra tekrar çalıştı")
+
+    def test_eylem_baglaclari_ve_numarali_adimlari_yakalar(self):
+        """'zen aç ve youtube yaz' gibi bağlaçlı veya '1. x 2. y' gibi numaralı cümleler planlamaya girmeli."""
+        self.assertTrue(cok_adimli_olabilir("zen aç ve youtube yaz"))
+        self.assertTrue(cok_adimli_olabilir("ekranı oku ve 1'e tıkla"))
+        self.assertTrue(cok_adimli_olabilir("1. chrome aç 2. youtube gir"))
+        self.assertTrue(cok_adimli_olabilir("hava durumuna bak, sonra not al"))
+        # Sıradan selamlaşma veya tek eylem girmemeli
+        self.assertFalse(cok_adimli_olabilir("iyi günler, nasılsın"))
+        self.assertFalse(cok_adimli_olabilir("chrome aç"))

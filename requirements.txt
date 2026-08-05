@@ -5,6 +5,11 @@ psutil>=5.9.0
 pyperclip>=1.8.0
 mss>=9.0.0
 
+# Ekran okuma (OCR) — Windows'un YERLEŞİK motorunu kullanır, model indirmez.
+# Yoksa "ekranda ne yazıyor" komutu nazikçe devre dışı kalır, uygulama çalışır.
+winsdk>=1.0.0b10
+Pillow>=10.0.0
+
 # Telegram sesli mesaj çözümü (OGG/Opus → PCM)
 soundfile>=0.12.0
 numpy>=1.24.0

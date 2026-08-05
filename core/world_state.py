@@ -152,3 +152,92 @@ def durum_ozeti(uygulamalar=('chrome', 'spotify', 'code', 'whatsapp')) -> str:
 
     satirlar.append("🌐 İnternet: " + ("var" if internet_var_mi() else "YOK"))
     return "\n".join(satirlar)
+
+
+# ---------------------------------------------------------------------------
+# PENCERE MASAÜSTÜ ODAK YÖNETİCİSİ (Açık sekmeleri/pencereleri tarar & odakla)
+# ---------------------------------------------------------------------------
+import ctypes
+import sys
+
+
+def acik_pencereleri_listele() -> list:
+    """
+    Masaüstünde açık ve görünür olan gerçek uygulama pencerelerini listeler.
+    Dönen: [{'hwnd': int, 'title': str}]
+    """
+    if sys.platform != 'win32':
+        return []
+
+    pencereler = []
+    user32 = ctypes.windll.user32
+
+    def _enum_proc(hwnd, lParam):
+        if user32.IsWindowVisible(hwnd):
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                baslik = buf.value.strip()
+                # Önemsiz sistem pencereleri ve Ultron'un kendi penceresini süz
+                if baslik and baslik not in ("Program Manager", "Settings", "Default IME", "MSCTFIME UI"):
+                    if "ultron" not in baslik.lower():
+                        pencereler.append({'hwnd': hwnd, 'title': baslik})
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    user32.EnumWindows(WNDENUMPROC(_enum_proc), 0)
+    return pencereler
+
+
+def pencereyi_one_getir(hwnd: int) -> bool:
+    """Belirtilen HWND pencereli uygulamayı öne getirir ve odağı verir."""
+    if sys.platform != 'win32':
+        return False
+    user32 = ctypes.windll.user32
+    try:
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        else:
+            user32.ShowWindow(hwnd, 5)  # SW_SHOW
+        # Win32 SetForegroundWindow güvenlik kısıtlamasını aşmak için Alt tuşuna dokunma trick'i
+        user32.keybd_event(0x12, 0, 0, 0)
+        user32.SetForegroundWindow(hwnd)
+        user32.keybd_event(0x12, 0, 2, 0)
+        return True
+    except Exception as e:
+        print(f"[Ultron Focus] Pencere öne getirilemedi: {e}")
+        return False
+
+
+def uygun_pencereyi_odakla(hedef_ipucu: str = None) -> dict:
+    """
+    Görevdeki hedef ipucuna (örn. 'zen', 'chrome', 'youtube', 'code', 'spotify')
+    göre açık pencereleri tarar:
+    - Tek eşleşme varsa → OTOMATİK ÖNE GETİRİR ({'durum': 'odaklandi', 'pencere': win})
+    - Birden fazla karmaşık/belirsiz eşleşme varsa → SORAR ({'durum': 'sor', 'adaylar': list})
+    - Hiç eşleşme yok ama pencereler varsa → mevcut ön plandakini kullanır ({'durum': 'mevcut'})
+    """
+    pencereler = acik_pencereleri_listele()
+    if not pencereler:
+        return {'durum': 'yok', 'adaylar': []}
+
+    ipucu = (hedef_ipucu or '').lower().strip()
+    if not ipucu:
+        return {'durum': 'mevcut', 'adaylar': pencereler}
+
+    eslesenler = []
+    for p in pencereler:
+        t = p['title'].lower()
+        if ipucu in t or any(w in t for w in ipucu.split() if len(w) > 2):
+            eslesenler.append(p)
+
+    if len(eslesenler) == 1:
+        pencereyi_one_getir(eslesenler[0]['hwnd'])
+        time.sleep(0.3)
+        return {'durum': 'odaklandi', 'pencere': eslesenler[0]}
+
+    if len(eslesenler) > 1:
+        return {'durum': 'sor', 'adaylar': eslesenler}
+
+    return {'durum': 'mevcut', 'adaylar': pencereler}

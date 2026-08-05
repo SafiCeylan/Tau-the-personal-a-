@@ -23,10 +23,18 @@ hiddenimports = [
     'edge_tts',
     'speech_recognition',
     'pyaudio',
+    'winsdk.windows.media.ocr',
+    'winsdk.windows.graphics.imaging',
+    'winsdk.windows.storage.streams',
+    'winsdk.windows.globalization',
+    'PIL', 'PIL.Image',
 ]
 
 # Veri/DLL taşıyan paketleri komple topla
-for pkg in ('vosk', 'sounddevice', 'pywinauto', 'comtypes', 'pygame', 'gtts'):
+for pkg in ('vosk', 'sounddevice', 'pywinauto', 'comtypes', 'pygame', 'gtts',
+            # winsdk: OCR için WinRT projeksiyonu — native _winrt uzantısı ve
+            # namespace alt modülleri elle toplanmazsa exe'de "No module named" verir
+            'winsdk'):
     try:
         d, b, h = collect_all(pkg)
         datas += d
