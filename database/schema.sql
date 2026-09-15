@@ -122,3 +122,17 @@ CREATE TABLE IF NOT EXISTS takvim_etkinlikleri (
 );
 
 CREATE INDEX IF NOT EXISTS idx_takvim_baslangic ON takvim_etkinlikleri(baslangic);
+
+-- Harcamalar / Bütçe Takibi Tablosu
+-- ⚠️ Para KURUŞ olarak (INTEGER) saklanır. REAL ile kuruşlar kayar ve birkaç
+--    yüz kayıttan sonra "toplam" ile kalemlerin toplamı tutmaz.
+CREATE TABLE IF NOT EXISTS harcamalar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    miktar_kurus INTEGER NOT NULL,
+    kategori TEXT DEFAULT 'Genel',
+    aciklama TEXT,
+    tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_harcamalar_tarih ON harcamalar(tarih);
+

@@ -10,6 +10,7 @@ from PyInstaller.utils.hooks import collect_all
 datas = [
     ('database/schema.sql', 'database'),
     ('config.example.json', '.'),
+    ('ui/focus_web', 'ui/focus_web'),
     ('models/vosk-tr', 'models/vosk-tr'),   # wake word Türkçe modeli (~85MB)
 ]
 binaries = []

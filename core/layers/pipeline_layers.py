@@ -16,6 +16,7 @@ import core.builtin_tools  # noqa: F401
 from features.actions.system_control import (
     sistem_komutu_algila, sistem_durumu_raporu, sarki_otomatik_baslat,
     medya_kontrol, medya_komutu_algila,
+    pencere_listeleme_niyeti_mi, pencere_odak_niyeti_mi,
 )
 from features.web_search import canli_web_ara, web_arama_niyeti_algila
 from features.file_reader import dosya_oku_ve_analiz_et, dosya_okuma_niyeti_algila
@@ -35,6 +36,7 @@ from features.actions.ui_click import tiklama_niyeti_algila
 from features import screen_context
 from features.screen_context import secim_niyeti_algila
 from features.screen_reader import ekran_niyeti_algila
+from features.screen_watcher import ekran_takip_niyeti_algila
 from features.file_send import (
     dosya_niyeti_coz, dosya_komutu_isle, hedef_dosyayi_coz, indeks_komutu_algila,
     calistirilabilir_mi,
@@ -42,6 +44,8 @@ from features.file_send import (
 from features.chat_learning import ogrenme_komutu_algila
 from features.calendar_tools import takvim_niyeti_algila
 from features.clipboard_tools import pano_komutu
+from features.finance_tracker import finans_niyeti_algila
+
 from features.quick_tools import (
     hesapla, hesap_niyeti_algila, saat_tarih_raporu, saat_tarih_niyeti_algila,
     sayac_niyeti_algila, sayac_kur, not_niyeti_algila, not_ekle,
@@ -155,6 +159,8 @@ class NormalizationLayer:
             r'\bspotifi\b': 'spotify',
             r'\byutube\b': 'youtube',
             r'\bhesp\b': 'hesap',
+            r'\bkapaat\b': 'kapat',
+            r'\bkapatt\b': 'kapat',
         }
         for pattern, replacement in typo_map.items():
             text_clean = re.sub(pattern, replacement, text_clean, flags=re.IGNORECASE)
@@ -205,6 +211,23 @@ class IntentAnalyzerLayer:
             ctx.intent = "CALENDAR"
             ctx.confidence = 0.93
             return ctx
+
+        # 🪟 Pencere odaklama/listeleme — FILE_TRANSFER'dan ÖNCE bakılır:
+        # "Telegram'a geç" cümlesi dosya gönderme niyetine benziyor ve oraya
+        # düşüyordu. Kapı dar tutuldu (`pencere_odak_niyeti_mi`): hedef ya
+        # "pencere" kelimesi taşır ya da BİLİNEN bir uygulamadır — "şarkıyı geç"
+        # medya kontrolünde kalır, "pencereyi kapat" klavye kısayolunda.
+        if pencere_listeleme_niyeti_mi(msg) or pencere_odak_niyeti_mi(msg):
+            ctx.intent = "WINDOW_FOCUS"
+            ctx.confidence = 0.93
+            return ctx
+
+        # 💰 Finans & Bütçe takibi — dosya niyetinden ÖNCE bakılır
+        if finans_niyeti_algila(msg):
+            ctx.intent = "FINANCE_TRACK"
+            ctx.confidence = 0.95
+            return ctx
+
 
         # 📎 Dosya bul & gönder — WhatsApp/e-posta niyetlerinden ÖNCE bakılır,
         # çünkü "staj raporunu anneme mail at" cümlesi ikisine birden benziyor.
@@ -261,6 +284,8 @@ class IntentAnalyzerLayer:
         elif hesap_niyeti_algila(msg):
             ctx.intent = "CALCULATOR"
             ctx.confidence = 0.95
+
+
         elif dosya_arama_niyeti(msg):
             # "indirilenlerdeki son pdf'i aç" — SYSTEM_CONTROL'dan ÖNCE ("aç" çakışır)
             ctx.intent = "FILE_SEARCH"
@@ -298,15 +323,28 @@ class IntentAnalyzerLayer:
                        r'|volume|kökle|fulle|kokle)\b', msg):
             ctx.intent = "SET_VOLUME"
             ctx.confidence = 0.95
+        # ⚠️ SCREEN_WATCH ve DUPLEX_VOICE, MEDIA_CONTROL'den ÖNCE bakılır.
+        # İkisi de çok kelimeli AÇIK kalıplar; medya komutu çalamazlar. Tersi
+        # doğru değildi: medya listesine çıplak "başlat" eklenince "ekran
+        # takibini başlat" ve "canlı sesli sohbeti başlat" medyaya kaçıyordu.
+        elif ekran_takip_niyeti_algila(msg):
+            ctx.intent = "SCREEN_WATCH"
+            ctx.confidence = 0.95
+        elif any(k in msg for k in ["canlı sesli sohbet", "sesli sohbeti aç", "sesli sohbeti başlat",
+                                    "sürekli dinle", "sesli sohbeti kapat", "canlı sohbeti bitir",
+                                    "canlı sohbet modu"]):
+            ctx.intent = "DUPLEX_VOICE"
+            ctx.confidence = 0.95
         elif medya_komutu_algila(msg):
             # ZATEN çalan medyanın kontrolü (duraklat/devam/sonraki/önceki).
             # PLAY_MUSIC'ten ÖNCE olmalı — "şarkıyı geç" yeni oynatma değildir.
             ctx.intent = "MEDIA_CONTROL"
             ctx.confidence = 0.95
-        elif any(k in msg for k in ["müzik çal", "şarkı çal", "müzik aç", "şarkı aç", "youtube music"]) or \
-                (re.search(r'\bçal\b', msg) and any(k in msg for k in ["şarkı", "müzik", "youtube"])) or \
-                msg.endswith(" çal"):
-            # "X şarkısını youtube müzik ile çal", "X çal" gibi doğal kalıplar da müziktir
+        elif any(k in msg for k in ["müzik çal", "şarkı çal", "müzik aç", "şarkı aç", "youtube music", "spotify'da", "spotify'de", "spotify da", "ne çalıyor", "çalan şarkı", "şarkı sözü", "sözlerini bul"]) or \
+                (re.search(r'\b(çal|oynat)\b', msg) and any(k in msg for k in ["şarkı", "müzik", "spotify", "youtube"])) or \
+                msg.endswith(" çal") or msg.endswith(" oynat"):
+            # "Gülpembe oynat" → yeni oynatma. ("oynat" medya kontrol listesinden
+            # çıkarıldı; oradayken cümleyi MEDIA_CONTROL kapıp toggle'a çeviriyordu.)
             ctx.intent = "PLAY_MUSIC"
             ctx.confidence = 0.95
         elif any(k in msg for k in ["hatırlat", "hatırlatıcı", "alarm"]):
@@ -351,11 +389,8 @@ class IntentAnalyzerLayer:
         # Kelime sınırıyla eşle: "açıkla", "kapat halini anlat", "başlangıç" gibi
         # kelimeler SYSTEM_CONTROL'ü YANLIŞLIKLA tetiklemesin. Aksi halde bu komutlar
         # yanlış güvenlik skoru + yanlış onay kartı üretiyordu.
-        elif any(k in msg for k in ["sistem", "donanım", "ram", "cpu"]) or \
-                re.search(r'\b(kapat|başlat|çalıştır|aç|kilitle|uykuya|uyut)\b', msg):
-            # kilitle/uykuya: Telegram menüsündeki "🔒 PC Kilitle" ve "🌙 Uyku Modu"
-            # butonları buradan geçmezse GENERAL_CONVERSATION'a düşüp LLM'e gidiyor,
-            # model de eylemi yapmış gibi anlatıyordu.
+        elif any(k in msg for k in ["sistem", "donanım", "ram", "cpu", "arka plan", "arka planda", "neler açık", "çalışan uygulamalar"]) or \
+                re.search(r'\b(kapat|başlat|çalıştır|aç|kilitle|uykuya|uyut|sonlandır)\b', msg):
             ctx.intent = "SYSTEM_CONTROL"
             ctx.confidence = 0.85
         else:
@@ -826,6 +861,11 @@ class ExecutionEngineLayer:
         varliklar: Dict[str, Any] = dict(ctx.entities or {})
         varliklar.update(ctx.llm_entities or {})
 
+        if arac.ad in ('uygulama_calistir', 'arka_plan_yonetimi'):
+            # Arka plan listesi kanal başına tutulur: telefondan gelen "3'ü kapat",
+            # masaüstünde yapılmış listelemenin 3. uygulamasını kapatmasın.
+            argumanlar['kanal'] = getattr(ctx, 'kanal', 'desktop')
+
         if arac.ad == 'uygulama_calistir':
             # Sadece LLM yönlendirdiyse kanonik komut kurulur; regex zaten ham
             # metinden okuyor. (Eski zincirin davranışı birebir korundu.)
@@ -928,14 +968,20 @@ class PromptGeneratorLayer:
             f"Kullanıcıya DAİMA BİRİNCİ TEKİL ŞAHISLA cevap ver (\"ben ... yapabilirim\"). "
             f"Kullanıcıya \"sen şunu yapabilirsin\" DEME — yetenekler SANA aittir, ona değil.\n"
             f"\n"
-            f"GERÇEK YETENEKLERİN (bunları gerçekten yapabilirsin):\n"
+            f"GERÇEK YETENEKLERİN (bunları mevcudunda gerçekten yapabilirsin):\n"
             f"• Uygulama açma/kapatma, ses ve sistem kontrolü, ekran görüntüsü alma\n"
             f"• Ekranda YAZAN metni okuma (OCR): 'ekranda ne yazıyor', 'şu hatayı oku'\n"
+            f"• Harcama kaydetme ve bütçe takibi ('markete 350 TL harcadım', 'harcama özeti')\n"
             f"• Hatırlatma kurma, sayaç kurma, sabah brifingi, hava durumu ve döviz kuru\n"
             f"• WhatsApp ve e-posta mesajı gönderme (kullanıcı onayıyla)\n"
             f"• İnternette arama, dosya bulma/okuma, müzik çalma, not/hafıza tutma\n"
             f"• Çalan müziği kontrol etme (duraklat, devam ettir, sonraki/önceki şarkı)\n"
             f"• Matematik işlemi hesaplama, saat ve tarih söyleme\n"
+            # ⚠️ BURAYA SADECE CANLIDA BAĞLI YETENEK YAZILIR. Bir satır "Webhook API
+            # ile iOS Kısayollar/Tasker entegrasyonu" diyordu; oysa `features/webhook_api.py`
+            # hiçbir yerden başlatılmıyordu. Model bu satırı okuyup sahip olmadığı
+            # özelliği anlatıyordu — projenin tüm halüsinasyon frenleri bunu
+            # engellemek içindir, prompt'un kendisi yalan söylerse hepsi boşa gider.
             f"\n"
             f"KURALLAR (kesinlikle uy):\n"
             f"1. KISA ve NET cevap ver — en fazla 4-5 cümle.\n"

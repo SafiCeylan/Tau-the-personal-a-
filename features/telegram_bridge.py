@@ -253,7 +253,7 @@ def brifing_klavyesi() -> dict:
     return {
         "keyboard": [
             [{"text": "☀️ Sabah Brifingi"}, {"text": "🌦️ Hava Durumu"}],
-            [{"text": "💱 Dolar & Euro Kuru"}, {"text": "📰 Son Haberler"}],
+            [{"text": "💱 Dolar & Euro Kuru"}, {"text": "💰 Harcama Özeti"}],
             [{"text": "⏰ Hatırlatmalarım"}, {"text": "📋 Notlarım"}],
             [{"text": "🏠 Ana Menü"}]
         ],
@@ -273,6 +273,7 @@ def set_bot_commands(token: str) -> bool:
         {"command": "sistem", "description": "📊 Sistem durumu (CPU/RAM/Disk)"},
         {"command": "sistem_menu", "description": "💻 Sistem & Güç menüsü (Chrome, CMD, güç)"},
         {"command": "brifing_menu", "description": "📊 Brifing & Bilgi Servisleri"},
+        {"command": "harcama", "description": "💰 Toplam harcama ve bütçe özeti"},
         {"command": "menu_kapat", "description": "🎛️ Hızlı buton takımını gizle"},
         {"command": "alt_tab", "description": "🔄 Alt+Tab bas (Sonraki pencere)"},
         {"command": "win_d", "description": "🖥️ Win+D bas (Masaüstünü göster)"},
@@ -282,6 +283,7 @@ def set_bot_commands(token: str) -> bool:
         {"command": "alt_f4", "description": "❌ Alt+F4 pencere kapat"},
         {"command": "brifing", "description": "☀️ Sabah Brifingi al"}
     ]
+
     res = api_call(token, "setMyCommands", commands=commands)
     return res is not None
 

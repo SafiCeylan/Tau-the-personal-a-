@@ -106,3 +106,16 @@ class RoutineEngine:
         results.append(f"2. {r2}")
 
         return results
+
+    def uygulama_surec_modu_tetikle(self, process_name: str) -> Tuple[bool, str]:
+        p = process_name.lower().strip()
+        if p in ("code.exe", "idea64.exe", "devenv.exe", "pycharm64.exe"):
+            ctx = UltronContext(raw_input="çalışma modu")
+            ctx.normalized_input = "çalışma modu"
+            return self.check_and_execute_routine(ctx)
+        elif p in ("discord.exe", "steam.exe"):
+            ctx = UltronContext(raw_input="oyun modu")
+            ctx.normalized_input = "oyun modu"
+            return self.check_and_execute_routine(ctx)
+        return False, ""
+

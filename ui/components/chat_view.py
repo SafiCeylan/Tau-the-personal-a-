@@ -324,10 +324,11 @@ class ChatViewWidget(QWidget):
 
         suggestions = [
             ("⏰ Hatırlatma Ekle", "Yarın saat 10:00'da su içmeyi hatırlat"),
+            ("💰 Harcama Özeti", "harcama özetimi göster"),
             ("📇 WhatsApp Rehberi", "whatsapp kişileri listele"),
-            ("🌐 YouTube Aç", "YouTube aç"),
             ("❓ Ultron Yetenekleri", "Bana yeteneklerini anlat"),
         ]
+
 
         for label, text in suggestions:
             btn = QPushButton(label)

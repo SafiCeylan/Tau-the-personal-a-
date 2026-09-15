@@ -285,7 +285,15 @@ def aksam_raporu_olustur(cursor=None) -> str:
             pass
 
     satirlar.append("\nİyi geceler! Sistemler nöbette kalacak. 🔴")
+    try:
+        from features.suggestions import tek_satir_oneri_sun
+        oneri_metni = tek_satir_oneri_sun(db_cursor=cursor)
+        if oneri_metni:
+            satirlar.append(oneri_metni)
+    except Exception:
+        pass
     return "\n".join(satirlar)
+
 
 
 def sabah_brifingi_olustur(cursor=None):

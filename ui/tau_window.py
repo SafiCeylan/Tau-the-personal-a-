@@ -12,6 +12,7 @@ Bileşen tabanlı (component-based) mimarı:
 """
 
 import os
+import re
 import sys
 import json
 import time
@@ -74,6 +75,11 @@ PROVIDER_LABELS = {
     'gemini': 'Google Gemini (API)',
     'tau_backend': 'TAU Backend',
 }
+
+# Canlı sesli sohbeti kapatan sözler. Kelime sınırı ŞART: alt dizi kontrolü
+# ("dur" in metin) "hava durumu nedir" cümlesinde de sohbeti kapatıyordu.
+_DUPLEX_KAPAT_RE = re.compile(
+    r'\b(dur|durdur|kapat|kapan|bitir|iptal|sus|yeter|tamamdır)\b', re.IGNORECASE)
 
 # Bekleyen güvenlik onayı SADECE bu mesajlarla (tam eşleşme) onaylanabilir.
 # Substring eşleşmesi ("tamam kanka başka şey soracağım" gibi) kabul edilmez.
@@ -1174,6 +1180,7 @@ class TauMainWindow(QMainWindow):
         self.sidebar = SidebarWidget()
         self.sidebar.page_changed.connect(self.switch_page)
         self.sidebar.new_chat_requested.connect(self.start_new_chat)
+        self.sidebar.avatar_toggle_requested.connect(self.toggle_floating_avatar)
 
         provider_name = PROVIDER_LABELS.get(self.controller.provider, self.controller.provider)
         model_name = self.controller.config.get('ollama_model', '') if self.controller.provider == 'ollama' else ''
@@ -1342,6 +1349,8 @@ class TauMainWindow(QMainWindow):
         now_str = datetime.now().strftime("%H:%M")
         self.chat_view.add_message("assistant", text, now_str)
         self.ultron_focus_view.add_message("assistant", text)
+        if hasattr(self, 'floating_avatar') and self.floating_avatar:
+            self.floating_avatar.set_response(text)
         self.recent_chat_history.append({"role": "assistant", "text": text})
         self._trim_history()
         if user_prompt is not None:
@@ -1367,17 +1376,28 @@ class TauMainWindow(QMainWindow):
                     self.wake_worker.paused = False
 
         worker = FuncWorkerThread(_do_speak)
+        # ⚠️ Duplex tetiği ANA THREAD'de kurulmalı. FuncWorkerThread.run() exec()
+        # çağırmıyor → o thread'de event loop YOK → orada kurulan
+        # QTimer.singleShot hiç ateşlemez (üstelik _on_wake_word UI'ye dokunur).
+        # finished_signal ana thread'e kuyruklu gelir; tetik oradan kurulur.
+        worker.finished_signal.connect(self._konusma_bitince_duplex_devam)
         self._track_worker(worker)
         worker.start()
+
+    def _konusma_bitince_duplex_devam(self, _sonuc=None):
+        """Canlı sesli sohbet açıkken konuşma biter bitmez tekrar dinlemeye geçer."""
+        try:
+            from features.speech import is_duplex_voice_active
+            if not is_duplex_voice_active():
+                return
+        except Exception:
+            return
+        QTimer.singleShot(600, self._on_wake_word)
 
     def _trim_history(self):
         """Sohbet geçmişi tamponunun sınırsız büyümesini engeller."""
         if len(self.recent_chat_history) > 20:
             self.recent_chat_history = self.recent_chat_history[-20:]
-
-    def _set_ai_state(self, state: str):
-        self.chat_view.set_ai_state(state)
-        self.ultron_focus_view.set_ai_state(state)
 
     def _track_worker(self, worker):
         """Thread nesnesine referans tutar; bitince listeden düşer (GC crash koruması)."""
@@ -1691,6 +1711,28 @@ class TauMainWindow(QMainWindow):
         self.check_scheduled_tasks()
         self.check_file_index()
         self.check_calendar_sync()
+        self.check_proactive_events()
+
+    def check_proactive_events(self):
+        """
+        🔔 Yaklaşan takvim etkinliği ve mola uyarısı.
+
+        Hatırlatmalarla aynı bildirim yolunu kullanır (sohbet + toast + Telegram).
+        Modül kendi tekrar korumasını taşır: bir etkinlik yalnızca BİR kez
+        duyurulur, mola uyarısı gerçek hareketsizliğe bakar.
+        """
+        try:
+            from features.proactive_events import proaktif_olaylari_kontrol_et
+            bildirimler = proaktif_olaylari_kontrol_et()
+        except Exception as e:
+            print(f"[TAU] Proaktif olay kontrolü hatası: {e}")
+            return
+
+        for mesaj in bildirimler:
+            self._post_assistant(mesaj)
+            # Toast gövdesi Markdown göstermez — yıldızları ayıklayıp gönder.
+            self._show_system_notification("ULTRON", mesaj.replace('**', ''))
+            self._telegram_bildir(mesaj)
 
     def check_calendar_sync(self):
         """
@@ -1938,6 +1980,14 @@ class TauMainWindow(QMainWindow):
             self.wake_worker.paused = False
         self._set_ai_state("idle")
         if text:
+            from features.speech import is_duplex_voice_active, set_duplex_voice_active
+            # ⚠️ KELİME SINIRI ŞART. Alt dizi kontrolü ("dur" in metin) yüzünden
+            # "hava durumu nedir" / "durum raporu ver" gibi sıradan cümleler
+            # canlı sohbeti kapatıyordu.
+            if is_duplex_voice_active() and _DUPLEX_KAPAT_RE.search(text):
+                set_duplex_voice_active(False)
+                self._post_assistant("🎙️ **Canlı Sesli Sohbet Kapatıldı.** Normal moda dönüldü.")
+                return
             self.on_user_send_message(text)
 
     def _on_wake_command_error(self, err: str):
@@ -2009,6 +2059,8 @@ class TauMainWindow(QMainWindow):
         menu = QMenu()
         act_show = menu.addAction("🔴 Ultron'u Göster")
         act_show.triggered.connect(self._restore_from_tray)
+        act_avatar = menu.addAction("👾 Masaüstü Avatarı (Aç/Kapat)")
+        act_avatar.triggered.connect(self.toggle_floating_avatar)
         act_new = menu.addAction("⚡ Yeni Oturum")
         act_new.triggered.connect(lambda: (self._restore_from_tray(), self.start_new_chat()))
         menu.addSeparator()
@@ -2018,6 +2070,37 @@ class TauMainWindow(QMainWindow):
 
         self.tray.activated.connect(self._on_tray_activated)
         self.tray.show()
+
+    def _init_floating_avatar(self):
+        if not hasattr(self, 'floating_avatar') or self.floating_avatar is None:
+            from ui.components.floating_avatar import UltronFloatingAvatar
+            self.floating_avatar = UltronFloatingAvatar()
+            self.floating_avatar.command_submitted.connect(self.on_user_send_message)
+            self.floating_avatar.toggle_main_window.connect(self._toggle_window_visibility)
+            self.floating_avatar.toggle_focus_mode.connect(lambda: self.on_user_send_message("odak modunu başlat"))
+
+    def toggle_floating_avatar(self):
+        self._init_floating_avatar()
+        if self.floating_avatar.isVisible():
+            self.floating_avatar.hide()
+        else:
+            self.floating_avatar.show()
+            self.floating_avatar.raise_()
+
+    def _toggle_window_visibility(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self._restore_from_tray()
+
+    def _set_ai_state(self, state: str):
+        """AI durum göstergesi — sohbet, odak görünümü ve masaüstü avatarı.
+        (Sınıfta İKİ tane `_set_ai_state` vardı; ikincisi birincisini sessizce
+        eziyordu. Tek tanım burada.)"""
+        self.chat_view.set_ai_state(state)
+        self.ultron_focus_view.set_ai_state(state)
+        if getattr(self, 'floating_avatar', None):
+            self.floating_avatar.set_state(state)
 
     def _on_tray_activated(self, reason):
         # Tek tık veya çift tık → pencereyi geri getir

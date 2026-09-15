@@ -76,8 +76,9 @@ def _alpha(color: QColor, a: float) -> QColor:
 
 
 class AICoreWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, draw_bg: bool = True):
         super().__init__(parent)
+        self.draw_bg = draw_bg
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
@@ -203,8 +204,9 @@ class AICoreWidget(QWidget):
         RED_DEEP = palette["deep"]
         RED_DARK = palette["dark"]
 
-        # Background pitch obsidian / theme bg
-        painter.fillRect(self.rect(), palette["bg"])
+        # Background pitch obsidian / theme bg (if draw_bg is enabled)
+        if self.draw_bg:
+            painter.fillRect(self.rect(), palette["bg"])
 
         scale = min(w, h) / BASE_SIZE
         painter.translate(cx, cy)
@@ -216,12 +218,13 @@ class AICoreWidget(QWidget):
         # -------------------------------------------------------------
         # 1. Fullscreen Holographic Grid & Scanlines
         # -------------------------------------------------------------
-        painter.save()
-        pen_scan = QPen(_alpha(RED_CRIMSON, 0.10 + 0.05 * pulse), 1)
-        painter.setPen(pen_scan)
-        for y_line in range(-250, 250, 6):
-            painter.drawLine(QPointF(-320, y_line), QPointF(320, y_line))
-        painter.restore()
+        if self.draw_bg:
+            painter.save()
+            pen_scan = QPen(_alpha(RED_CRIMSON, 0.10 + 0.05 * pulse), 1)
+            painter.setPen(pen_scan)
+            for y_line in range(-250, 250, 6):
+                painter.drawLine(QPointF(-320, y_line), QPointF(320, y_line))
+            painter.restore()
 
         # -------------------------------------------------------------
         # 2. Matrix Hex Data Stream Rain
@@ -277,47 +280,96 @@ class AICoreWidget(QWidget):
         painter.drawEllipse(QPointF(0, 0), 180, 180)
 
         # -------------------------------------------------------------
-        # 6. Multi-Ring Gear & Radar HUD
+        # 6. 3D Geodesic Wireframe Sphere Globe Mesh & Orbital Rings
         # -------------------------------------------------------------
-        ring1_angle = self._t * cfg["ring_speed"]
-        ring2_angle = -self._t * (cfg["ring_speed"] * 1.4)
-        radar_angle = self._t * 130.0
-
-        # Ring 1: Gear Ring
         painter.save()
-        painter.rotate(ring1_angle)
-        pen_gear = QPen(_alpha(RED_BRIGHT, 0.9), 1.5)
-        painter.setPen(pen_gear)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawEllipse(QPointF(0, 0), 105, 105)
-        
-        for i in range(24):
-            a = i * (math.tau / 24)
-            x1 = math.cos(a) * 100
-            y1 = math.sin(a) * 100
-            x2 = math.cos(a) * 110
-            y2 = math.sin(a) * 110
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-        painter.restore()
+        rot_y = self._t * 0.45
+        rot_x = self._t * 0.25
+        cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
+        cos_x, sin_x = math.cos(rot_x), math.sin(rot_x)
 
-        # Ring 2: Segment Arc Ring
-        painter.save()
-        painter.rotate(ring2_angle)
-        pen_arc = QPen(_alpha(RED_CRIMSON, 0.8), 2.5)
-        painter.setPen(pen_arc)
-        for i in range(4):
-            start_deg = i * 90 + (self._t * 18 % 360)
-            painter.drawArc(QRectF(-90, -90, 180, 180), int(start_deg * 16), int(60 * 16))
-        painter.restore()
+        def project_3d(x, y, z):
+            # Rotate Y
+            x1 = x * cos_y + z * sin_y
+            z1 = -x * sin_y + z * cos_y
+            # Rotate X
+            y1 = y * cos_x - z1 * sin_x
+            z2 = y * sin_x + z1 * cos_x
+            # Perspective
+            scale_3d = 320.0 / (320.0 + z2)
+            return QPointF(x1 * scale_3d, y1 * scale_3d), z2
 
-        # Radar Sweep Line
-        painter.save()
-        painter.rotate(radar_angle)
-        radar_grad = QLinearGradient(0, 0, 120, 0)
-        radar_grad.setColorAt(0.0, _alpha(RED_HOT, 0.9))
-        radar_grad.setColorAt(1.0, _alpha(RED_CRIMSON, 0.0))
-        painter.setPen(QPen(QBrush(radar_grad), 2))
-        painter.drawLine(QPointF(0, 0), QPointF(120, 0))
+        # 6a. Latitude 3D Wireframe Rings
+        sphere_r = 115.0
+        pen_wire = QPen(_alpha(RED_BRIGHT, 0.45 + 0.15 * pulse), 1.2)
+        painter.setPen(pen_wire)
+
+        for lat_deg in range(-75, 80, 20):
+            lat_rad = math.radians(lat_deg)
+            r_lat = sphere_r * math.cos(lat_rad)
+            y_lat = sphere_r * math.sin(lat_rad)
+
+            path = QPainterPath()
+            first = True
+            for lon_deg in range(0, 365, 10):
+                lon_rad = math.radians(lon_deg)
+                x_3d = r_lat * math.cos(lon_rad)
+                z_3d = r_lat * math.sin(lon_rad)
+                pt, _z = project_3d(x_3d, y_lat, z_3d)
+                if first:
+                    path.moveTo(pt)
+                    first = False
+                else:
+                    path.lineTo(pt)
+            painter.drawPath(path)
+
+        # 6b. Longitude 3D Wireframe Rings
+        for lon_deg in range(0, 180, 24):
+            lon_rad = math.radians(lon_deg)
+            path = QPainterPath()
+            first = True
+            for lat_deg in range(-90, 95, 10):
+                lat_rad = math.radians(lat_deg)
+                r_lat = sphere_r * math.cos(lat_rad)
+                y_lat = sphere_r * math.sin(lat_rad)
+                x_3d = r_lat * math.cos(lon_rad)
+                z_3d = r_lat * math.sin(lon_rad)
+                pt, _z = project_3d(x_3d, y_lat, z_3d)
+                if first:
+                    path.moveTo(pt)
+                    first = False
+                else:
+                    path.lineTo(pt)
+            painter.drawPath(path)
+
+        # 6c. 3D Tilted Orbital Gyro Rings (Golden & Pink)
+        for ring_idx, (tilt_angle, spd_mult, col_spec, thickness) in enumerate([
+            (math.radians(55), 1.2, RED_BRIGHT, 2.2),
+            (math.radians(-40), -1.5, RED_HOT, 1.8),
+            (math.radians(75), 0.8, RED_CRIMSON, 2.5),
+        ]):
+            path_orb = QPainterPath()
+            r_orb = 135.0 + ring_idx * 6
+            rot_orb = self._t * spd_mult * cfg["ring_speed"] * 0.05
+            first = True
+            for deg in range(0, 365, 8):
+                rad = math.radians(deg) + rot_orb
+                # Circle in XZ plane tilted around X axis
+                x_3d = r_orb * math.cos(rad)
+                y_raw = r_orb * math.sin(rad)
+                y_3d = y_raw * math.cos(tilt_angle)
+                z_3d = y_raw * math.sin(tilt_angle)
+
+                pt, _z = project_3d(x_3d, y_3d, z_3d)
+                if first:
+                    path_orb.moveTo(pt)
+                    first = False
+                else:
+                    path_orb.lineTo(pt)
+
+            painter.setPen(QPen(_alpha(col_spec, 0.85), thickness))
+            painter.drawPath(path_orb)
+
         painter.restore()
 
         # -------------------------------------------------------------

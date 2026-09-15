@@ -49,6 +49,10 @@ from features.reporting import analiz_raporu_olustur
 from features.scheduler import zamanlama_komutu_algila
 from features.screenshot_tool import ekran_goruntusu_al
 from features.web_search import canli_web_ara
+from features.finance_tracker import (
+    harcama_cumlesi_coz, harcama_ekle, harcama_ozeti, donem_coz,
+)
+
 
 
 def _dosya_sonucu(cevap: str) -> AracSonuc:
@@ -393,12 +397,59 @@ def medya(metin="", aksiyon=None, **_):
 
 
 @arac_kaydet(
+    "ekran_takip",
+    "Ekranda hedef metin belirene/kaybolana kadar periyodik takip eder ('ekranda Notepad çıkınca haber ver').",
+    {"metin": "ekran takip komutu"},
+    intent="SCREEN_WATCH",
+)
+def ekran_takip_arac(metin="", **_):
+    from features.screen_watcher import ekran_takip_komutu_isle
+    res = ekran_takip_komutu_isle(metin)
+    if res and res.get("sonuc"):
+        return AracSonuc.ok(res["sonuc"])
+    return AracSonuc.islenmedi()
+
+
+@arac_kaydet(
+    "canli_sesli_sohbet",
+    "Tam çift yönlü kesintisiz sesli sohbet modunu açar veya kapatır ('canlı sesli sohbeti başlat', 'sesli sohbeti kapat').",
+    {"metin": "sesli sohbet komutu"},
+    intent="DUPLEX_VOICE",
+)
+def canli_sesli_sohbet_arac(metin="", **_):
+    from features.speech import is_duplex_voice_active, set_duplex_voice_active
+    m = (metin or "").lower()
+    if any(k in m for k in ["kapat", "durdur", "bitir", "iptal"]):
+        set_duplex_voice_active(False)
+        return AracSonuc.ok("🎙️ **Canlı Sesli Sohbet Kapatıldı:** Normal moda dönüldü.", duplex_voice=False)
+    else:
+        set_duplex_voice_active(True)
+        return AracSonuc.ok("🎙️ **Canlı Sesli Sohbet Başlatıldı:** Ultron her yanıtından sonra seni dinlemeye devam edecek.", duplex_voice=True)
+
+
+@arac_kaydet(
+    "medya_derin",
+    "Spotify'da şarkı çalma, çalan şarkıyı okuma ve şarkı sözü bulma yetenekleri.",
+    {"metin": "medya komutu"},
+    intent="PLAY_MUSIC",
+)
+def medya_derin_arac(metin="", **_):
+    from features.actions.media_deep import medya_derin_komutu_isle
+    res = medya_derin_komutu_isle(metin)
+    if res and res.get("sonuc"):
+        return AracSonuc.ok(res["sonuc"])
+    # Fallback to standard system control
+    islendi, cevap = sistem_komutu_algila(metin)
+    return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+
+
+@arac_kaydet(
     "uygulama_calistir",
     "Sistem komutu çalıştırır: uygulama aç/kapat, ses seviyesi ayarla, müzik çal, sistem bilgilerini göster.",
     {"metin": "doğal dil komutu (örn. 'chrome aç', 'sesi %50 yap', 'sistem bilgileri', 'spotify kapat')"},
-    intent=("SYSTEM_CONTROL", "SET_VOLUME", "PLAY_MUSIC"),
+    intent=("SYSTEM_CONTROL", "SET_VOLUME"),
 )
-def uygulama_calistir(metin="", uygulama=None, sarki=None, **_):
+def uygulama_calistir(metin="", uygulama=None, sarki=None, kanal="desktop", **_):
     import time
     # Planner/LLM kanonik parametre verdiyse regex'in anlayacağı komuta çevir.
     if sarki:
@@ -407,10 +458,47 @@ def uygulama_calistir(metin="", uygulama=None, sarki=None, **_):
         komut = f"{uygulama} aç"
     else:
         komut = metin
-    islendi, cevap = sistem_komutu_algila(komut)
+    islendi, cevap = sistem_komutu_algila(komut, kanal=kanal)
     if islendi and cevap and ("başlatılıyor" in cevap or "açılıyor" in cevap):
         time.sleep(1.2)  # Uygulamanın penceresini açıp odağı alması için bekleme
     return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
+
+
+@arac_kaydet(
+    "pencereye_gec",
+    "Açık pencereleri listeler veya istenen uygulamaya (Zen Browser, Chrome, Notepad, Telegram, Spotify vb.) odaklanıp en öne getirir.",
+    {"metin": "pencere komutu (örn. 'Zen penceresine geç', 'Chrome'a geç', 'açık pencereleri göster')"},
+    intent="WINDOW_FOCUS",
+)
+def pencereye_gec_arac(metin="", **_):
+    # ⚠️ intent OLMADAN kaydedilirse `DEFTER.intent_ile()` bu aracı ASLA bulamaz;
+    # özellik kod olarak var ama ona giden yol yok demektir.
+    from features.actions.system_control import (
+        pencereye_gec, acik_pencereleri_listele, pencere_listeleme_niyeti_mi,
+    )
+    if pencere_listeleme_niyeti_mi(metin):
+        return AracSonuc.ok(acik_pencereleri_listele())
+    basarili, cevap = pencereye_gec(metin)
+    if basarili:
+        return AracSonuc.ok(cevap)
+    return AracSonuc.ok(cevap, hata_tipi="pencere_bulunamadi")
+
+
+@arac_kaydet(
+    "arka_plan_yonetimi",
+    "Arka planda çalışan kullanıcı uygulamalarını listeler (örn. 'arka planda ne çalışıyor?') ve istenen uygulamayı kapatır ('3'ü kapat').",
+    {"metin": "doğal dil veya numara komutu (örn. 'arka planda ne çalışıyor', '3'ü kapat', 'Notepad kapat')"},
+)
+def arka_plan_yonetimi_arac(metin="", kanal="desktop", **_):
+    # Karar mantığı TEK yerde: features/background_apps.arka_plan_komutu_isle.
+    # (Burada ikinci bir kopya koşul vardı ve `\b\d{1,2}\b` gördüğü her cümleyi
+    #  kapatma komutu sayıyordu.)
+    from features import background_apps
+    sonuc = background_apps.arka_plan_komutu_isle(metin, kanal=kanal)
+    if sonuc is None:
+        return AracSonuc.islenmedi()
+    basarili, cevap = sonuc
+    return AracSonuc.ok(cevap) if basarili else AracSonuc.islenmedi()
 
 
 @arac_kaydet("ekran_goruntusu", "Ekran görüntüsü alır.", intent="SCREENSHOT")
@@ -562,9 +650,35 @@ def ogrenme_raporu_arac(metin="", db_cursor=None, db_conn=None, **_):
                         suggestions.rapor_eki(db_cursor=db_cursor))
 
 
+@arac_kaydet(
+    "finans_takip",
+    "Günlük harcamaları kaydeder veya harcama özeti sunar.",
+    {"metin": "harcama veya bütçe cümlesi"},
+    intent="FINANCE_TRACK",
+)
+def finans_takip(metin="", **_):
+    metin_lower = metin.lower()
+    donem, etiket = donem_coz(metin)
+
+    ozet_istegi = any(k in metin_lower for k in
+                      ['özeti', 'ozeti', 'ne kadar harcadım', 'toplam harcama', 'harcamalarım'])
+
+    # Kayıt, özetten ÖNCE denenir: "bu ay markete 350 TL harcadım" cümlesi hem
+    # dönem hem tutar taşır — tutar varsa kullanıcı KAYIT istiyordur.
+    if not ozet_istegi:
+        kurus, aciklama, kategori = harcama_cumlesi_coz(metin)
+        if kurus is not None:
+            res = harcama_ekle(kurus, aciklama or metin, kategori)
+            return AracSonuc.ok(res.get("mesaj", ""))
+
+    res = harcama_ozeti(donem=donem, donem_etiketi=etiket)
+    return AracSonuc.ok(res.get("mesaj", ""))
+
+
 # =========================================================================
 # ÖĞRENİLMİŞ CEVAP (en sonda — LLM'e düşmeden önceki son durak)
 # =========================================================================
+
 
 @arac_kaydet(
     "ogrenilmis_cevap",

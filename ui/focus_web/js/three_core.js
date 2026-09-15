@@ -58,6 +58,14 @@
             sun: 0xd6a3ff,
             metal: 0xb870ff,
             darkMetal: 0x181024
+        },
+        chroma: {
+            primary: 0xff0077,
+            secondary: 0x00f0ff,
+            sun: 0xffd700,
+            metal: 0xff0077,
+            darkMetal: 0x180514,
+            isChroma: true
         }
     };
     let currentThemeName = 'gold';
@@ -194,16 +202,17 @@
     }
 
     function buildPlasmaArcs() {
-        for (let i = 0; i < arcCount; i++) {
+        const arcCountExtended = 14;
+        for (let i = 0; i < arcCountExtended; i++) {
             const arcPoints = [];
-            for (let s = 0; s <= 12; s++) arcPoints.push(new THREE.Vector3(0, 0, 0));
+            for (let s = 0; s <= 16; s++) arcPoints.push(new THREE.Vector3(0, 0, 0));
 
             const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
             const arcMat = new THREE.LineBasicMaterial({
-                color: i % 2 === 0 ? 0xffb700 : 0xff2a4b,
+                color: i % 2 === 0 ? 0xffb700 : 0x00f0ff,
                 transparent: true,
-                opacity: 0.9,
-                linewidth: 2,
+                opacity: 0.95,
+                linewidth: 3,
                 blending: THREE.AdditiveBlending
             });
 
@@ -216,24 +225,30 @@
     function updatePlasmaArcs() {
         const t = themes[currentThemeName];
         plasmaArcs.forEach((arcLine, idx) => {
-            arcLine.material.color.setHex(idx % 2 === 0 ? t.primary : t.secondary);
-            const angle = (idx / arcCount) * Math.PI * 2 + Math.random() * 0.4;
-            const targetRadius = 2.8 + Math.random() * 0.4;
+            const usePrimary = idx % 2 === 0;
+            arcLine.material.color.setHex(usePrimary ? t.primary : t.secondary);
+            
+            // Electric Arc discharge connecting nucleus to outer gimbal ring vertices
+            const angle = (idx / plasmaArcs.length) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+            const targetRadius = 3.2 + Math.random() * 1.8;
             const targetPos = new THREE.Vector3(
                 Math.cos(angle) * targetRadius,
                 Math.sin(angle) * targetRadius,
-                (Math.random() - 0.5) * 1.5
+                (Math.random() - 0.5) * 2.2
             );
 
             const points = [];
-            const startPos = new THREE.Vector3(0, 0, 0);
+            const startPos = new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4);
 
-            for (let s = 0; s <= 12; s++) {
-                const lerpPos = new THREE.Vector3().lerpVectors(startPos, targetPos, s / 12);
-                if (s > 0 && s < 12) {
-                    lerpPos.x += (Math.random() - 0.5) * 0.35;
-                    lerpPos.y += (Math.random() - 0.5) * 0.35;
-                    lerpPos.z += (Math.random() - 0.5) * 0.35;
+            for (let s = 0; s <= 16; s++) {
+                const progress = s / 16;
+                const lerpPos = new THREE.Vector3().lerpVectors(startPos, targetPos, progress);
+                if (s > 0 && s < 16) {
+                    // Jagged High-Voltage Lightning Discharges
+                    const maxJitter = 0.55 * (1 - Math.abs(progress - 0.5) * 1.5);
+                    lerpPos.x += (Math.random() - 0.5) * maxJitter;
+                    lerpPos.y += (Math.random() - 0.5) * maxJitter;
+                    lerpPos.z += (Math.random() - 0.5) * maxJitter;
                 }
                 points.push(lerpPos);
             }
@@ -243,31 +258,39 @@
 
     function triggerPulseWave() {
         const t = themes[currentThemeName];
-        const pulseGeo = new THREE.RingGeometry(0.5, 0.7, 36);
-        const pulseMat = new THREE.MeshBasicMaterial({
-            color: t.primary,
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 1.0,
-            blending: THREE.AdditiveBlending
-        });
 
-        const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
-        pulseMesh.rotation.x = Math.PI / 2;
-        gyroGroup.add(pulseMesh);
+        // 🌌 Dual Multi-Ring Concentric Quantum Shockwave Burst
+        for (let ringIdx = 0; ringIdx < 2; ringIdx++) {
+            const innerR = 0.4 + ringIdx * 0.25;
+            const outerR = innerR + 0.22;
+            const pulseGeo = new THREE.RingGeometry(innerR, outerR, 48);
+            const pulseMat = new THREE.MeshBasicMaterial({
+                color: ringIdx === 0 ? t.primary : t.secondary,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.95,
+                blending: THREE.AdditiveBlending
+            });
 
-        shockwavePulses.push({
-            mesh: pulseMesh,
-            scale: 0.5,
-            opacity: 1.0
-        });
+            const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
+            pulseMesh.rotation.x = (Math.random() - 0.5) * Math.PI;
+            pulseMesh.rotation.y = (Math.random() - 0.5) * Math.PI;
+            gyroGroup.add(pulseMesh);
+
+            shockwavePulses.push({
+                mesh: pulseMesh,
+                scale: 0.5,
+                opacity: 0.95,
+                speed: 0.14 + ringIdx * 0.04
+            });
+        }
     }
 
     function updateShockwavePulses() {
         for (let i = shockwavePulses.length - 1; i >= 0; i--) {
             const p = shockwavePulses[i];
-            p.scale += 0.15;
-            p.opacity -= 0.035;
+            p.scale += p.speed || 0.14;
+            p.opacity -= 0.038;
 
             p.mesh.scale.set(p.scale, p.scale, p.scale);
             p.mesh.material.opacity = Math.max(0, p.opacity);
@@ -577,6 +600,38 @@
 
         const time = clock.getElapsedTime();
 
+        // 🌈 Dynamic Smooth HSL Color Morphing for Chroma Theme
+        if (currentThemeName === 'chroma') {
+            const huePri = (time * 0.07) % 1.0;
+            const hueSec = (huePri + 0.35) % 1.0;
+            const colPri = new THREE.Color().setHSL(huePri, 1.0, 0.55);
+            const colSec = new THREE.Color().setHSL(hueSec, 1.0, 0.60);
+
+            if (centerGoldLight) centerGoldLight.color.copy(colPri);
+            if (goldRimLight) goldRimLight.color.copy(colPri);
+            if (redRimLight) redRimLight.color.copy(colSec);
+
+            if (outerMasterSphere) outerMasterSphere.material.color.copy(colPri);
+            if (outerMesh) outerMesh.material.color.copy(colPri);
+            if (middleMesh) middleMesh.material.color.copy(colPri);
+            if (innerMesh) innerMesh.material.color.copy(colPri);
+
+            if (middleWire) middleWire.material.color.copy(colSec);
+            if (coreGoldSun) coreGoldSun.material.color.copy(colPri);
+            if (coreRedShell) coreRedShell.material.color.copy(colSec);
+            if (coreGeodesicCage) coreGeodesicCage.material.color.copy(colPri);
+
+            coreRingGears.forEach((ring) => ring.material.color.copy(colPri));
+            if (radialEqualizerRing) radialEqualizerRing.material.color.copy(colPri);
+            if (horizontalLaserWave) horizontalLaserWave.material.color.copy(colSec);
+        }
+
+        // 👁️ Interactive 3D Cursor Tracking Eye
+        if (window.ultronCursorTracking && window.ultronMousePos) {
+            targetRotationY = (window.ultronMousePos.x - window.innerWidth / 2) * 0.0035;
+            targetRotationX = (window.ultronMousePos.y - window.innerHeight / 2) * 0.0035;
+        }
+
         // 3D Motion Acceleration during TYPING or PROCESSING
         const isTyping = window.ultronCoreState === 'TYPING';
         const isProcessing = window.ultronCoreState === 'PROCESSING';
@@ -618,10 +673,14 @@
             ring.rotation.z += (idx % 2 === 0 ? 0.02 : -0.025) * mult;
         });
 
-        // Trigger plasma arcs more frequently when typing!
-        const arcProbability = isTyping ? 0.75 : 0.3;
+        // ⚡ Trigger Hyper-Drive Plasma Arcs & 🌌 Quantum Shockwaves continuously when active!
+        const arcProbability = isActive ? 0.85 : 0.40;
         if (Math.random() < arcProbability) {
             updatePlasmaArcs();
+        }
+
+        if (isActive && Math.random() < 0.30) {
+            triggerPulseWave();
         }
 
         updateShockwavePulses();

@@ -262,14 +262,23 @@ KLAVYE_KALIPLARI = (
     # Artı işaretini yazmayan kullanıcı: "ctrl c yap", "alt tab". İkinci parça
     # BİLİNEN bir tuş olmalı — yoksa "alt satır", "alt tarafta" da yakalanırdı.
     r'\b(ctrl|alt|shift|win|windows)\s+(?:[a-z0-9]|f\d{1,2}|tab|esc|enter|del|delete|space)\b',
-    r'\b(tuş|tus|klavye|kombinasyon)\w*\s+(bas|bastır|bastir|gönder|yolla)\b',
-    # Tuş adı + eylem. `\s*` ekiyle "f5 e bas" (ayrı yazılmış ek) de girer;
-    # önceden yalnızca bitişik/kesme işaretli hâli ("f5'e bas") kabul ediliyordu.
-    r"\b(enter|space|tab|esc|escape|backspace|delete|insert|home|end|pgup|pgdn"
-    r"|yukarı|yukari|aşağı|asagi|f\d{1,2})(?:\s*'?[a-zçğıöşü]{0,3})?"
-    r"\s*(ok|tuşuna|tusuna)?\s*(bas|bastır|bastir|gönder|yolla)\b",
-    # Salt rakam + enter ("1234 enter"): sohbet cümlesi olamaz, PIN/kod yazma biçimi.
-    r"^[0-9\s]+enter('?a)?$",
+    r'\b(tuş|tus|klavye|kombinasyon)\w*\s+(bas|bastır|bastir|gönder|yolla|yap|tıkla)\b',
+    # Tuş adı + isteğe bağlı Türkçe yönlendirme eki + eylem fiili ("bas", "yap", "tıkla", "diyorum" vs.)
+    r"\b(enter|space|boşluk|bosluk|tab|esc|escape|backspace|delete|del|insert|home|end|pgup|pgdn"
+    r"|yukarı|yukari|aşağı|asagi|f\d{1,2})(?:\s*'?[a-zçğıöşü]{0,4})?"
+    r"\s*(ok|tuşuna|tusuna)?\s*(bas|bastır|bastir|gönder|yolla|yap|tıkla|diyorum)\b",
+    # Doğrudan tek tuş komutu ("enter", "space", "tab", "esc", "f5")
+    r"^\s*(enter|space|boşluk|bosluk|tab|esc|escape|backspace|delete|del|f5)\s*$",
+    # Rakam + enter ("1234 enter")
+    r"^[0-9\s]+enter('?[a-zçğıöşü]{1,4})?$",
+    # Serbest metin yazma + AÇIK tuş komutu ("deneme ultron tarafından yaz enter bas").
+    # ⚠️ Cümlenin SONU bir tuş adı olmalı. Eskiden `.*\byaz\b.*\b(enter|bas|yap|
+    # gönder)\b` yazıyordu ve "bana bir şiir yaz ve gönder" gibi sıradan sohbet
+    # istekleri de klavyeye gidiyordu — Ultron şiiri yazmak yerine cümleyi aktif
+    # pencereye tuşluyordu.
+    r"\byaz\b[^:]*\b(enter|tab|esc|escape|space|boşluk|bosluk)\b"
+    r"(?:\s*'?[a-zçğıöşü]{0,4})?\s*(?:tuşuna|tusuna)?"
+    r"\s*(?:bas|bastır|bastir|yap|gönder|yolla|tıkla)?\s*$",
 )
 
 
@@ -326,15 +335,7 @@ _KEY_MAP = {
 }
 
 # ---------------------------------------------------------------------------
-# DOĞAL DİL KISAYOLLARI
-#
-# Kimse "ctrl+c bas" demez; "kopyala" der. Bu tablo günlük Türkçeyi kanonik
-# kombinasyona çevirir. Kapı (`KLAVYE_KALIPLARI`) da buradan üretilir, yani
-# yeni bir satır eklemek hem anlamayı hem yürütmeyi aynı anda açar.
-#
-# ⚠️ ÇAKIŞMAYA DİKKAT: buraya eklenen ifade başka bir niyetin cümlesini
-# çalmamalı. Bu yüzden "bul" (dosya arama), "kapat" (uygulama kapatma) ve
-# "seç" gibi çıplak fiiller BİLEREK yok — sadece tek anlama gelen kalıplar var.
+# DOĞAL DİL KISAYOLLARI VE PENCERE KOMUTLARI
 # ---------------------------------------------------------------------------
 _DOGAL_KISAYOLLAR = (
     (r'\bhepsini\s+se[çc]|t[üu]m[üu]n[üu]\s+se[çc]', 'ctrl+a'),
@@ -342,21 +343,20 @@ _DOGAL_KISAYOLLAR = (
     (r'\bileri\s+al\b|\byinele\b|\bredo\b', 'ctrl+y'),
     (r'\bkopyala\b', 'ctrl+c'),
     (r'\byap[ıi]şt[ıi]r\b|\byapistir\b', 'ctrl+v'),
-    # Sadece ÇIPLAK "kes" — "sesi kes" ses kısma komutudur, Ctrl+X değil.
     (r'^\s*kes\s*$|\bmetni\s+kes\b', 'ctrl+x'),
     (r'\bkaydet\b', 'ctrl+s'),
     (r'\byazd[ıi]r\b', 'ctrl+p'),
     (r'\bsekmeyi\s+kapat\b', 'ctrl+w'),
+    (r'\bpencereyi\s+kapat\b|\bpencere\s+kapat\b', 'alt+f4'),
     (r'\byeni\s+sekme\b', 'ctrl+t'),
     (r'\bkapanan\s+sekmeyi\s+a[çc]\b', 'ctrl+shift+t'),
     (r'\byenile\b|\bsayfay[ıi]\s+yenile\b', 'f5'),
     (r'\btam\s+ekran\b', 'f11'),
     (r'\bg[öo]rev\s+y[öo]neticisi', 'ctrl+shift+esc'),
-    # ⚠️ "masaüstünü göster" BİLEREK yok: o cümle "masaüstündeki dosyaları
-    # listele" anlamına da geliyor ve dosya kapısı onu haklı olarak alıyor.
-    # Win+D için tek anlama gelen ifadeler kullanılır.
     (r'\bmasa[üu]st[üu]ne\s+d[öo]n\b|\bt[üu]m\s+pencereleri\s+k[üu][çc][üu]lt\b', 'win+d'),
-    (r'\buygulama\s+de[ğg]i[şs]tir\b|\balt\s*tab\b', 'alt+tab'),
+    (r'\buygulama\s+de[ğg]i[şs]tir\b|\bpencereler\s+aras[ıi]\s+ge[çc]i[şs]\b|\bdi[ğg]er\s+pencereye\s+ge[çc]\b|\bdi[ğg]er\s+pencere\b|\bsonraki\s+pencere\b|\balt\s*tab\b', 'alt+tab'),
+    (r'\bpencereyi\s+k[üu][çc][üu]lt\b', 'win+down'),
+    (r'\bpencereyi\s+b[üu]y[üu]t\b|\bekran[ıi]\s+kapla\b', 'win+up'),
     (r'\bsayfa\s+ba[şs][ıi]na\s+git\b|\bba[şs]a\s+git\b', 'ctrl+home'),
     (r'\bsayfa\s+sonuna\s+git\b|\bsona\s+git\b', 'ctrl+end'),
     (r'\bsayfa\s+a[şs]a[ğg][ıi]\b', 'pgdn'),
@@ -466,20 +466,37 @@ def _send_keys_gonder(pattern: str, combo_text: str, active_title: str,
     )
 
 
+def send_unicode_text(text: str, press_enter: bool = False) -> bool:
+    """
+    Win32 KEYEVENTF_UNICODE donanım seviyesi sinyalleri ile metin yazar.
+    Türkçe karakterler (ı, ş, ğ, ç, ö, ü) ve özel karakterler bozulmadan aktarılır.
+    """
+    if sys.platform != 'win32':
+        return False
+    if not text:
+        return False
+    try:
+        KEYEVENTF_UNICODE = 0x0004
+        KEYEVENTF_KEYUP = 0x0002
+        for ch in text:
+            code = ord(ch)
+            ctypes.windll.user32.keybd_event(0, code, KEYEVENTF_UNICODE, 0)
+            time.sleep(0.005)
+            ctypes.windll.user32.keybd_event(0, code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0)
+            time.sleep(0.005)
+        
+        if press_enter:
+            time.sleep(0.05)
+            execute_native_hotkey([], ['enter'])
+        return True
+    except Exception as e:
+        print(f"[AIP L4] Unicode text sending error: {e}")
+        return False
+
+
 def send_keyboard_input(combo_text: str) -> tuple[bool, str]:
     """
     Uzaktan klavye tuşu veya tuş kombinasyonu basar.
-
-    ⚠️ ANLAŞILMAYAN GİRDİ YAZILMAZ. Eski sürüm çözemediği cümleyi olduğu gibi
-    `send_keys`e veriyordu; "klavye bozuldu" gibi bir mesaj aktif pencereye
-    harfi harfine yazılıyordu. Artık kullanım rehberi dönülür, tuş basılmaz.
-
-    Örnekler:
-      - 'ctrl+enter'      → sadece Ctrl+Enter
-      - 'enter bas'       → sadece Enter (ekrana 'enter bas' YAZMAZ)
-      - '1234 enter'      → 1234 yazar, Enter basar
-      - 'yaz: merhaba'    → metin yazar (özel karakterler kaçırılır)
-      - 'kilit aç: 1234'  → kilit ekranını uyandırır, PIN girer
     """
     if sys.platform != 'win32':
         return False, "Klavye tuş emülasyonu sadece Windows sistemlerde desteklenmektedir."
@@ -501,13 +518,25 @@ def send_keyboard_input(combo_text: str) -> tuple[bool, str]:
             raw_clean = raw_clean[len(prefix):].strip()
             break
 
-    # 3. Türkçe dolgu eylemlerini temizle ('bas', 'yap', 'gönder', 'yolla', 'tıkla')
-    raw_clean = re.sub(r'\s+(bas|bastır|bastir|yap|gönder|yolla|tıkla)$', '',
-                       raw_clean, flags=re.IGNORECASE).strip()
+    # 3. Türkçe dolgu eylemlerini temizle ('tuşuna', 'bas', 'yap', 'gönder', 'yolla', 'tıkla', 'diyorum' vs.)
+    #
+    # ⚠️ İKİ KURAL: (a) kelime sınırı ŞART, (b) sadece cümlenin SONUNDAKİ dolgu
+    #    dizisi silinir. Sınırsız+`.*$` hâli metnin içindeki masum kelimeleri
+    #    yakalayıp gerisini uçuruyordu:
+    #        "yaz: basit bir deneme"           → "yaz:"            ('bas' ⊂ basit)
+    #        "yaz: toplantıyı yapabilir miyiz" → "yaz: toplantıyı" ('yap' ⊂ yapabilir)
+    # (c) 'yaz:' önekli cümlelerde metin KULLANICININ; hiç dokunulmaz.
+    if not re.match(r'^(?:yaz|type)\s*:', raw_clean, re.IGNORECASE):
+        _DOLGU = (r'(?:ok|tuşuna|tusuna|tuşu|tusu|tuş|tus|bas|bastır|bastir|yap|gönder|'
+                  r'yolla|tıkla|diyorum|misin|mısın|lütfen|lutfen)')
+        raw_clean = re.sub(r'(?:\s+\b' + _DOLGU + r'\b)+\s*$', '',
+                           raw_clean, flags=re.IGNORECASE).strip()
+
+    # 3.1 Tekil tuş kesme işareti / yönlendirme eklerini temizle ("enter'a" → "enter", "f5'e" → "f5")
+    raw_clean = re.sub(r"^(enter|space|boşluk|bosluk|tab|esc|escape|backspace|delete|del|f\d{1,2})('?[a-zçğıöşü]{1,4})?$",
+                       r"\1", raw_clean, flags=re.IGNORECASE)
 
     # 3.5 Doğal dil kısayolu mu? ("kopyala" → ctrl+c, "sekmeyi kapat" → ctrl+w)
-    #     Metin yazma isteğinden ÖNCE bakılır ama 'yaz:' ön ekli cümleler
-    #     zaten aşağıda ayrı ele alınıyor; burada onlara dokunulmaz.
     if not re.match(r'^(?:yaz|type)\s*:', raw_clean, re.IGNORECASE):
         dogal = dogal_kisayol_coz(raw_clean)
         if dogal:
@@ -516,7 +545,7 @@ def send_keyboard_input(combo_text: str) -> tuple[bool, str]:
             # "ctrl c" → "ctrl+c" (artı işaretini yazmayan kullanıcı)
             raw_clean = _bosluklu_kombinasyon(raw_clean)
 
-    # 4. Sonda enter var mı? ("1234 enter'a bas")
+    # 4. Sonda enter var mı? ("1234 enter'a bas", "deneme yaz enter bas")
     press_enter_at_end = False
     enter_match = re.search(r"\s+(enter|enter'a|entera)$", raw_clean, re.IGNORECASE)
     if enter_match:
@@ -536,6 +565,14 @@ def send_keyboard_input(combo_text: str) -> tuple[bool, str]:
             yazilacak = m_yaz2.group(1).strip()
 
     if yazilacak:
+        if send_unicode_text(yazilacak, press_enter=press_enter_at_end):
+            enter_str = " + ENTER" if press_enter_at_end else ""
+            return True, (
+                f"⌨️ **[KLAVYE İNPUTU GÖNDERİLDİ]**\n"
+                f"• Girdi: `{combo_text}`\n"
+                f"• Yazılan Metin: `{yazilacak}`{enter_str}\n"
+                f"• Aktif Pencere: **{active_title}**"
+            )
         pattern = yaziyi_kacir(yazilacak) + ('{ENTER}' if press_enter_at_end else '')
         return _send_keys_gonder(pattern, combo_text, active_title, with_spaces=True)
 
@@ -559,12 +596,13 @@ def send_keyboard_input(combo_text: str) -> tuple[bool, str]:
         if press_enter_at_end and 'enter' not in found_keys:
             found_keys.append('enter')
 
-        # Modifier kombinasyonlarında Win32 hardware keybd_event önceliklidir
-        if found_mods and execute_native_hotkey(found_mods, found_keys):
+        # Win32 hardware keybd_event execution (ALWAYS PREFERRED for maximum Windows compatibility)
+        if execute_native_hotkey(found_mods, found_keys):
+            combo_str = ' + '.join(found_mods + found_keys).upper()
             return True, (
                 f"⌨️ **[KLAVYE İNPUTU GÖNDERİLDİ]**\n"
                 f"• Girdi: `{combo_text}`\n"
-                f"• Tuş Kombinasyonu: `{' + '.join(found_mods + found_keys).upper()}`\n"
+                f"• Basılan Tuş: `{combo_str}`\n"
                 f"• Aktif Pencere: **{active_title}**"
             )
 

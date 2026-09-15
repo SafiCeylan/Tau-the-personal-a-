@@ -36,6 +36,9 @@ def sistem_sesi_getir() -> int:
     return 50  # Varsayılan fallback
 
 
+
+
+
 def sistem_sesi_kontrol(action: str, percent: int = None):
     """
     PyCaw ve Win32 API ile Birebir Mutlak (Absolute) ve Oransal Ses Kontrolü.
@@ -137,8 +140,10 @@ def medya_kontrol(action: str):
     """
     Medya oynatmayı kontrol eder (duraklat/devam/sonraki/önceki/durdur).
 
-    Not: Windows medya tuşu sinyali gönderir — YouTube Music, Spotify,
-    VLC, tarayıcı sekmesi fark etmez, aktif oynatıcı yanıt verir.
+    Kesin 1-Kez Yürütme:
+    1. WinRT API ile aktif medya oturumunda 1 KEZ işlem yapmayı dener.
+    2. Başarılı olursa anında döner (döngü/katlama engellenir).
+    3. WinRT yoksa 1 KEZ donanım medya tuş sinyali (keybd_event) gönderir.
     """
     if sys.platform != 'win32':
         return False, "Medya kontrolü şu an sadece Windows'ta destekleniyor."
@@ -148,13 +153,72 @@ def medya_kontrol(action: str):
         return False, f"Bilinmeyen medya komutu: {action}"
 
     vk, mesaj = islem
+
+    # 1. WinRT API ile doğrudan medya kontrolü (1 KEZ çağrılır)
+    try:
+        from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as MediaManager
+        import asyncio
+
+        async def _do_winrt():
+            mgr = await MediaManager.request_async()
+            if not mgr:
+                return False
+            sess = mgr.get_current_session()
+            sessions = [sess] if sess else []
+            try:
+                all_s = mgr.get_sessions()
+                if all_s:
+                    for s in all_s:
+                        if s not in sessions:
+                            sessions.append(s)
+            except Exception:
+                pass
+
+            for s in sessions:
+                try:
+                    # ⚠️ play/pause ile playpause AYRI. Hepsi toggle olduğunda
+                    # "müziği duraklat" duraklamış medyayı ÇALDIRIYORDU.
+                    if action == "play":
+                        await s.try_play_async()
+                        return True
+                    elif action == "pause":
+                        await s.try_pause_async()
+                        return True
+                    elif action == "playpause":
+                        await s.try_toggle_play_pause_async()
+                        return True
+                    elif action == "next":
+                        await s.try_skip_next_async()
+                        return True
+                    elif action == "prev":
+                        await s.try_skip_previous_async()
+                        return True
+                    elif action == "stop":
+                        await s.try_stop_async()
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        loop = asyncio.new_event_loop()
+        try:
+            winrt_basarili = loop.run_until_complete(_do_winrt())
+            if winrt_basarili:
+                return True, mesaj
+        finally:
+            loop.close()
+    except Exception:
+        pass
+
+    # 2. WinRT oturumu yoksa: SADECE 1 KEZ donanım medya tuş sinyali gönder
     KEYEVENTF_KEYUP = 0x0002
     try:
         ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
         ctypes.windll.user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
-        return True, mesaj
     except Exception as e:
         return False, f"Medya kontrolü başarısız: {e}"
+
+    return True, mesaj
 
 
 def medya_komutu_algila(mesaj: str):
@@ -184,14 +248,22 @@ def medya_komutu_algila(mesaj: str):
     if any(k in m for k in ["önceki şarkı", "bir önceki", "previous",
                             "önceki parça", "baştan çal", "başa sar"]):
         return "prev"
+    # ⚠️ "oynat/duraklat" (avatar barındaki ⏯️ butonu) TEK TUŞ = değiştir.
+    #    "duraklat" alt dizisi yüzünden pause'a düşmesin diye pause'tan ÖNCE.
+    if any(k in m for k in ["oynat/duraklat", "oynat / duraklat", "play pause", "playpause",
+                            "müziği oynat", "şarkıyı oynat", "parçayı oynat", "medyayı oynat"]):
+        return "playpause"
     if any(k in m for k in ["müziği durdur", "şarkıyı durdur", "durdur müziği",
                             "duraklat", "pause", "müziği duraklat", "sesi kes müzik"]):
         return "pause"
+    # ⚠️ ÇIPLAK "oynat"/"başlat" BURAYA EKLENMEZ. MEDIA_CONTROL niyet zincirinde
+    # SCREEN_WATCH, DUPLEX_VOICE ve SYSTEM_CONTROL'den ÖNCE bakılır; çıplak fiil
+    # eklendiğinde "chrome başlat", "ekran takibini başlat" ve "canlı sesli
+    # sohbeti başlat" medya kontrolüne kaçıyordu.
     if any(k in m for k in ["devam ettir", "müziği devam", "devam et müzik",
-                            "resume", "kaldığı yerden", "müziği aç"]):
+                            "resume", "kaldığı yerden", "müziği aç", "müziği başlat",
+                            "şarkıyı başlat", "parçayı başlat", "medyayı başlat"]):
         return "play"
-    if any(k in m for k in ["oynat/duraklat", "play pause", "playpause"]):
-        return "playpause"
     if any(k in m for k in ["müziği kapat", "oynatmayı durdur", "medyayı durdur"]):
         return "stop"
     return None
@@ -403,10 +475,14 @@ def _kelime_var(mesaj: str, kelimeler) -> bool:
     return any(re.search(r'\b' + re.escape(k) + r'\b', mesaj) for k in kelimeler)
 
 
-def sistem_komutu_algila(mesaj: str):
+def sistem_komutu_algila(mesaj: str, kanal: str = "desktop"):
     """
     Mesaj içerisindeki Windows sistem komutlarını algılar ve çalıştırır.
     Dönen değer: (Başarı Durumu, Yanıt Mesajı)
+
+    `kanal`: "desktop" ya da Telegram chat_id. Arka plan listesi kanal başına
+    tutulur — telefondaki "3'ü kapat", masaüstünde yapılmış listelemenin
+    3. uygulamasını kapatmasın.
     """
     # WhatsApp / E-posta komutları — lowercase'ten ÖNCE (mesaj metni korunmalı).
     # Güvenlik onayı sonrası gönderimler de bu yoldan yürütülür.
@@ -527,8 +603,28 @@ def sistem_komutu_algila(mesaj: str):
             return surec_kapat("zen.exe", "Zen Browser")
         elif "claude" in mesaj:
             return surec_kapat("claude.exe", "Claude Desktop")
+        elif "docker" in mesaj:
+            return surec_kapat("docker", "Docker Desktop", parcali=True)
 
-    # 5. Evrensel Uygulama Açma / Başlatma (Zen, Claude, VS Code, Discord, Chrome, Spotify vb.)
+    # 4.5. Arka Plan Uygulamaları Yönetimi ve İnteraktif Kapatma
+    #      TEK GİRİŞ: background_apps.arka_plan_komutu_isle. İlgisizse None döner
+    #      ve akış aşağıya (uygulama açma / pencere) devam eder. Burada ikinci bir
+    #      kopya koşul YAZILMAZ — ikiz mantık biri düzeltilince diğerini eskitir.
+    from features import background_apps
+    bg_sonuc = background_apps.arka_plan_komutu_isle(mesaj, kanal=kanal)
+    if bg_sonuc is not None:
+        return bg_sonuc
+
+    # 5. Açık Pencereye Geçme ve Listeleme (Zen Browser, Chrome, Notepad, Spotify, Telegram, VS Code vb.)
+    if pencere_listeleme_niyeti_mi(mesaj):
+        return True, acik_pencereleri_listele()
+
+    if pencere_odak_niyeti_mi(mesaj):
+        basarili, cevap = pencereye_gec(mesaj)
+        if basarili:
+            return basarili, cevap
+
+    # 6. Evrensel Uygulama Açma / Başlatma (Zen, Claude, VS Code, Discord, Chrome, Spotify vb.)
     if any(k in mesaj for k in ["aç", "başlat", "çalıştır"]):
         app_name = mesaj
         for kw in ["aç", "başlat", "çalıştır", "uygulamasını", "uygulaması"]:
@@ -593,12 +689,46 @@ def sistem_komutu_algila(mesaj: str):
     return False, None
 
 
-def surec_kapat(process_name, display_name):
-    """Verilen isimdeki Windows sürecini bulur ve kapatır."""
+def surec_kapat(process_name, display_name, parcali: bool = False):
+    """
+    Verilen isimdeki Windows sürecini bulur ve güvenle kapatır.
+
+    ⚠️ EŞLEŞME TAM ADLADIR. Eskiden `proc_clean.replace('.exe','') in p_name`
+    kullanılıyordu: "zen" → `citizen.exe`, "code" → `vscode.exe` gibi ALAKASIZ
+    süreçler de ölüyordu. Alt dizi eşleşmesi yalnızca `parcali=True` ile
+    (Docker gibi süreç AİLELERİ için) bilerek açılır.
+    """
+    if not process_name or len(str(process_name).strip()) < 2:
+        return False, "Geçersiz süreç adı."
+
+    proc_clean = str(process_name).lower().strip()
+    # "zen.exe" ve "zen" aynı hedef sayılır; ikisi de tam ad karşılaştırmasına girer.
+    hedefler = {proc_clean, proc_clean[:-4] if proc_clean.endswith('.exe') else proc_clean + '.exe'}
+
+    # ULTRON'un veya Python'ın KENDİ KENDİNİ KAPATMASINI ENGELE!
+    NEVER_KILL = {
+        'python.exe', 'pythonw.exe', 'py.exe', 'pytest.exe', 'ultron.exe',
+        'explorer.exe', 'svchost.exe', 'csrss.exe', 'smss.exe', 'winlogon.exe',
+        'services.exe', 'lsass.exe'
+    }
+
+    current_pid = os.getpid()
+
+    if proc_clean in NEVER_KILL or 'ultron' in proc_clean or 'python' in proc_clean:
+        return False, f"⚠️ Güvenlik koruması: **{display_name}** sürecini sonlandıramazsınız."
+
     found = False
-    for proc in psutil.process_iter(['name']):
+    for proc in psutil.process_iter(['pid', 'name']):
         try:
-            if proc.info['name'] and process_name.lower() in proc.info['name'].lower():
+            p_pid = proc.info['pid']
+            p_name = (proc.info['name'] or '').lower()
+
+            # Kendi PID'imizi veya Ultron/Python sürecini asla öldürme!
+            if p_pid == current_pid or p_name in NEVER_KILL or 'ultron' in p_name:
+                continue
+
+            eslesti = (p_name in hedefler) if not parcali else (proc_clean in p_name)
+            if eslesti:
                 proc.kill()
                 found = True
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -606,9 +736,13 @@ def surec_kapat(process_name, display_name):
 
     if sys.platform == 'win32':
         try:
-            res = subprocess.run(f"taskkill /F /IM {process_name}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if res.returncode == 0:
-                found = True
+            if not any(k in proc_clean for k in ['python', 'ultron']):
+                target_exe = process_name if process_name.lower().endswith('.exe') else f"{process_name}.exe"
+                # /T (süreç ağacı) YOK: hedefin başlattığı alakasız süreçleri de
+                # götürüyordu. Uygulamanın kendisi zaten /F ile kapanır.
+                res = subprocess.run(f"taskkill /F /IM \"{target_exe}\"", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 0:
+                    found = True
         except Exception:
             pass
 
@@ -705,7 +839,167 @@ def bilgisayar_uyut():
                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         return True, "🌙 Bilgisayar uyku moduna alınıyor. Uyandırmak için `kilit aç` diyebilirsin."
     except Exception as e:
-        return False, f"⚠️ Uyku moduna alınamadı: {e}"
+        return False, f"Uyku moduna geçilemedi: {e}"
+
+
+# Pencere komutlarının kapısı. Niyet katmanı (WINDOW_FOCUS) da burayı kullanır —
+# kalıp iki yere kopyalanırsa biri güncellenir, diğeri sessizce eskir.
+_PENCERE_LISTELEME = re.compile(
+    r'(açık|acik)\s+pencere|pencereleri\s+(göster|listele|say)|hangi\s+pencereler',
+    re.IGNORECASE)
+# Bunlar pencere ODAKLAMA DEĞİL: klavye kısayolu (alt+f4, alt+tab, win+up/down).
+_PENCERE_DEGIL = re.compile(
+    r'\bpencere\w*\s+(kapat|küçült|kucult|büyüt|buyut)|'
+    r'\b(diğer|diger|sonraki|önceki|onceki|başka|baska)\s+pencere|'
+    r'\bpencereler\s+aras',
+    re.IGNORECASE)
+_PENCERE_KELIMESI = re.compile(r'\bpencere\w*\b', re.IGNORECASE)
+_ODAK_FIILI = re.compile(r'\b(geç|gec|getir|aç|ac|odaklan\w*)\b', re.IGNORECASE)
+_ONE_GETIR = re.compile(r'\b(öne|one|ekrana|en\s+öne)\s+getir\b|\bodaklan\b', re.IGNORECASE)
+# "zen'e geç" biçimi: hedef BİLİNEN bir uygulama olmalı — yoksa "şarkıyı geç"
+# (sonraki parça) ve "bunu geç" de pencere komutu sayılırdı.
+_ADA_GEC = re.compile(r"([\wçğıöşü]+(?:\s+[\wçğıöşü]+)?)\s*['’]?[a-zçğıöşü]{0,3}\s+(?:geç|gec)\b",
+                      re.IGNORECASE)
+
+
+def pencere_listeleme_niyeti_mi(mesaj: str) -> bool:
+    return bool(_PENCERE_LISTELEME.search(mesaj or ""))
+
+
+def pencere_odak_niyeti_mi(mesaj: str) -> bool:
+    """"Zen penceresine geç" evet · "şarkıyı geç" hayır · "pencereyi kapat" hayır."""
+    m = (mesaj or "").lower()
+    if not m or _PENCERE_DEGIL.search(m) or _PENCERE_LISTELEME.search(m):
+        return False
+    if _PENCERE_KELIMESI.search(m) and _ODAK_FIILI.search(m):
+        return True
+    if _ONE_GETIR.search(m):
+        return True
+    eslesme = _ADA_GEC.search(m)
+    if eslesme:
+        aday = re.sub(r"['’][a-zçğıöşü]{0,3}$", '', eslesme.group(1).strip()).strip()
+        parcalar = aday.split()
+        if aday in _PENCERE_TAKMA_ADLAR or (parcalar and parcalar[-1] in _PENCERE_TAKMA_ADLAR):
+            return True
+    return False
+
+
+_PENCERE_TAKMA_ADLAR = {
+    "zen": ["zen", "browser"],
+    "chrome": ["google chrome", "chrome"],
+    "edge": ["microsoft edge", "edge"],
+    "firefox": ["mozilla firefox", "firefox"],
+    "notepad": ["not defteri", "notepad"],
+    "not defteri": ["not defteri", "notepad"],
+    "vscode": ["visual studio code", "vscode", "code"],
+    "vs code": ["visual studio code", "vscode", "code"],
+    "code": ["visual studio code", "vscode", "code"],
+    "kod": ["visual studio code", "vscode", "code"],
+    "spotify": ["spotify"],
+    "telegram": ["telegram"],
+    "whatsapp": ["whatsapp"],
+    "vlc": ["vlc media player", "vlc"],
+    "claude": ["claude"],
+    "discord": ["discord"],
+}
+
+# Cümlenin sonundaki komut kuyruğu: "…penceresini öne getir", "…'a geç"
+_PENCERE_KUYRUK = re.compile(
+    r"\s*(?:pencere\w*|öğesi\w*|ogesi\w*|uygulamas\w*|öne|one|ekrana|artık|simdi|şimdi|"
+    r"getir|geç|gec|aç|ac|odaklan\w*|lütfen|lutfen)\s*$", re.IGNORECASE)
+
+
+def pencereye_gec(hedef_adi: str) -> tuple[bool, str]:
+    """
+    Kullanıcının istediği açık pencereye (Zen, Chrome, Notepad, Spotify, VS Code, vb.) geçer,
+    öğe simge durumundaysa büyütür ve en öne getirir.
+    """
+    if sys.platform != 'win32':
+        return False, "Pencere değişimi sadece Windows sistemlerde desteklenmektedir."
+
+    sorgu = (hedef_adi or "").strip().lower()
+    # Komut kuyruğu tek seferde değil, TÜKENENE KADAR temizlenir: "notepad
+    # penceresini öne getir" tek geçişte "notepad penceresini" olarak kalıyordu.
+    for _ in range(6):
+        yeni = _PENCERE_KUYRUK.sub('', sorgu).strip()
+        if yeni == sorgu:
+            break
+        sorgu = yeni
+    sorgu = re.sub(r'^(?:şuna|şu|hemen|lütfen|lutfen)\s+', '', sorgu, flags=re.IGNORECASE).strip()
+    # Türkçe yönelme eki: "zen'e" → "zen", "telegram'a" → "telegram"
+    sorgu = re.sub(r"['’][a-zçğıöşü]{0,3}$", '', sorgu).strip()
+    sorgu = sorgu.strip(" '\"`’“”\t")
+
+    if not sorgu:
+        return False, "Geçilecek pencere adı belirtilmedi. Örnek: `Zen penceresine geç`"
+
+    aranacaklar = _PENCERE_TAKMA_ADLAR.get(sorgu, [sorgu])
+
+    import ctypes, psutil
+    user32 = ctypes.windll.user32
+
+    # 1. PID'ler üzerinden açık uygulama pencerelerini bul
+    pids = set()
+    try:
+        for p in psutil.process_iter(['pid', 'name']):
+            try:
+                name = (p.info['name'] or '').lower()
+                if any(target in name for target in aranacaklar):
+                    pids.add(p.info['pid'])
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    bulunan_hwnd = None
+    bulunan_baslik = ""
+
+    def enum_cb(hwnd, _):
+        nonlocal bulunan_hwnd, bulunan_baslik
+        if user32.IsWindowVisible(hwnd):
+            pid_out = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_out))
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                title = buf.value
+                t_lower = title.lower()
+
+                # Ultron'un kendi penceresini atla
+                if "ultron" in t_lower:
+                    return True
+
+                # PID veya Başlık eşleşti mi?
+                if pid_out.value in pids or any(target in t_lower for target in aranacaklar):
+                    bulunan_hwnd = hwnd
+                    bulunan_baslik = title
+                    return False  # Dur
+        return True
+
+    CMPFUNC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    cb = CMPFUNC(enum_cb)
+    user32.EnumWindows(cb, 0)
+
+    if bulunan_hwnd:
+        try:
+            # Simge durumundaysa büyüt ve öne getir
+            if user32.IsIconic(bulunan_hwnd):
+                user32.ShowWindow(bulunan_hwnd, 9)  # SW_RESTORE
+            else:
+                user32.ShowWindow(bulunan_hwnd, 5)  # SW_SHOW
+
+            # Alt tuşu yardımıyla SetForegroundWindow kilit engelini aş
+            user32.keybd_event(0x12, 0, 0, 0)  # Alt down
+            user32.SetForegroundWindow(bulunan_hwnd)
+            user32.BringWindowToTop(bulunan_hwnd)
+            user32.keybd_event(0x12, 0, 0x0002, 0)  # Alt up
+
+            return True, f"🪟 **Pencereye Geçildi:** **{bulunan_baslik}** en öne getirildi."
+        except Exception as e:
+            return False, f"Pencereye geçilirken hata oluştu: {e}"
+
+    return False, f"🔍 `{sorgu}` ile eşleşen açık bir pencere bulunamadı."
 
 
 def bilgisayar_kilitle():
@@ -713,3 +1007,48 @@ def bilgisayar_kilitle():
         ctypes.windll.user32.LockWorkStation()
         return True, "🔒 Bilgisayar ekranı ve oturumu kilitlendi."
     return False, "Ekran kilitleme sadece Windows üzerinde desteklenmektedir."
+
+
+def acik_pencereleri_listele() -> str:
+    """Açık masaüstü pencerelerini numaralı liste olarak sunar."""
+    if sys.platform != 'win32':
+        return "Pencere listeleme sadece Windows üzerinde desteklenmektedir."
+
+    import ctypes
+    from features import background_apps
+    user32 = ctypes.windll.user32
+
+    EXCLUDE_TITLES = {
+        'program manager', 'default ime', 'msctfime ui', 'windows input experience',
+        'systemsettings', 'settings', 'nvidia geforce overlay', 'mcafee webadvisor'
+    }
+
+    titles = []
+    def enum_cb(hwnd, _):
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length > 1:
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            t = buf.value.strip()
+            t_lower = t.lower()
+            if t and "ultron" not in t_lower and t_lower not in EXCLUDE_TITLES:
+                if t not in titles:
+                    titles.append(t)
+        return True
+
+    CMPFUNC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    user32.EnumWindows(CMPFUNC(enum_cb), 0)
+
+    if not titles:
+        apps = background_apps.çalışan_uygulamaları_getir()
+        titles = [app['display_name'] for app in apps]
+
+    if not titles:
+        return "ℹ️ Açık masaüstü penceresi bulunamadı."
+
+    satirlar = ["🪟 **AÇIK MASAÜSTÜ PENCERELERİ:**\n"]
+    for idx, t in enumerate(titles, 1):
+        satirlar.append(f"{idx}. 💻 **{t}**")
+
+    satirlar.append("\n💡 *Geçmek istediğin pencerenin adını söyleyebilirsin (Örn: `Zen penceresine geç`).*")
+    return "\n".join(satirlar)

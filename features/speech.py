@@ -3,7 +3,6 @@ import re
 import tempfile
 import threading
 import time
-
 import subprocess
 
 import speech_recognition as sr
@@ -15,6 +14,21 @@ import pygame
 # ---------------------------------------------------------------------------
 _pyttsx3_engine = None
 _tts_lock = threading.Lock()
+_DUPLEX_ACTIVE = False
+_DUPLEX_LOCK = threading.Lock()
+
+
+def is_duplex_voice_active() -> bool:
+    with _DUPLEX_LOCK:
+        return _DUPLEX_ACTIVE
+
+
+def set_duplex_voice_active(active: bool) -> bool:
+    global _DUPLEX_ACTIVE
+    with _DUPLEX_LOCK:
+        _DUPLEX_ACTIVE = active
+        return _DUPLEX_ACTIVE
+
 
 _EMOJI_RE = re.compile(
     '[\U0001F000-\U0001FAFF☀-➿⬀-⯿️‍]'
@@ -272,5 +286,7 @@ def dinle_ve_yaziya_cevir(device_index=None):
     except Exception as e:
         print(f"Mikrofon hatası: {e}")
         return None
+
+
 
  

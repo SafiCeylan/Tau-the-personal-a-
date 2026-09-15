@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ULTRON 3D AVATAR</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #canvas-3d-wrapper {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #canvas-3d {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+        }
+        .drag-handle {
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 183, 0, 0.25);
+            border: 1px solid rgba(255, 183, 0, 0.7);
+            color: #ffd700;
+            border-radius: 10px;
+            padding: 3px 10px;
+            font-size: 9.5px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            cursor: move;
+            z-index: 100;
+            pointer-events: auto;
+            opacity: 0.85;
+            transition: opacity 0.2s, background 0.2s;
+            box-shadow: 0 0 8px rgba(255, 183, 0, 0.3);
+        }
+        .drag-handle:hover {
+            opacity: 1.0;
+            background: rgba(255, 183, 0, 0.5);
+        }
+    </style>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body class="theme-gold">
+    <div id="canvas-3d-wrapper">
+        <canvas id="canvas-3d"></canvas>
+    </div>
+    
+    <div class="drag-handle" id="drag-handle" title="Basılı tutup sürükleyin (Pencereyi Taşı)">⠿ TAŞI</div>
+
+    <script>
+        // Setup QWebChannel Bridge
+        window.pybridge = null;
+        if (typeof QWebChannel !== 'undefined' && typeof qt !== 'undefined') {
+            new QWebChannel(qt.webChannelTransport, function(channel) {
+                window.pybridge = channel.objects.pybridge;
+            });
+        }
+
+        // Window Drag & Touch Handler
+        (function() {
+            let isWinDragging = false;
+            let lastX = 0, lastY = 0;
+            let clickTimer = null;
+            let clickCount = 0;
+
+            const handle = document.getElementById('drag-handle');
+            const wrapper = document.getElementById('canvas-3d-wrapper');
+
+            function startWinDrag(e) {
+                isWinDragging = true;
+                lastX = e.screenX;
+                lastY = e.screenY;
+                if (e.setPointerCapture) handle.setPointerCapture(e.pointerId);
+            }
+
+            function moveWinDrag(e) {
+                if (!isWinDragging) return;
+                const dx = e.screenX - lastX;
+                const dy = e.screenY - lastY;
+                lastX = e.screenX;
+                lastY = e.screenY;
+
+                if (window.pybridge && (dx !== 0 || dy !== 0)) {
+                    window.pybridge.move_window_by(dx, dy);
+                }
+            }
+
+            function stopWinDrag(e) {
+                isWinDragging = false;
+            }
+
+            handle.addEventListener('pointerdown', startWinDrag);
+            window.addEventListener('pointermove', function(e) {
+                moveWinDrag(e);
+                window.ultronMousePos = { x: e.screenX, y: e.screenY };
+            });
+            window.addEventListener('pointerup', stopWinDrag);
+
+            // 📄 Drag & Drop File Lens Handler
+            window.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            window.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    var file = e.dataTransfer.files[0];
+                    var path = file.path || file.name;
+                    if (window.pybridge && path) {
+                        window.pybridge.handle_dropped_file(path);
+                    }
+                }
+            });
+
+            // Canvas Click / Double Click Routing
+            wrapper.addEventListener('click', function(e) {
+                clickCount++;
+                if (clickCount === 1) {
+                    clickTimer = setTimeout(function() {
+                        clickCount = 0;
+                        if (window.pybridge) window.pybridge.toggle_chat_bubble();
+                    }, 250);
+                } else if (clickCount === 2) {
+                    clearTimeout(clickTimer);
+                    clickCount = 0;
+                    if (window.pybridge) window.pybridge.toggle_main_window();
+                }
+            });
+
+            // Right-click drag on canvas also moves window!
+            wrapper.addEventListener('pointerdown', function(e) {
+                if (e.button === 2 || e.shiftKey) { // Right click or Shift+Click
+                    startWinDrag(e);
+                }
+            });
+        })();
+    </script>
+
+    <script src="js/three_core.js"></script>
+</body>
+</html>

@@ -546,7 +546,29 @@ class TestKeyboardInput(unittest.TestCase):
         self.assertEqual(level4_input.yaziyi_kacir("%50 +1 ^x"), "{%}50 {+}1 {^}x")
         status, msg = level4_input.send_keyboard_input("yaz: %50 indirim")
         self.assertTrue(status)
-        self.assertIn("{%}50", msg)
+        self.assertIn("%50 indirim", msg)
+
+    # -- REGRESYON: dolgu temizleme metnin İÇİNİ kesiyordu ------------------
+    def test_yazilacak_metin_kesilmez(self):
+        """'bas' ⊂ 'basit', 'yap' ⊂ 'yapabilir' — kelime sınırsız temizlik
+        metnin gerisini uçuruyordu ("yaz: basit bir deneme" → "yaz:")."""
+        from core.interaction import level4_input
+        for cumle, beklenen in (
+            ("yaz: basit bir deneme", "basit bir deneme"),
+            ("yaz: toplantıyı yapabilir miyiz", "toplantıyı yapabilir miyiz"),
+            ("yaz: raporu gönderdim", "raporu gönderdim"),
+        ):
+            with self.subTest(cumle=cumle):
+                status, msg = level4_input.send_keyboard_input(cumle)
+                self.assertTrue(status)
+                self.assertIn(beklenen, msg)
+
+    def test_sohbet_istegi_klavyeye_gitmez(self):
+        """"bana bir şiir yaz ve gönder" şiir istemektir, tuş komutu değil."""
+        for cumle in ("bana bir şiir yaz ve gönder", "rapor yaz ve bana gönder",
+                      "özet yaz ve telegrama gönder"):
+            self.assertNotEqual(self._intent(cumle), "KEYBOARD_INPUT",
+                                f"'{cumle}' aktif pencereye yazılacaktı")
 
     def test_onayli_klavye_komutu_dogru_module_gider(self):
         import features.confirmed_executor as ce

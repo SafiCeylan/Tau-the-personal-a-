@@ -65,8 +65,9 @@ def tiklama_hedefi_coz(mesaj):
         hedef = re.sub(r"['’](?:e|a|ye|ya|ne|na|i|ı|u|ü)$", "", hedef, flags=re.IGNORECASE).strip()
         if not hedef:
             continue
-        # Tuş adıysa bu KLAVYE komutudur, bize ait değil
-        if hedef.lower() in _TUS_ADLARI or '+' in hedef:
+        # Tuş adıysa veya klavye komutuyken (yaz, type, enter) bu KLAVYE komutudur, bize ait değil
+        if (hedef.lower() in _TUS_ADLARI or '+' in hedef or 
+            re.search(r'\b(yaz|type|enter|space|boşluk|bosluk|tab|esc)\b', hedef, re.IGNORECASE)):
             return None
         return hedef
 
@@ -76,7 +77,10 @@ def tiklama_hedefi_coz(mesaj):
         temiz = re.sub(r"\s*(?:['’]?(?:e|a|ye|ya|ne|na|i|ı|u|ü))?\s*" + _NESNE + r"\s*" + _FIIL + r"\s*$", "", temiz, flags=re.IGNORECASE).strip(" '\"`’“”\t")
         temiz = re.sub(r"['’](?:e|a|ye|ya|ne|na|i|ı|u|ü)$", "", temiz, flags=re.IGNORECASE).strip()
 
-        if temiz and temiz.lower() not in _TUS_ADLARI and '+' not in temiz:
+        if (temiz and 
+            temiz.lower() not in _TUS_ADLARI and 
+            '+' not in temiz and 
+            not re.search(r'\b(yaz|type|enter|space|boşluk|bosluk|tab|esc)\b', temiz, re.IGNORECASE)):
             return temiz
 
     return None

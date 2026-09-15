@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 class SidebarWidget(QFrame):
     page_changed = pyqtSignal(int)
     new_chat_requested = pyqtSignal()
+    avatar_toggle_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -87,6 +88,30 @@ class SidebarWidget(QFrame):
         """)
         self.new_chat_btn.clicked.connect(self.new_chat_requested.emit)
         layout.addWidget(self.new_chat_btn)
+
+        # Desktop Avatar Toggle Button
+        self.avatar_btn = QPushButton("👾  MASAÜSTÜ AVATARI (AÇ/KAPAT)")
+        self.avatar_btn.setCursor(Qt.PointingHandCursor)
+        self.avatar_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 240, 255, 0.12);
+                color: #00f0ff;
+                border: 1px solid rgba(0, 240, 255, 0.4);
+                border-radius: 8px;
+                padding: 8px 10px;
+                font-weight: 800;
+                font-size: 11px;
+                letter-spacing: 0.5px;
+                text-align: center;
+            }
+            QPushButton:hover {
+                background: rgba(0, 240, 255, 0.28);
+                border-color: #00f0ff;
+                color: #ffffff;
+            }
+        """)
+        self.avatar_btn.clicked.connect(self.avatar_toggle_requested.emit)
+        layout.addWidget(self.avatar_btn)
 
         layout.addSpacing(6)
 

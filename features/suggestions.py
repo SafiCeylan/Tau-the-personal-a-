@@ -388,3 +388,16 @@ def durum(db_cursor=None) -> dict:
         }
     except Exception:
         return {'bekleyen': 0, 'kabul': 0, 'red': 0}
+
+
+def tek_satir_oneri_sun(db_cursor=None) -> str:
+    """Rapor veya brifing altına tek satırlık proaktif öneri ekler."""
+    try:
+        liste = oneriler(db_cursor=db_cursor)
+        if not liste:
+            return ""
+        o = liste[0]
+        return f"\n\n💡 **Günün Önerisi:** {o['baslik']} ('1. öneriyi uygula' diyerek aktifleştirebilirsiniz)."
+    except Exception:
+        return ""
+
