@@ -89,7 +89,17 @@ features/
   custom_shortcuts.py        Kullanıcının canlı eklediği özel kısayollar (JSON)
   confirmed_executor.py      Onaylanan komutu DOĞRU modüle yönlendirir (WA/mail/sistem)
   quick_tools.py             Hesap makinesi (AST, eval YOK) · saat/tarih · sayaç · notlar
-  actions/system_control.py  Ses, uygulama aç/kapat, süreç, telemetri, UWP (shell:AppsFolder)
+  actions/system_control.py  Ses, uygulama aç/kapat, süreç, telemetri, UWP (shell:AppsFolder),
+                             pencere odaklama/listeleme (`pencereye_gec`, EnumWindows)
+  actions/media_deep.py      🎵 WinRT medya oturumu (çalan şarkı) + Spotify URI + lrclib sözler
+  background_apps.py         📱 Arka plan uygulama listesi + numarayla/isimle kapatma.
+                             Katil SADECE açık kapatma komutuyla çalışır (tuzaklara bak)
+  screen_watcher.py          👁️ Ekranda metin belirince/kaybolunca uyarır (OCR + pencere başlığı)
+  finance_tracker.py         💰 Harcama kaydı + bütçe özeti. Para KURUŞ (INTEGER) saklanır,
+                             Türkçe binlik ayracı özel ayrıştırılır (tuzaklara bak)
+  proactive_events.py        🔔 Yaklaşan takvim etkinliği + mola uyarısı. `_autonomous_tick`'ten
+                             çağrılır; mola sayacı GERÇEK hareketsizliğe bakar (GetLastInputInfo)
+  webhook_api.py             🌐 Yerel HTTP API (iOS Kısayollar / Tasker / Home Assistant)
   actions/whatsapp_control.py  whatsapp://send + UIA "Gönder" + odak korumalı Enter + doğrulama
   email_control.py           Gmail SMTP + email_kisiler rehberi
   telegram_bridge.py         Saf requests long-polling (kütüphanesiz), whitelist, inline onay
@@ -108,7 +118,11 @@ features/
 ui/
   tau_window.py              Ana pencere + tüm thread'ler + AssistantController (~70 KB, en büyük dosya)
   components/                chat_view, sidebar, settings_view, stats_view, mood_view,
-                             memory_view, reminders_view, modes_view, ultron_focus_view
+                             memory_view, reminders_view, modes_view, ultron_focus_view,
+                             floating_avatar (masaüstü avatarı + hızlı eylem barı),
+                             floating_chat_bubble
+  focus_web/avatar.html      Avatarın 3D WebGL sahnesi (three_core.js; durum
+                             `window.ultronCoreState` ile verilir)
   styles/theme.py            ULTRON kırmızı tema (#ff1a26 / #060305)
   ai_core_widget.py          QPainter holografik çekirdek animasyonu
 database/schema.sql          bilgiler · kategoriler · sohbet_gecmisi · ogrenme_metrikleri ·
@@ -125,19 +139,30 @@ archive/                     Ölü modüller ve eski web-view arayüzler (kullan
 `CURRENCY` · `CREATE_REMINDER` · `SCHEDULE_TASK` · `WHATSAPP_MESSAGE` · `EMAIL_MESSAGE` ·
 `FILE_TRANSFER` · `FILE_INDEX` · `FILE_SEARCH` · `FILE_OPERATION` · `SCREENSHOT` · `CLIPBOARD` ·
 `FOCUS_MODE` · `NOTE_TAKE` · `TIMER` · `CALCULATOR` · `TIME_DATE` · `KEYBOARD_INPUT` ·
-`MORNING_BRIEFING` · `EVENING_REPORT` · `ANALYSIS_REPORT` · `LEARNING_REPORT` ·
-`GENERAL_CONVERSATION`
+`SCREEN_READ` · `SCREEN_SELECT` · `SCREEN_CLICK` · `SCREEN_WATCH` · `DUPLEX_VOICE` ·
+`WINDOW_FOCUS` · `CALENDAR` · `MORNING_BRIEFING` · `EVENING_REPORT` · `ANALYSIS_REPORT` ·
+`LEARNING_REPORT` · `FINANCE_TRACK` · `GENERAL_CONVERSATION`
 
 > **Sıra önemlidir.**
 > • `LEARNING_REPORT` ("ne öğrendin", "şunu unut: …", "önerilerin", "1. öneriyi uygula")
 >   dosya niyetinden ÖNCE bakılır — "öğrendiklerini göster" cümlesindeki "göster"
 >   fiili dosya aramasına benziyor.
+> • `WINDOW_FOCUS`, `FILE_TRANSFER`'dan ÖNCE gelir — "Telegram'a geç" dosya gönderme
+>   niyetine benziyor ve oraya düşüyordu. Kapı dar (`pencere_odak_niyeti_mi`): hedef ya
+>   "pencere" kelimesi taşır ya da BİLİNEN bir uygulamadır. Yoksa "şarkıyı geç" de
+>   pencere komutu sayılırdı.
 > • `FILE_SEARCH`, `SYSTEM_CONTROL`'dan ÖNCE gelmeli (yoksa "pdf aç" uygulama açmaya çalışır).
 > • `FILE_TRANSFER`, `WHATSAPP_MESSAGE`/`EMAIL_MESSAGE`'dan ÖNCE bakılır — "staj raporunu
 >   anneme mail at" ikisine birden benziyor. Çakışmayı `dosya_niyeti_coz` çözer: cümlede
 >   güçlü dosya sinyali yoksa (dosya/tür/numara/klasör kelimesi) karar **indekse** sorulur;
 >   eşleşme yoksa niyet ALINMAZ ve mesaj akışı bozulmaz. `:` veya "mesaj" geçen cümleler
 >   zaten dosya komutu sayılmaz.
+> • `SCREEN_WATCH` ve `DUPLEX_VOICE`, `MEDIA_CONTROL`'den ÖNCE bakılır. İkisi de çok
+>   kelimeli açık kalıplar; medya komutu çalamazlar. Tersi doğru değildi (bkz. tuzaklar:
+>   "Medya listesine çıplak fiil yazma").
+>
+> **Sıra testle kilitli:** `tests/test_intent_routing.py` — cümle → beklenen niyet
+> tablosu. Yeni kalıp eklerken başkasının cümlesini çalıyorsan orada görürsün.
 
 ---
 
@@ -212,6 +237,22 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 | **Aynı iş için tek öneri** | "Ekran görüntüsü" (49 kez) ve "ekran görüntüsü al" (17 kez) aynı şeyin iki söyleyişi; ikisini birden sormak listeyi çöpe çevirir. Kısayol önerisi **niyet başına bir tane** (en sık söyleyiş kazanır), zamanlama önerisi varsa kısayol hiç sorulmaz. |
 | **Ruh hâli prompt'a girmez** | Arşivdeki duygu damgası RAPORA girer, `profil_satirlari`'na (prompt) girmez. Modele "kullanıcı gergin" demek onu terapiste çevirir; küçük model zaten yoruma hevesli. Yoğunlaşma yoksa (dilim payı <%50) örüntü olarak da sunulmaz. |
 | **Zırh JSON'u da korur** | `tests/safety.py` artık `suggestions._dosya_yolu` ve `custom_shortcuts._dosya_yolu` yamalıyor. Öğrenme raporu öneri ürettiği için raporu çağıran her test gösterilen listeyi diske yazıyordu; kısayol önerisini kabul eden bir test kullanıcının menüsüne gerçek buton ekliyordu. |
+| **Birim testi yönlendirmeyi KANITLAMAZ** | 12 Ağu'da 8 yeni özelliğin testleri yeşildi ama yarısı çalışmıyordu: testler fonksiyonu DOĞRUDAN çağırıyordu, hata ise cümlenin o fonksiyona ULAŞMASINDAydı. **Yeni yetenek eklerken `tests/test_intent_routing.py` tablosuna satır ekle** — "fonksiyon doğru çalışıyor" ile "komut oraya gidiyor" ayrı iki iddiadır. |
+| **Medya listesine çıplak fiil yazma** | `medya_komutu_algila` listesine çıplak `"başlat"`/`"oynat"` eklenmişti. MEDIA_CONTROL zincirde SCREEN_WATCH/DUPLEX_VOICE/SYSTEM_CONTROL'den ÖNCE bakıldığı için "chrome başlat", "ekran takibini başlat", "canlı sesli sohbeti başlat" hepsi medyaya kaçtı (üstelik eskiden çalışan uygulama açma bozuldu). Bağlamlı yaz: "müziği başlat", "şarkıyı oynat". |
+| **"Bekleyen soru" bayrağı KALICI olamaz** | Arka plan katilinde bayrak bir kez açılınca SYSTEM_CONTROL'e düşen HER mesaj katile giriyordu; içeride de cümledeki herhangi bir 1-2 haneli sayı liste indeksi sayılıyordu. Ölçülen sonuç: **"saat 3'te hatırlat" → listedeki 3. uygulama (ChatGPT) kapandı**; "chrome aç" (Chrome açıkken) Chrome'u öldürdü. Kural: bayrak TEK TURLUK, sayı yalnız kapatma fiiliyle geçerli, cümlede açma fiili varsa katil hiç denenmez. `tests/test_background_apps.py::test_masum_cumle_uygulama_oldurmez` kilitler. |
+| **`intent=`siz araç ÖLÜDÜR** | `@arac_kaydet(...)` çağrısında intent verilmezse `DEFTER.intent_ile()` o aracı asla bulamaz — kod var, ona giden yol yok. `pencereye_gec` böyle yazılmıştı: "Zen penceresine geç" GENERAL_CONVERSATION'a düştü. Araç yalnızca planner'ın seçmesi için varsa bunu yorumla belirt. |
+| **Dolgu temizliğinde kelime sınırı ŞART** | `send_keyboard_input` adım 3'ün deseni sınırsız + `.*$` idi: `bas` ⊂ **bas**it, `yap` ⊂ **yap**abilir. "yaz: basit bir deneme" → `yaz:` (metin tamamen uçtu). Ayrıca `yaz:` önekli cümlelerde metin KULLANICININ — dolgu temizliği hiç uygulanmaz. |
+| **Klavye kapısı geniş olamaz** | `.*\byaz\b.*\b(enter\|bas\|yap\|gönder)\b` kalıbı "bana bir şiir yaz ve gönder" cümlesini KEYBOARD_INPUT yaptı → Ultron şiiri yazmak yerine cümleyi aktif pencereye tuşladı. Serbest metin kalıbı **tuş adıyla bitmeli**. |
+| **Worker thread'de QTimer ateşlemez** | Duplex ses döngüsü `QTimer.singleShot`'ı `FuncWorkerThread` içinde kuruyordu; `run()` `exec()` çağırmadığı için o thread'de event loop yok → timer HİÇ çalışmadı (üstelik hedef slot UI'ye dokunuyor). UI'ye dönecek her tetik `finished_signal` ile ana thread'e taşınır. |
+| **Ekran takipçisi kendi ekranını okur** | Tam ekran OCR, Ultron'un sohbet penceresini de okur; kullanıcının komutu ("ekranda Claude açılınca haber ver") ve Ultron'un cevabı orada YAZILI durur → takip ilk taramada kendini tetikliyordu. İki koruma: eşleşme koordinatı Ultron penceresi içindeyse yok sayılır, ve alarm DURUMDA değil GEÇİŞTE verilir (ilk tarama temel çekimdir). |
+| **Süreç kapatmada tam ad** | `surec_kapat` alt dizi eşleşiyordu: "zen" → `citizen.exe`. Eşleşme tam addır; alt dizi yalnızca `parcali=True` ile (Docker gibi süreç aileleri) açılır. `taskkill`'de `/T` de kaldırıldı — hedefin başlattığı alakasız süreçleri götürüyordu. |
+| **Türkçe binlik ayracı** | Türkçede binlik ayracı NOKTA, ondalık VİRGÜLDÜR. Naif `replace(",", ".")` ölçülen şu hataları verdi: `"1.200 TL"` → **1,20 TL** · `"12.500 TL"` → **12,50 TL** · `"1.250,75"` → **250,75**. Sessiz para hatasıdır — kullanıcı yanlış bütçeyi doğru sanar. `finance_tracker.turkce_para_coz` bu yüzden var, `tests/test_finance_tracker.py` biçimleri kilitler. |
+| **Para kuruş saklanır** | `REAL` ile 0.1+0.2 != 0.3; yüzlerce kayıtta toplam ile kalemler tutmaz ve bütçe rakamı güvenilmez olur. DB'ye `miktar_kurus` (INTEGER) yazılır, ekrana TL basılır. Kullanıcının Kese projesindeki kuralla aynı. |
+| **`with sqlite3.connect()` KAPATMAZ** | O bağlam yöneticisi işlemi (transaction) yönetir, bağlantıyı **kapatmaz**. `proactive_events` otonom döngüden 30 sn'de bir çağrılıyor → günde binlerce açık dosya tanıtıcısı. Windows'ta açık tanıtıcı ayrıca dosya silmeyi engeller (testte `PermissionError [WinError 32]` olarak yakalandı). `try/finally: conn.close()` kullan. |
+| **Prompt'a yalnız CANLIDA BAĞLI yetenek yazılır** | PromptGenerator'daki "GERÇEK YETENEKLERİN" listesine "Webhook API ile iOS Kısayollar/Tasker entegrasyonu" satırı eklenmişti, oysa `features/webhook_api.py` hiçbir yerden başlatılmıyordu. Model o satırı okuyup sahip olmadığı özelliği anlatıyordu. **Projenin tüm halüsinasyon frenleri, prompt'un kendisi yalan söylerse boşa gider.** Yeni satır eklerken "bu bugün canlıda çalışıyor mu?" sorusunu geçmeli. |
+| **Regex sabitini birleştirirken gruplama ŞART** | `_SAYI` sabiti `A|B` biçimindeydi ve başka desenlere eklenerek birleştiriliyordu. `|` ÜST SEVİYEDE böldüğü için desen "herhangi bir sayı"ya dönüştü → **"3'ü kapat" FINANCE_TRACK'e düştü** (uygulama kapatma bozuldu). Birleştirilecek her sabit `(?:...)` ile sarılır. `tests/test_intent_routing.py` kilitler. |
+| **Proaktif uyarı ÖLÇÜME dayanmalı** | Mola sayacı modül **import anında** başlıyordu: uygulama sabah açıldıysa kullanıcı bilgisayarın başında olmasa bile 2 saat sonra "2 saattir kesintisiz çalışıyorsun" diyordu — söylediği şey ölçülmüş bir gerçek değil, açılıştan beri geçen süreydi. Artık `GetLastInputInfo` okunur; ölçülemiyorsa (Windows dışı) uyarı **hiç verilmez**. Yanlış zamanlı sağlık uyarısı asistanı dırdıra çevirir ("reddedilen geri gelmez" ile aynı gerekçe). |
+| **Aynı sınıfta çift metot** | `tau_window.py`'de `_set_ai_state` İKİ kez tanımlıydı; Python sessizce ikincisini kullanır. Davranış "doğru" görünür ama biri ölü koddur ve bir sonraki oturumda yanlışını düzenlersin. Yeni metot eklerken adını dosyada ara. |
 
 ---
 
@@ -230,7 +271,23 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 
 ---
 
-## 📊 Durum (son güncelleme: 5 Ağu 2026)
+## 📊 Durum (son güncelleme: 15 Eyl 2026 — bir aylık birikmiş iş commit edildi)
+
+### 🆕 15 Eyl — komple elden geçirme
+Bir aydır commit edilmeden duran tüm iş (`ad399c4`, 40 dosya / +4137 satır) commit edildi.
+Denetimde **ölçülen** 6 hata düzeltildi: Türkçe para ayrıştırma, zaman penceresiz harcama
+özeti, yarım kategori filtresi, SQLite bağlantı sızıntısı, prompt'taki olmayan yetenek,
+mola sayacının import anında başlaması. Ölü kod temizlendi (Telegram sesli yanıt üçlüsü).
+**`features/proactive_events.py` canlıya bağlandı.** 684 test yeşil.
+
+5 Ağu'dan kalan **CLAUDE.md ↔ AGENTS.md ikiz borcu kapatıldı**: OCR ve Takvim bölümleri ile 4/5/6 Ağu ve 1 Eyl günlük satırları yalnızca AGENTS.md'de duruyordu, artık ikisi de aynı.
+
+⚠️ `features/webhook_api.py` **hâlâ bağlı değil** — token + Origin kontrolü eklenmeden
+başlatılmamalı (kimlik doğrulaması yok: makinedeki herhangi bir süreç ve ziyaret edilen
+herhangi bir web sayfası komut gönderebilir).
+
+⚠️ `tests/test_all_features.py::test_search_execution_wikipedia` **ağa çıkıyor** ve yük
+altında kırılgan; izole çalıştığında geçiyor. "684 yeşil" derken bunu hesaba kat.
 
 ### ✅ Çalışan ve canlıda doğrulanmış
 WhatsApp gönderimi · Gmail gönderimi · Telegram köprüsü (@Ultrontau_bot: metin, sesli mesaj,
@@ -242,6 +299,16 @@ streaming LLM yanıtı · istatistik sayfası · system tray · tek kopya kilidi
 **öneri motoru (alışkanlıktan zamanlanmış görev / kısayol)** ·
 **👁️ OCR ekran okuma & tıklama (Windows.Media.Ocr)** ·
 **📅 Takvim entegrasyonu (Yerel DB + Keysiz ICS aboneliği)**.
+
+### 🆕 12 Ağu özellik paketi — düzeltildi, **canlı doğrulama kullanıcıda**
+Arka plan uygulama yönetimi · pencere geçişi/listeleme · derin medya (WinRT çalan şarkı,
+Spotify URI, lrclib sözler) · akıllı ekran takipçisi · canlı çift yönlü sesli sohbet ·
+masaüstü avatarı + 1-tık hızlı eylem barı · donanım seviyesi yazma/kısayollar.
+
+13 Ağu'da tamamı incelendi; 13 bulgunun hepsi düzeltildi ve `tests/test_intent_routing.py`
+ile kilitlendi (658 test yeşil). **Ama bunlar henüz kullanıcı tarafından canlıda
+denenmedi** — "test yeşil" ile "canlıda çalışıyor" bu projede ayrı iki iddia
+(12 Ağu paketinin testleri de yeşildi, özelliklerin yarısı çalışmıyordu).
 
 ⚠️ **exe GÜNCEL DEĞİL** (28 Tem derlemesi): 30–31 Tem, 3 Ağu ve 4-5 Ağu işleri (uzaktan klavye,
 Telegram hızlı butonlar, özel kısayollar, öğrenme katmanı, öneri motoru, OCR, Takvim)
@@ -323,7 +390,12 @@ istenmeyen bir yan etkidir.
 
 | Tarih | Yapılan | Sonuç |
 |-------|---------|-------|
-| 5 Ağu (2) | **📦 GIT SYNC + README:** 4–5 Ağu'nun commit'siz duran tüm işi commit edildi (`cf31002`: takvim, planner revizyonu, pencere odaklama, OCR fiksleri, koyu başlık çubuğu — 26 dosya / +2579 satır) ve `origin/main`'e pushlandı. `README.md` v3.0 durumuna göre baştan yazıldı (`d01897d`): yetenek listesi, 14 katmanlı mimari, AIP fallback zinciri, config tablosu, test talimatı. **NOT: CLAUDE.md ↔ AGENTS.md ikizleri ayrıştı** — bu dosyadaki OCR/Takvim bölümleri ve 4 Ağu satırı CLAUDE.md'de yok; bir sonraki oturumda senkronlanmalı | ✅ Repo temiz, 631 test yeşil |
+| 1 Eyl | **🚀 GÜNLÜK HAYAT ENTEGRASYON PAKETİ & 6 YENİ YETENEK + OTOMATİK DERLEME.** Kullanıcının "hepsini ekle, her adımda test et açıklarını bul ve düzelterek ekle" talimatı üzerine 6 yeni modül ve sistem entegrasyonu aşamalı inşa edildi. **(1) Finans & Bütçe Takibi (`features/finance_tracker.py`):** `harcamalar` tablosu, `FINANCE_TRACK` niyeti, harcama kaydı ("markete 350 TL harcadım"), Türkçe ek toleransı (`\w*`) ve harcama özeti. **(2) Derleme & Dağıtım Otomasyonu (`build_and_deploy.py`):** `pyinstaller ULTRON.spec` derlemesini otomatize edip OneDrive dışındaki `C:\Users\memoc\UltronApp\ULTRON` klasörüne kopyalama. **(3) Yerel HTTP Webhook API (`features/webhook_api.py`):** iOS Shortcuts/Android Tasker/Home Assistant entegrasyonu için harici kütüphanesiz HTTP sunucusu (`8899` portu, `/api/command`, `/api/status`). **(4) Proaktif Olay Motoru (`features/proactive_events.py`):** Takvimde başlayacak toplantıya 15 dk kala otomatik bildirim, mola ve su içme uyarısı. **(5) Proaktif Öneri Entegrasyonu (`features/suggestions.py` & `briefing.py`):** Akşam ve sabah raporlarının sonuna tek satırlık aktif öneri kartı (`tek_satir_oneri_sun`). **(6) Telegram Çift Yönlü Sesli Yanıt (`features/telegram_bridge.py` & `speech.py`):** Telegram sesli mesajlarına Edge-TTS ile üretilen ses notu (`send_voice`) ile yanıt verme + `Optional` tip tanımı fiksi. **(7) Otomatik Süreç-Rutin Tetikleyici (`core/layers/routine_engine.py`):** VS Code (`code.exe`) / PyCharm açılınca çalışma moduna geçiş. ⚠️ **15 EYL DÜZELTMESİ:** bu oturumun işi commit EDİLMEDİ ve yazılan üç modülden ikisi (`webhook_api`, `proactive_events`) uygulamadan hiç çağrılmıyordu — testleri yeşildi ama özellik yoktu. Telegram sesli yanıt üçlüsü de (`send_voice`, `metni_sese_cevir_dosya`, `toggle_duplex_voice`) hiçbir yerden çağrılmıyordu. Ayrıca finans modülü Türkçe binlik ayracını yanlış okuyordu ("1.200 TL" → 1,20 TL). Hepsi 15 Eyl denetiminde yakalandı. | ⚠️ 671 test yeşildi ama **iddia ≠ gerçek** — bkz. 15 Eyl |
+| 15 Eyl | **🧹 KOMPLE ELDEN GEÇİRME + BİR AYLIK İŞİN COMMIT'İ.** Ulaşılabilirlik denetimi (import grafiği uygulamanın giriş noktasından yürütüldü): `webhook_api` ve `proactive_events` yazılmış, testleri yeşil, **uygulamadan hiç çağrılmıyordu** — 12 Ağu'daki hata sınıfının aynısı. Ölçülen bulgular: **(1)** prompt LLM'e olmayan webhook yeteneğini gerçek diye söylüyordu; **(2)** Türkçe binlik ayracı sessiz para hatası veriyordu (`"1.200 TL"` → 1,20 TL); **(3)** harcama özeti zaman penceresizdi (`tarih` sütunu + indeksi duruyordu, hiçbir sorgu kullanmıyordu); **(4)** kategori filtresi toplama uygulanıp dağılıma uygulanmıyordu; **(5)** `with sqlite3.connect()` bağlantı kapatmıyordu (30 sn'lik döngü → günde binlerce tanıtıcı); **(6)** mola sayacı import anında başlıyordu. Para kuruşa (INTEGER) geçirildi. Proaktif olaylar `_autonomous_tick`'e bağlandı (sohbet + toast + Telegram), mola `GetLastInputInfo` ile gerçek hareketsizliğe bağlandı. Ölü kod silindi: `telegram_bridge.send_voice`, `speech.metni_sese_cevir_dosya`, `speech.toggle_duplex_voice`. **Düzeltme sırasında kendi eklediğim regresyon** (`_SAYI` gruplanmamış → "3'ü kapat" FINANCE_TRACK'e düştü) yönlendirme tablosu tarafından yakalandı ve kilitlendi. Performans ölçüldü: açılış importu 2,78 sn (%62'si pygame), niyet yönlendirme 1,2 ms (sağlam), `chrome aç` 1212 ms'in 1200'ü sabit `sleep`, hava durumu 955 ms önbelleksiz | ✅ **684 test yeşil**, commit `ad399c4` |
+| 13 Ağu | **🔍 12 AĞU ÖZELLİK PAKETİNİN İNCELEMESİ + 13 DÜZELTME.** 8 yeni özellik (arka plan yönetimi, pencere geçişi, derin medya, ekran takibi, canlı sesli sohbet, avatar hızlı bar, donanım klavyesi, ekran özetleyici) okundu ve iddialar **ölçülerek** doğrulandı. 3 kritik + 3 yüksek + 7 orta bulgu çıktı, hepsi düzeltildi: **(1)** arka plan katili masum cümlede uygulama öldürüyordu (ölçüm: "saat 3'te hatırlat" → ChatGPT kapandı; "chrome aç" → Chrome öldü) → tek turluk bayrak + katı komut kalıbı + tek giriş noktası `arka_plan_komutu_isle`; **(2)** medya listesindeki çıplak "başlat"/"oynat" 4 komutu kaçırıyordu ("chrome başlat" dahil — eski özellik regresyonu); **(3)** klavye dolgu temizliği metni kesiyordu ("yaz: basit bir deneme" → "yaz:") ve "bana bir şiir yaz ve gönder" aktif pencereye tuşlanıyordu; **(4)** pencere geçişi özelliği tümüyle ölüydü (araç `intent=`siz kaydedilmiş, 5 komutun 5'i GENERAL_CONVERSATION/FILE_TRANSFER'a düşüyordu) → `WINDOW_FOCUS` niyeti; **(5)** duplex ses döngüsü worker thread'de QTimer kurduğu için hiç dönmüyordu + "hava **dur**umu" sohbeti kapatıyordu; **(6)** ekran takipçisi Ultron'un kendi sohbetini okuyup kendini tetikliyordu; ayrıca WinRT play/pause ayrımı, `surec_kapat` tam ad eşleşmesi, çift `_set_ai_state`, avatar `set_state`'in WebEngine'de sessiz kalması, 30 FPS boş timer, liste gürültüsü/numara kayması, ikiz mantık. **Yeni: `tests/test_intent_routing.py`** — cümle → niyet tablosu (30 satır). CLAUDE.md ↔ AGENTS.md ikizleri o gün hâlâ ayrıktı (OCR/Takvim bölümleri yalnızca AGENTS.md'deydi) — **15 Eyl'de senkronlandı** | ✅ **658 test yeşil** (önce 647), yönlendirme 30/30 |
+
+| 5 Ağu (2) | **📦 GIT SYNC + README:** 4–5 Ağu'nun commit'siz duran tüm işi commit edildi (`cf31002`: takvim, planner revizyonu, pencere odaklama, OCR fiksleri, koyu başlık çubuğu — 26 dosya / +2579 satır) ve `origin/main`'e pushlandı. `README.md` v3.0 durumuna göre baştan yazıldı (`d01897d`): yetenek listesi, 14 katmanlı mimari, AIP fallback zinciri, config tablosu, test talimatı. **NOT: CLAUDE.md ↔ AGENTS.md ikizleri ayrıştı** — AGENTS.md'deki OCR/Takvim bölümleri ve 4 Ağu satırı CLAUDE.md'de yoktu (15 Eyl'de kapatıldı) | ✅ Repo temiz, 631 test yeşil |
+| 6 Ağu | **👾 MASAÜSTÜ CANLI AVATAR (FLOATING HOLOGRAPHIC WIDGET):** `ui/components/floating_avatar.py` & `floating_chat_bubble.py` — masaüstünde süzülen, şeffaf arka planlı, sürüklenebilir, Odak Modu holografik çekirdeği (dış kutu kılıfı yok). Tek tıkla hızlı komut baloncuk girişi, çift tıkla ana pencere toggle, sağ tık tema/odak menüsü. `tau_window.py` ve sistem tepsisi entegrasyonu (`👾 Masaüstü Avatarı (Aç/Kapat)`). `tests/test_floating_avatar.py` (4 test) | ✅ **635 test yeşil** (20 sn) |
 | 5 Ağu | **🧠 PLANNER MOTORU REVİZYONU, TAKVİM, ODAK & OCR FİKSİ:** `core/planner.py` — `cok_adimli_olabilir` kapısına eylemsel bağlaç (`aç ve`, `yaz ve`, `oku ve`), sıra kelimeleri ve numaralı liste regex'leri eklendi. `PLANNER_ISTEMI` prompt'una 2/3 adımlı few-shot JSON örnekleri entegre edildi. `plan_executor.py` adımlar arası dinamik bağlam aktarımı (`birikmis_veri` → `bulunan_dosya` ikamesi). `features/calendar_tools.py` ICS senkronu. **🖥️ Pencere Odaklama Motoru (`core/world_state.py`):** `acik_pencereleri_listele`, `pencereyi_one_getir`, `uygun_pencereyi_odakla`. **👁️ Vision OCR Fiksi:** `metni_bul` yönelme ekleri ('1'yi aç' → '1'e'/'1') ve rakamlı hedeflerde ilk adaya (`sira=0`) otomatik tıklama kuralı. `KOMUTLAR.md` güncellemesi | ✅ **631 test yeşil** (20 sn) |
 | 4 Ağu | **👁️ OCR & ODAK FIX & DOĞAL DİL:** `features/screen_reader.py`, `screen_context.py`, `level3_ocr.py` (Windows.Media.Ocr ile model/internetsiz 0.2sn ekran okuma, "ekranda ne var" numaralı seçim listesi, yerel model gizlilik kuralı, AIP Level 3 Vision tıklama). Odak modu Web Overlay qwebchannel protocol fix + Chromium 83 CSS uyumu. Doğal dil niyet regex'leri & araç içi ayrıştırma düzeltmeleri (%75 → %100 niyet routing) | ✅ 455+ test yeşil + canlı doğrulandı |
 | 3 Ağu (2) | **💡 ÖĞRENME KATMANI FAZ 2:** `features/suggestions.py` — örüntüden zamanlanmış görev / kısayol önerisi (sorar, kurmaz; reddedilen geri gelmez; numara gösterilen sıradan çözülür). Arşive **ruh hâli damgası** + rapora ruh hâli bölümü (prompt'a girmez). İstatistik sayfasına 3 öğrenme kartı. `chat_learning`'e `ornek`/`saat` alanları — rapor artık ASCII değil kullanıcının kendi cümlesini gösteriyor. Zırha JSON durum dosyaları eklendi. `tests/test_suggestions.py` (26 test) + 6 ruh hâli testi. **Kullanıcının canlı testinde iki hata çıktı ve düzeltildi:** (1) `[Telegram] ` kanal öneki `ornek` üzerinden öneriye sızıyordu → `kanalsiz()`; (2) aynı iş için iki kısayol öneriliyordu → niyet başına tek. İkisi de teste bağlandı | ✅ **455 test yeşil** + canlı: alışkanlık → öneri → kabul → görev kuruldu, kurulan tekrar sorulmadı, "film önerilerin var mı" komuta dönüşmedi |
@@ -332,7 +404,7 @@ istenmeyen bir yan etkidir.
 | 31 Tem (2) | **⭐ Dinamik Özel Kısayol Yöneticisi:** `features/custom_shortcuts.py` (%APPDATA%\ULTRON\custom_shortcuts.json), `kısayol ekle/sil` komutları, dinamik Telegram menüsü (Codex oturumu) | ✅ 351 test yeşil |
 | 31 Tem | **📱 Telegram Hızlı Erişim Butonları & Slash Komutlar:** `hizli_klavye` + `set_bot_commands`, `/ekran` `/enter` `/brifing` `/menu` … (Codex oturumu) | ✅ 348 test yeşil |
 | 30 Tem | **⌨️ Uzaktan Klavye / Tuş Emülasyonu:** `level4_input.send_keyboard_input` (pywinauto + ctypes fallback), `klavye_tusu` aracı, `KEYBOARD_INPUT` niyeti ve güvenlik seviyesi (Codex oturumu) | ✅ 348 test yeşil |
-| 28 Tem | Proje baştan sona analiz edildi · Tüm commit'ler GitHub'a pushlandı (`846a100`) · `user_memory.py` ve `tau_backend.py` veri yolları `%APPDATA%\ULTRON` olarak güncellendi (`2e4369a`) · `AGENTS.md` güncellendi | ✅ 345 test yeşil, repo temiz ve güncel |
+| 28 Tem | Proje baştan sona analiz edildi · Tüm commit'ler GitHub'a pushlandı (`846a100`) · `user_memory.py` ve `tau_backend.py` veri yolları `%APPDATA%\ULTRON` olarak güncellendi (`2e4369a`) · proje hafızası (CLAUDE.md / AGENTS.md) güncellendi | ✅ 345 test yeşil, repo temiz ve güncel |
 |-------|---------|-------|
 | 22 Tem | Backend/thread/onay fixleri, UWP açma, tray, saat parser'ı, AIP kuruldu, WhatsApp gönderimi, sohbet kalıcılığı, brifing, e-posta, istatistikler, Telegram köprüsü, TTS+wake word, halüsinasyon frenleri, STT insanileştirme, internet/hava/döviz düzeltmeleri | ✅ Canlı doğrulandı |
 | 23 Tem | Otonom üçlü (zamanlanmış görevler + otomatik hafıza + dosya bulucu), tek kopya kilidi, mikrofon fallback, streaming, pano, pomodoro, tema cilası, **installer (371MB exe)**, Telegram süper paketi (ekran görüntüsü/sesli mesaj/dosya), KOMUTLAR.md | ✅ Commit `ef7cd79`'a kadar |

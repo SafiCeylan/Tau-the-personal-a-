@@ -416,12 +416,137 @@ yenile            → F5              tam ekran         → F11
 yeni sekme        → Ctrl+T          sekmeyi kapat     → Ctrl+W
 kapanan sekmeyi aç→ Ctrl+Shift+T    görev yöneticisi  → Ctrl+Shift+Esc
 alt tab           → Alt+Tab         masaüstüne dön    → Win+D
+diğer pencereye geç→ Alt+Tab        pencereyi kapat   → Alt+F4
+pencereyi küçült  → Win+↓           pencereyi büyüt   → Win+↑
 sayfa başına git  → Ctrl+Home       sayfa sonuna git  → Ctrl+End
 sayfa aşağı/yukarı→ PgDn / PgUp     yakınlaştır       → Ctrl++
 ```
 > `sesi kes` bir ses komutudur (Ctrl+X değil), `masaüstünü göster` dosya
 > listeleme komutudur — ikisi de bilerek bu tablonun dışında.
+> `Zen'e geç` bir PENCERE komutudur (Alt+Tab değil) — aşağıdaki bölüme bak.
 > Telegram'dan ekran görüntüsü alıp ekrandaki onay penceresini gördüğünde bu komutlarla uzaktan doğrudan yanıt verebilirsin.
 
 ---
+
+## 📱 ARKA PLAN UYGULAMALARI
+```
+arka planda ne çalışıyor       ← numaralı liste (RAM'iyle birlikte)
+çalışan uygulamalar neler
+3'ü kapat  ·  3 kapat          ← listedeki numaraya göre kapatır
+Notepad kapat                  ← isme göre kapatır
+Docker kapat                   ← Docker'ın tüm arka plan süreçlerini birlikte sonlandırır
+```
+> Her kapatmadan sonra **güncel liste tekrar gösterilir** — numaralar kaydığı için
+> "2'yi de kapat" derken ekrandaki yeni listeye bak.
+> "hayır" / "gerek yok" dersen kapatma sorusu kapanır.
+> ⚠️ Kapatma yalnızca AÇIK kapatma komutuyla olur: "chrome aç" uygulamayı açar,
+> "saat 3'te hatırlat" hiçbir şey kapatmaz.
+
+---
+
+## 🪟 AÇIK PENCERELER
+```
+açık pencereleri göster        ← numaralı liste
+hangi pencereler açık
+Zen penceresine geç  ·  Zen'e geç
+Chrome'a geç  ·  VS Code'a geç  ·  Telegram'a geç
+Notepad penceresini öne getir
+```
+> Pencere simge durumundaysa büyütülür ve en öne getirilir.
+
+---
+
+## 🎵 MÜZİK: ÇALMA, ÇALANI OKUMA, SÖZLER
+```
+Barış Manço Gülpembe çal       ← varsayılan tarayıcıda YouTube Music açar
+Gülpembe oynat
+müzik aç
+spotify'da Barış Manço çal     ← açıkça Spotify denince Spotify'da arar
+şu an ne çalıyor               ← WinRT medya oturumundan okur (Spotify/YouTube/VLC)
+çalan şarkı ne
+şarkı sözlerini bul: Gülpembe  ← lrclib'den çeker
+sözleri bul                    ← çalan şarkının sözleri
+```
+
+---
+
+## 👁️ AKILLI EKRAN TAKİPÇİSİ
+```
+ekranda Claude açılınca haber ver
+ekranda İndirme Bitti çıkınca uyar
+ekranda X kaybolunca haber ver
+ekran takip durumu
+ekran takibini durdur
+```
+> Hedef bulununca sesli + Telegram bildirimi gider.
+> Ultron'un KENDİ penceresi taranmaz ve alarm **değişimde** verilir: komutu yazdığın
+> anda ekranda duran kelime takibi tetiklemez.
+
+---
+
+## 🎙️ CANLI ÇİFT YÖNLÜ SESLİ SOHBET
+```
+canlı sesli sohbeti başlat     ← (veya avatarın altındaki 🎙️ butonu)
+sesli sohbeti kapat  ·  dur  ·  iptal
+```
+> Açıkken Ultron her yanıtından sonra dinlemeye geri döner.
+
+---
+
+## 👾 MASAÜSTÜ AVATARI (hızlı eylem barı)
+Kenar çubuğundaki **👾 MASAÜSTÜ AVATARI** düğmesi ya da tepsi menüsünden açılır.
+Avatarın altındaki kavisli bar:
+
+| Buton | Ne yapar |
+|-------|----------|
+| 💬 | Hızlı komut balonunu açar/kapatır |
+| 🎙️ | Canlı sesli sohbeti başlatır/kapatır |
+| ⏯️ | Müziği oynatır/duraklatır |
+| ⏭️ | Sonraki şarkı |
+| 👁️ | 3D imleç takip gözünü açar/kapatır |
+| 🎯 | Odak modunu (Pomodoro) başlatır |
+
+> Avatara tek tık → komut balonu · çift tık → ana pencere · sağ tık → tema/medya menüsü.
+> Avatara dosya sürükleyip bırakabilirsin (görsel → ekran okuma, diğer → oku ve özetle).
+
+---
+
+## 💰 FİNANS VE BÜTÇE TAKİBİ
+```
+KAYIT
+bugün markete 350 TL harcadım          ← kaydeder (kategori: market)
+benzine 1200 lira verdim                ← kaydeder (kategori: ulasim)
+yemeğe 200 TL ödedim                    ← kaydeder (kategori: yemek)
+kiraya 12.500 TL ödedim                 ← binlik ayraçlı tutar doğru okunur → 12.500,00 TL
+arabaya 1.250,75 TL harcadım            ← kuruş da doğru okunur → 1.250,75 TL
+
+ÖZET (dönem belirtebilirsin)
+bugün ne kadar harcadım                 ← sadece bugün
+bu hafta harcamalarım                   ← son 7 gün
+bu ayki harcamalarım nerede             ← içinde bulunulan ay
+bu yıl ne harcadım                      ← içinde bulunulan yıl
+tüm zamanların harcaması                ← baştan beri
+harcama özeti göster                    ← dönem demezsen VARSAYILAN: bu ay
+
+Telegram: /harcama  ·  💰 Harcama Özeti butonu
+```
+> **Not:** Türkçe yazımda binlik ayracı NOKTA, ondalık VİRGÜLDÜR — "1.200 TL" bin iki yüz
+> liradır, 1,20 lira değil. Ultron bunu doğru okur (`tests/test_finance_tracker.py` kilitler).
+> Para kuruş cinsinden (tam sayı) saklanır, kuruş kayması olmaz.
+
+---
+
+## 🌐 YEREL HTTP WEBHOOK API (Mobil & Akıllı Ev)
+
+> ⛔ **HENÜZ AKTİF DEĞİL.** Modül yazıldı ama uygulama onu başlatmıyor; kimlik
+> doğrulaması eklenene kadar da başlatılmamalı. Aşağısı hedeflenen arayüzdür.
+
+```
+GET  http://127.0.0.1:8899/api/status   ← Sistem ve API durumunu döner
+POST http://127.0.0.1:8899/api/command  ← POST JSON: {"command": "hava durumu"}
+```
+> iOS Kısayollar, Android Tasker ve Home Assistant entegrasyonu için tasarlandı.
+
+---
 *Bu dosya: `KOMUTLAR.md` — proje kökünde durur, yeni özellik eklendikçe güncellenir.*
+
