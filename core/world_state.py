@@ -241,3 +241,63 @@ def uygun_pencereyi_odakla(hedef_ipucu: str = None) -> dict:
         return {'durum': 'sor', 'adaylar': eslesenler}
 
     return {'durum': 'mevcut', 'adaylar': pencereler}
+
+
+# ---------------------------------------------------------------------------
+# PENCERE DEĞİŞİMİ BEKLEME — sabit uyku yerine yoklama
+# ---------------------------------------------------------------------------
+#
+# ⏱️ NEDEN VAR: `uygulama_calistir` uygulamayı başlattıktan sonra sabit
+#    `time.sleep(1.2)` yapıyordu. Ölçüm (15 Eyl): "chrome aç" komutunun toplam
+#    1212 ms'inin 1200 ms'i bu uykuydu — Chrome 300 ms'de açılsa da, zaten
+#    açık olsa da hep 1,2 sn bekleniyordu.
+#
+#    Beklemenin amacı pencerenin açılıp odağı almasıydı, o yüzden SÜREYİ değil
+#    OLAYI beklemek doğrusu: yeni bir pencere belirdi mi, ya da ön plandaki
+#    pencere değişti mi? İkincisi şart — uygulama zaten açıksa Windows yeni
+#    pencere yaratmaz, mevcut olanı öne getirir.
+#
+#    Tavan yine 1,2 sn: en kötü durum eskisiyle aynı, tipik durum çok daha hızlı.
+
+def pencere_durumu_al() -> tuple:
+    """(açık pencere hwnd kümesi, ön plandaki pencere) anlık görüntüsü."""
+    if sys.platform != 'win32':
+        return (frozenset(), 0)
+    try:
+        hwndler = frozenset(p['hwnd'] for p in acik_pencereleri_listele())
+        onplan = ctypes.windll.user32.GetForegroundWindow()
+        return (hwndler, onplan)
+    except Exception:
+        return (frozenset(), 0)
+
+
+def pencere_degisimini_bekle(onceki: tuple, tavan_sn: float = 1.2,
+                             aralik_sn: float = 0.05) -> float:
+    """Yeni pencere belirene ya da odak değişene kadar bekler.
+
+    Dönen: gerçekten beklenen saniye. Windows dışında 0.0 (beklemez).
+    """
+    if sys.platform != 'win32':
+        return 0.0
+
+    eski_hwndler, eski_onplan = onceki
+    basla = time.perf_counter()
+    while True:
+        gecen = time.perf_counter() - basla
+        if gecen >= tavan_sn:
+            return gecen
+        time.sleep(aralik_sn)
+        try:
+            yeni_hwndler, yeni_onplan = pencere_durumu_al()
+        except Exception:
+            return time.perf_counter() - basla
+        # Yeni pencere açıldı mı?
+        if yeni_hwndler - eski_hwndler:
+            break
+        # Zaten açıktı ve öne mi geldi?
+        if yeni_onplan and yeni_onplan != eski_onplan:
+            break
+
+    # Pencere belirdi; odağı alması için kısa bir yerleşme payı.
+    time.sleep(0.15)
+    return time.perf_counter() - basla

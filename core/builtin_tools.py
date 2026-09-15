@@ -450,7 +450,7 @@ def medya_derin_arac(metin="", **_):
     intent=("SYSTEM_CONTROL", "SET_VOLUME"),
 )
 def uygulama_calistir(metin="", uygulama=None, sarki=None, kanal="desktop", **_):
-    import time
+    from core import world_state
     # Planner/LLM kanonik parametre verdiyse regex'in anlayacağı komuta çevir.
     if sarki:
         komut = f"{sarki} çal"
@@ -458,9 +458,16 @@ def uygulama_calistir(metin="", uygulama=None, sarki=None, kanal="desktop", **_)
         komut = f"{uygulama} aç"
     else:
         komut = metin
+
+    # ⏱️ Anlık görüntü BAŞLATMADAN ÖNCE alınmalı — sonra alınırsa yeni pencereyi
+    #    "zaten vardı" sanar ve bekleme hiç bitmez. (EnumWindows ~1 ms, ucuz.)
+    onceki_pencereler = world_state.pencere_durumu_al()
+
     islendi, cevap = sistem_komutu_algila(komut, kanal=kanal)
     if islendi and cevap and ("başlatılıyor" in cevap or "açılıyor" in cevap):
-        time.sleep(1.2)  # Uygulamanın penceresini açıp odağı alması için bekleme
+        # Sabit `time.sleep(1.2)` yerine yoklama: pencere belirir belirmez döner.
+        # Ölçüm (15 Eyl): "chrome aç" 1212 ms sürüyordu, 1200 ms'i bu uykuydu.
+        world_state.pencere_degisimini_bekle(onceki_pencereler, tavan_sn=1.2)
     return AracSonuc.ok(cevap) if islendi else AracSonuc.islenmedi()
 
 

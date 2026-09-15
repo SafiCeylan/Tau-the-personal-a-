@@ -9,6 +9,8 @@ Sabah Brifingi — "günaydın" / "sabah brifingi" deyince tek mesajda:
 
 import json
 import os
+import threading
+import time
 import urllib.parse
 from datetime import datetime
 
@@ -70,7 +72,82 @@ def _konum():
     return r.get('lat'), r.get('lon'), r.get('city', '')
 
 
-def _hava_ozet_veri():
+# ---------------------------------------------------------------------------
+# AĞ ÖNBELLEĞİ — hava ve döviz
+# ---------------------------------------------------------------------------
+#
+# ⏱️ NEDEN: Ölçüm (15 Eyl) — "hava durumu nedir" komutu 955 ms sürüyordu ve
+#    tamamı ağ bekleyişiydi. Sabah brifingi hava + dövizi birlikte çağırdığı
+#    için ~2 sn açılıyordu. Hava 10 dakikada bir değişmez.
+#
+# 🔌 ÇEVRİMDIŞI DAVRANIŞ: Üretici başarısız olursa BAYAT kayıt döner (yaşıyla
+#    birlikte). Önceden internet yokken brifingin hava/döviz bölümü tamamen
+#    düşüyordu; artık "1 saat önce alınmış" notuyla geliyor. Eski bilgiyi
+#    yaşını SÖYLEYEREK vermek, hiç vermemekten iyidir — ama yaşını
+#    söylemeden vermek ikisinden de kötüdür.
+
+_ONBELLEK = {}
+_ONBELLEK_KILIDI = threading.Lock()
+
+# Hava ve döviz için tazelik süresi (saniye). Testler bunu kısaltabilir.
+TAZELIK_SN = 600
+
+
+def onbellegi_temizle():
+    """Testler ve 'zorla yenile' için."""
+    with _ONBELLEK_KILIDI:
+        _ONBELLEK.clear()
+
+
+def _yas_metni(yas_sn: float) -> str:
+    dk = int(yas_sn // 60)
+    if dk < 1:
+        return "az önce"
+    if dk < 60:
+        return f"{dk} dakika önce"
+    saat = dk // 60
+    return f"{saat} saat önce"
+
+
+def _onbellekli_cagir(ad: str, uretici, tazelik_sn: float = None):
+    """(deger, yas_sn) döner.
+
+    • Taze kayıt varsa ağa HİÇ gidilmez → yas_sn = 0.0
+    • Kayıt bayatsa üretici denenir; başarılıysa yenisi yazılır.
+    • Üretici başarısız/None ise BAYAT kayıt döner (yas_sn > 0).
+    • Hiç kayıt yoksa ve üretici başarısızsa (None, None).
+    """
+    if tazelik_sn is None:
+        tazelik_sn = TAZELIK_SN
+
+    with _ONBELLEK_KILIDI:
+        kayit = _ONBELLEK.get(ad)
+
+    simdi = time.time()
+    if kayit is not None:
+        yazma_zamani, deger = kayit
+        if simdi - yazma_zamani < tazelik_sn:
+            return deger, 0.0
+
+    try:
+        yeni = uretici()
+    except Exception as e:
+        print(f"[Ultron Önbellek] {ad} üretilemedi: {type(e).__name__}")
+        yeni = None
+
+    if yeni is not None:
+        with _ONBELLEK_KILIDI:
+            _ONBELLEK[ad] = (simdi, yeni)
+        return yeni, 0.0
+
+    # Üretim başarısız — elimizde bayat bir şey var mı?
+    if kayit is not None:
+        yazma_zamani, deger = kayit
+        return deger, simdi - yazma_zamani
+    return None, None
+
+
+def _hava_ozet_veri_ham():
     """
     Standart hava özeti: {'sehir', 'simdi': (desc, temp, feels), 'gunler': [(desc, min, max), ...]}
     Birincil kaynak Open-Meteo (stabil); düşerse wttr.in yedeği denenir.
@@ -136,9 +213,19 @@ def _hava_ozet_veri():
     return None
 
 
+def _hava_ozet_veri(tazelik_sn: float = None):
+    """Önbellekli hava verisi. (veri, yas_sn) döner; yas_sn > 0 ise BAYAT."""
+    return _onbellekli_cagir('hava', _hava_ozet_veri_ham, tazelik_sn)
+
+
+def _doviz(tazelik_sn: float = None):
+    """Önbellekli döviz satırı. (metin, yas_sn) döner; yas_sn > 0 ise BAYAT."""
+    return _onbellekli_cagir('doviz', _doviz_ham, tazelik_sn)
+
+
 def _hava_durumu():
     """Brifing için tek satırlık bugün özeti."""
-    v = _hava_ozet_veri()
+    v, yas = _hava_ozet_veri()
     if not v:
         return None
     desc, temp, feels = v['simdi']
@@ -146,15 +233,17 @@ def _hava_durumu():
     if v['gunler']:
         _, min_t, max_t = v['gunler'][0]
         satir += f" Bugün {min_t}° / {max_t}°C."
+    if yas:
+        satir += f" _({_yas_metni(yas)} alındı — servise şu an ulaşılamıyor)_"
     return satir
 
 
 def hava_raporu() -> str:
     """'Hava nasıl' sorularına doğrudan cevap. ASLA exception fırlatmaz."""
     try:
-        v = _hava_ozet_veri()
+        v, yas = _hava_ozet_veri()
     except Exception:
-        v = None
+        v, yas = None, None
     if not v:
         return "⚠️ Hava durumu servislerine şu an ulaşılamadı — birkaç dakika sonra tekrar deneyin."
 
@@ -165,19 +254,25 @@ def hava_raporu() -> str:
     for i, (g_desc, min_t, max_t) in enumerate(v['gunler'][:3]):
         ek = f", {g_desc}" if g_desc else ""
         satirlar.append(f"• {etiketler[i]}: {min_t}° / {max_t}°C{ek}")
+    if yas:
+        satirlar.append(f"_(⚠️ {_yas_metni(yas)} alınmış bilgi — servise şu an ulaşılamıyor)_")
     return "\n".join(satirlar)
 
 
 def doviz_raporu() -> str:
     """'Dolar kaç' sorularına doğrudan cevap."""
     try:
-        r = _doviz()
-        return r or "⚠️ Döviz servisine ulaşılamadı."
+        r, yas = _doviz()
     except Exception as e:
         return f"⚠️ Döviz servisine ulaşılamadı ({type(e).__name__})."
+    if not r:
+        return "⚠️ Döviz servisine ulaşılamadı."
+    if yas:
+        r += f" _(⚠️ {_yas_metni(yas)} alındı — servise şu an ulaşılamıyor)_"
+    return r
 
 
-def _doviz():
+def _doviz_ham():
     """USD bazlı kur tablosundan TRY ve EUR/TRY hesaplanır."""
     if requests is None:
         return None
