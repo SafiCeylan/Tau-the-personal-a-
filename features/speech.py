@@ -5,9 +5,26 @@ import threading
 import time
 import subprocess
 
-import speech_recognition as sr
-from gtts import gTTS
-import pygame
+# ⚡ AĞIR BAĞIMLILIKLAR BİLEREK ÜST SEVİYEDE DEĞİL.
+# Ölçüm (15 Eyl): `ui.tau_window` importu soğukta 2,78 sn sürüyordu; 1,74 sn'si
+# bu modül, 1,67 sn'si tek başına `pygame` (numpy + pkg_resources zincirini
+# çekiyor). pygame yalnızca mp3 çalmak, gTTS yalnızca yedek TTS, `sr` yalnızca
+# mikrofon için gerekli — hiçbiri açılışta lazım değil. Üçü de SADECE fonksiyon
+# içinde kullanılıyor, bu yüzden çağrı anına ertelendi (`_pg()` / `_sr()`).
+# Üst seviyeye geri taşırsan açılış ~2 sn yavaşlar; `tests/test_acilis_hizi.py`
+# bunu yakalar.
+
+
+def _pg():
+    """pygame'i ilk ses çalma anında yükler (sonraki çağrılar sys.modules'tan)."""
+    import pygame
+    return pygame
+
+
+def _sr():
+    """speech_recognition'ı ilk mikrofon kullanımında yükler."""
+    import speech_recognition
+    return speech_recognition
 
 # ---------------------------------------------------------------------------
 # TTS (Sesli Yanıt) — ULTRON cevaplarını okur
@@ -52,8 +69,8 @@ def tts_metin_temizle(text: str, max_cumle: int = 3, max_len: int = 400) -> str:
 def konusmayi_durdur():
     """Devam eden seslendirmeyi anında keser (thread'ler arası güvenli)."""
     try:
-        if pygame.mixer.get_init():
-            pygame.mixer.music.stop()
+        if _pg().mixer.get_init():
+            _pg().mixer.music.stop()
     except Exception:
         pass
     global _pyttsx3_engine
@@ -87,12 +104,12 @@ def seslendir(text: str, engine: str = 'edge'):
 def _mp3_cal(fname: str):
     """Üretilen mp3'ü çalar ve bitmesini bekler (durdurulabilir)."""
     with _tts_lock:
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        pygame.mixer.music.load(fname)
-        pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        pygame.time.Clock().tick(10)
+        if not _pg().mixer.get_init():
+            _pg().mixer.init()
+        _pg().mixer.music.load(fname)
+        _pg().mixer.music.play()
+    while _pg().mixer.music.get_busy():
+        _pg().time.Clock().tick(10)
 
 
 def _seslendir_edge(t: str):
@@ -112,7 +129,7 @@ def _seslendir_edge(t: str):
         _mp3_cal(fname)
     finally:
         try:
-            pygame.mixer.music.unload()
+            _pg().mixer.music.unload()
         except Exception:
             pass
         try:
@@ -140,19 +157,20 @@ def _seslendir_gtts(t: str):
     """Google TTS (internet gerekir, doğal Türkçe)."""
     fname = os.path.join(tempfile.gettempdir(), f'ultron_tts_{int(time.time() * 1000)}.mp3')
     try:
+        from gtts import gTTS
         gTTS(text=t, lang='tr', slow=False).save(fname)
         with _tts_lock:
-            if not pygame.mixer.get_init():
-                pygame.mixer.init()
-            pygame.mixer.music.load(fname)
-            pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
+            if not _pg().mixer.get_init():
+                _pg().mixer.init()
+            _pg().mixer.music.load(fname)
+            _pg().mixer.music.play()
+        while _pg().mixer.music.get_busy():
+            _pg().time.Clock().tick(10)
     except Exception as e:
         print(f"[Ultron TTS] Seslendirme hatası: {e}")
     finally:
         try:
-            pygame.mixer.music.unload()
+            _pg().mixer.music.unload()
         except Exception:
             pass
         try:
@@ -173,6 +191,7 @@ def text_to_speech(text, lang='tr'):
         
         # gTTS ile ses dosyası oluştur
         try:
+            from gtts import gTTS
             tts = gTTS(text=text, lang=lang, slow=False)
             tts.save(filename)
         except Exception as e:
@@ -181,15 +200,15 @@ def text_to_speech(text, lang='tr'):
 
         # 1. Yöntem: Pygame ile oynatmayı dene
         try:
-            pygame.mixer.init()
-            pygame.mixer.music.load(filename)
-            pygame.mixer.music.play()
+            _pg().mixer.init()
+            _pg().mixer.music.load(filename)
+            _pg().mixer.music.play()
             
             # Çalma bitene kadar bekle
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(10)
+            while _pg().mixer.music.get_busy():
+                _pg().time.Clock().tick(10)
                 
-            pygame.mixer.quit()
+            _pg().mixer.quit()
             
         except Exception as e:
             print(f"Pygame player hatası ({e}), sistem oynatıcısı deneniyor...")
@@ -224,11 +243,11 @@ def ogg_sesi_yaziya_cevir(ogg_path: str):
         data, rate = sf.read(ogg_path, dtype='int16')
         if getattr(data, 'ndim', 1) > 1:
             data = data[:, 0]
-        audio = sr.AudioData(data.tobytes(), rate, 2)
-        r = sr.Recognizer()
+        audio = _sr().AudioData(data.tobytes(), rate, 2)
+        r = _sr().Recognizer()
         text = r.recognize_google(audio, language='tr-TR')
         return (text or '').strip() or None
-    except sr.UnknownValueError:
+    except _sr().UnknownValueError:
         return None
     except Exception as e:
         print(f"[TAU STT] Sesli mesaj çözülemedi: {e}")
@@ -238,7 +257,7 @@ def ogg_sesi_yaziya_cevir(ogg_path: str):
 def dinle_ve_yaziya_cevir(device_index=None):
     """Mikrofondan sesi dinler ve yazıya çevirir (Online - Google).
     device_index: PortAudio aygıt indeksi (None/-1 = sistem varsayılanı)."""
-    r = sr.Recognizer()
+    r = _sr().Recognizer()
 
     r.dynamic_energy_threshold = True
     # İNSANCA DİNLEME AYARLARI:
@@ -253,7 +272,7 @@ def dinle_ve_yaziya_cevir(device_index=None):
     # Seçili mikrofon açılamazsa (BT kulaklık modu vb.) sistem varsayılanına düş
     if device_index is not None:
         try:
-            test_mic = sr.Microphone(device_index=device_index)
+            test_mic = _sr().Microphone(device_index=device_index)
             with test_mic as _s:
                 pass
         except Exception as e:
@@ -261,7 +280,7 @@ def dinle_ve_yaziya_cevir(device_index=None):
             device_index = None
 
     try:
-        with sr.Microphone(device_index=device_index) as source:
+        with _sr().Microphone(device_index=device_index) as source:
             print("Dinleniyor... (Konuşabilirsiniz)")
             # Ortam gürültüsünü hızlıca ölç (uzun tutunca dinlemeye geç başlıyor)
             r.adjust_for_ambient_noise(source, duration=0.6)
@@ -274,13 +293,13 @@ def dinle_ve_yaziya_cevir(device_index=None):
             print(f"Algılanan: {text}")
             return text.lower()
             
-    except sr.WaitTimeoutError:
+    except _sr().WaitTimeoutError:
         print("Zaman aşımı: Ses algılanamadı.")
         return None
-    except sr.UnknownValueError:
+    except _sr().UnknownValueError:
         print("Anlaşılamadı.")
         return None
-    except sr.RequestError as e:
+    except _sr().RequestError as e:
         print(f"Google Speech API hatası: {e}")
         return None
     except Exception as e:
