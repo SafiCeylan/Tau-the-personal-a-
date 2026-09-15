@@ -380,6 +380,23 @@ class SettingsViewWidget(QWidget):
             "    X-Ultron-Token: <token>\n\n"
             "Kaydettikten sonra alan tekrar gizlenir.")
 
+    @staticmethod
+    def _pozitif_sayi(metin, varsayilan: int) -> int:
+        """Metni pozitif tam sayıya çevirir; olmuyorsa varsayılana düşer.
+
+        ⚠️ BU METOT EKSİKTİ. `save_settings` onu 5 Ağu'dan (cf31002) beri
+        çağırıyordu ama hiç tanımlanmamıştı: Ayarlar'da "Kaydet"e basmak
+        `AttributeError` fırlatıyor, `config_saved` sinyali HİÇ gönderilmiyor
+        ve kullanıcı "kaydedildi" onayını bile görmüyordu — yani ~6 hafta
+        boyunca ayarlar kaydedilemedi. Ekranın hiç testi olmadığı için
+        kimse fark etmedi (`tests/test_settings_view.py` artık kilitliyor).
+        """
+        try:
+            deger = int(str(metin).strip())
+        except (TypeError, ValueError):
+            return varsayilan
+        return deger if deger > 0 else varsayilan
+
     def save_settings(self):
         new_config = dict(self.config)
         new_config.update({
