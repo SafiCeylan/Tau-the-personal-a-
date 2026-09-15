@@ -538,14 +538,38 @@ Telegram: /harcama  ·  💰 Harcama Özeti butonu
 
 ## 🌐 YEREL HTTP WEBHOOK API (Mobil & Akıllı Ev)
 
-> ⛔ **HENÜZ AKTİF DEĞİL.** Modül yazıldı ama uygulama onu başlatmıyor; kimlik
-> doğrulaması eklenene kadar da başlatılmamalı. Aşağısı hedeflenen arayüzdür.
+> **VARSAYILAN KAPALI.** Ayarlar → *Webhook API* kutusunu işaretle, *Üret* ile
+> token oluştur ve kaydet. Token olmadan sunucu başlamaz.
 
 ```
-GET  http://127.0.0.1:8899/api/status   ← Sistem ve API durumunu döner
-POST http://127.0.0.1:8899/api/command  ← POST JSON: {"command": "hava durumu"}
+GET  http://127.0.0.1:8899/api/status
+POST http://127.0.0.1:8899/api/command    gövde: {"command": "hava durumu"}
 ```
-> iOS Kısayollar, Android Tasker ve Home Assistant entegrasyonu için tasarlandı.
+
+Her istekte ŞU İKİSİ ZORUNLU:
+```
+X-Ultron-Token: <Ayarlar'dan aldığın token>
+Content-Type: application/json          (yalnız POST)
+```
+
+Örnek (curl):
+```
+curl -X POST http://127.0.0.1:8899/api/command ^
+     -H "X-Ultron-Token: TOKENIN" ^
+     -H "Content-Type: application/json" ^
+     -d "{\"command\": \"hava durumu\"}"
+```
+
+Cevap:
+```
+{"success": true, "intent": "WEATHER", "response": "...", "onay_bekliyor": false}
+```
+> `onay_bekliyor: true` ise komut RİSKLİ bulunmuştur ve **çalıştırılmamıştır** —
+> onayı Ultron penceresinden ya da Telegram'dan vermen gerekir.
+
+**Güvenlik:** yalnız `127.0.0.1` dinlenir (dışarıdan erişilemez). Tarayıcıdan
+gelen istekler (`Origin`/`Referer` taşıyanlar) doğru token'la bile reddedilir —
+zararlı bir web sayfasının arka planda Ultron'a komut göndermesini engeller.
 
 ---
 *Bu dosya: `KOMUTLAR.md` — proje kökünde durur, yeni özellik eklendikçe güncellenir.*

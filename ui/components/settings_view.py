@@ -118,6 +118,21 @@ class SettingsViewWidget(QWidget):
             str(self.config.get("takvim_hatirlatma_dk", 15)))
         self.takvim_hatirlatma_in.setPlaceholderText("Etkinlikten kaç dk önce uyarayım (0 = kapalı)")
 
+        # 🌐 Yerel Webhook API — VARSAYILAN KAPALI.
+        # Bu sunucu Ultron'a komut çalıştırır; token olmadan açılmaz.
+        self.webhook_check = QCheckBox(
+            "Yerel HTTP API (iOS Kısayollar / Tasker / Home Assistant)")
+        self.webhook_check.setChecked(bool(self.config.get("webhook_enabled", False)))
+        self.webhook_port_in = QLineEdit(str(self.config.get("webhook_port", 8899)))
+        self.webhook_port_in.setPlaceholderText("Varsayılan 8899 (yalnız 127.0.0.1)")
+        self.webhook_token_in = QLineEdit(self.config.get("webhook_token", "") or "")
+        self.webhook_token_in.setEchoMode(QLineEdit.Password)
+        self.webhook_token_in.setPlaceholderText(
+            "En az 16 karakter — 'Üret' ile rastgele oluştur")
+        self.webhook_token_btn = QPushButton("Üret")
+        self.webhook_token_btn.setToolTip("Yeni rastgele token üretir")
+        self.webhook_token_btn.clicked.connect(self._webhook_token_uret)
+
         form.addRow("Aktif AI Sağlayıcı:", self.provider_combo)
         form.addRow("Ollama Sunucu URL:", self.ollama_url_in)
         # Ollama model satırı: açılır menü + yükle/yenile butonu
@@ -146,6 +161,15 @@ class SettingsViewWidget(QWidget):
         form.addRow("Telegram Chat ID:", self.tg_chat_in)
         form.addRow("Takvim ICS Adresi:", self.takvim_ics_in)
         form.addRow("Takvim Ön-uyarı (dk):", self.takvim_hatirlatma_in)
+
+        form.addRow("Webhook API:", self.webhook_check)
+        form.addRow("Webhook Portu:", self.webhook_port_in)
+        webhook_row = QHBoxLayout()
+        webhook_row.addWidget(self.webhook_token_in, 1)
+        webhook_row.addWidget(self.webhook_token_btn)
+        webhook_kutu = QWidget()
+        webhook_kutu.setLayout(webhook_row)
+        form.addRow("Webhook Token:", webhook_kutu)
 
         # 🔊 Ses Ayarları
         self.tts_check = QCheckBox("Cevapları sesli oku")
@@ -345,6 +369,17 @@ class SettingsViewWidget(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Bağlantı Hatası", f"Sunucuya bağlanılamadı:\n{e}")
 
+    def _webhook_token_uret(self):
+        """Rastgele token üretir ve alana yazar (kullanıcı kopyalayabilsin diye görünür kılar)."""
+        from features.webhook_api import token_uret
+        self.webhook_token_in.setEchoMode(QLineEdit.Normal)
+        self.webhook_token_in.setText(token_uret())
+        QMessageBox.information(
+            self, "Token üretildi",
+            "Token alana yazıldı. Telefonundaki kısayola şu başlığı ekle:\n\n"
+            "    X-Ultron-Token: <token>\n\n"
+            "Kaydettikten sonra alan tekrar gizlenir.")
+
     def save_settings(self):
         new_config = dict(self.config)
         new_config.update({
@@ -368,6 +403,9 @@ class SettingsViewWidget(QWidget):
             "takvim_ics_url": self.takvim_ics_in.text().strip(),
             "takvim_hatirlatma_dk": self._pozitif_sayi(
                 self.takvim_hatirlatma_in.text(), 15),
+            "webhook_enabled": self.webhook_check.isChecked(),
+            "webhook_port": self._pozitif_sayi(self.webhook_port_in.text(), 8899),
+            "webhook_token": self.webhook_token_in.text().strip(),
         })
         new_config.setdefault("tau_timeout", 30)
         new_config.setdefault("tau_endpoint", "/chat")

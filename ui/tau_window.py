@@ -1163,6 +1163,9 @@ class TauMainWindow(QMainWindow):
         self.telegram_worker = None
         self._start_telegram_bridge()
 
+        # 🌐 Yerel webhook API (ayarlardan açıksa VE token varsa)
+        self._start_webhook_api()
+
         # 🎙️ "Hey Ultron" wake word (ayarlardan açıksa ve model kuruluysa)
         self.wake_worker = None
         self._start_wake_word()
@@ -2015,6 +2018,44 @@ class TauMainWindow(QMainWindow):
         self.telegram_worker = worker
         worker.start()
 
+    def _start_webhook_api(self):
+        """Yerel HTTP API'yi başlatır — VARSAYILAN KAPALI.
+
+        ⚠️ Bu sunucu Ultron'a komut çalıştırır. `webhook_api` üç kapı uygular
+        (token · Content-Type · Origin yok) ve token yoksa kendisi başlamaz;
+        buradan o kapıları atlatacak bir yol AÇMA.
+        """
+        try:
+            from features import webhook_api
+        except Exception as e:
+            print(f"[TAU] Webhook modülü yüklenemedi: {e}")
+            return
+
+        if not self.controller.config.get('webhook_enabled'):
+            return
+
+        token = (self.controller.config.get('webhook_token') or '').strip()
+        try:
+            port = int(self.controller.config.get('webhook_port') or
+                       webhook_api.VARSAYILAN_PORT)
+        except (TypeError, ValueError):
+            port = webhook_api.VARSAYILAN_PORT
+
+        basarili = webhook_api.start_webhook_server(
+            host='127.0.0.1', port=port, engine=self.controller.engine, token=token)
+        if not basarili:
+            self._post_assistant(
+                "⚠️ **Webhook API açılamadı.** Ayarlar'dan geçerli bir token üret "
+                "(en az 16 karakter) ve portun boş olduğundan emin ol.",
+                speak=False)
+
+    def _stop_webhook_api(self):
+        try:
+            from features import webhook_api
+            webhook_api.stop_webhook_server()
+        except Exception:
+            pass
+
     def _on_telegram_activity(self, user_text: str, reply: str):
         """Telegram trafiğini masaüstü sohbetine yansıtır ve kalıcı loglar."""
         now_str = datetime.now().strftime("%H:%M")
@@ -2119,6 +2160,7 @@ class TauMainWindow(QMainWindow):
             self.telegram_worker.stop()
         if self.wake_worker is not None:
             self.wake_worker.stop()
+        self._stop_webhook_api()
         konusmayi_durdur()
         if self.tray:
             self.tray.hide()

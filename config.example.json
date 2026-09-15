@@ -18,5 +18,8 @@
   "wake_enabled": false,
   "mic_device_index": -1,
   "llm_intent_enabled": true,
-  "reminder_lead_minutes": 10
+  "reminder_lead_minutes": 10,
+  "webhook_enabled": false,
+  "webhook_port": 8899,
+  "webhook_token": ""
 }
