@@ -129,6 +129,19 @@ YONLENDIRME_TABLOSU = [
     ("chrome penceresine odaklan", "WINDOW_FOCUS"),
     ("Chrome'a odaklan", "WINDOW_FOCUS"),
     ("Zen'e odaklan", "WINDOW_FOCUS"),
+    # 💸 22 Eyl — kullanıcının CANLIDA başarısız olan cümleleri (ogrenme.db'den).
+    # "300 tl alışveriş yaptım" sohbete düşüyordu: tutar vardı ama fiil 'harca'
+    # gövdesinde değildi, kategori kelimesi de tutarın önünde değildi.
+    ("300 tl alışveriş yaptım", "FINANCE_TRACK"),
+    ("300 tl alışveriş yaaptım", "FINANCE_TRACK"),   # kullanıcının yazım hatası
+    ("85 tl kahveye verdim", "FINANCE_TRACK"),
+    # ...ama her para cümlesi harcama DEĞİLDİR (sessiz yanlış kayıt en pahalı hata)
+    ("bu telefon 5000 tl", "GENERAL_CONVERSATION"),
+    ("maaşım 30000 tl", "GENERAL_CONVERSATION"),
+    # 📱 Uygulama adındaki harf tekrarı komutu kaybettiriyordu: bu cümle
+    # SYSTEM_CONTROL'e düşüyor ve mesaj hiç gönderilmiyordu.
+    ("seyit e whatssapptan naber diye mesaj gönder", "WHATSAPP_MESSAGE"),
+    ("seyit e whatsapptan naber diye mesaj gönder", "WHATSAPP_MESSAGE"),
 ]
 
 
@@ -159,6 +172,35 @@ class TestNiyetYonlendirme(unittest.TestCase):
         self.assertEqual(medya_komutu_algila("müziği başlat"), "play")
         # Avatar barındaki ⏯️ butonu: tek tuş = değiştir
         self.assertEqual(medya_komutu_algila("oynat/duraklat"), "playpause")
+
+    def test_uygulama_adindaki_harf_tekrari_duzeltilir(self):
+        """Yazım hatası uygulama adını bozarsa komut yanlış niyete düşer."""
+        from core.context import UltronContext
+        from core.layers.pipeline_layers import NormalizationLayer
+
+        def sadelestir(metin):
+            ctx = UltronContext(raw_input=metin)
+            return NormalizationLayer().process(ctx).normalized_input
+
+        for ham, beklenen in [
+            ('whatssapptan mesaj at', 'whatsapptan mesaj at'),
+            ('watsap aç', 'whatsapp aç'),
+            ('telgram aç', 'telegram aç'),
+            ('whatsapp aç', 'whatsapp aç'),          # doğru yazım bozulmamalı
+            ('telegram aç', 'telegram aç'),
+        ]:
+            with self.subTest(ham=ham):
+                self.assertEqual(sadelestir(ham), beklenen)
+
+    def test_benzer_kelimeler_bozulmaz(self):
+        """Normalizasyon masum kelimeleri uygulama adına çevirmemeli."""
+        from core.context import UltronContext
+        from core.layers.pipeline_layers import NormalizationLayer
+
+        for metin in ('istatistik göster', 'telegrafı çek', 'telaş yapma'):
+            with self.subTest(metin=metin):
+                ctx = UltronContext(raw_input=metin)
+                self.assertEqual(NormalizationLayer().process(ctx).normalized_input, metin)
 
     def test_pencere_araci_deftere_intentle_yazili(self):
         """intent'siz kaydedilen araca hiçbir cümle ulaşamaz."""

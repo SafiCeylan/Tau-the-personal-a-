@@ -281,6 +281,9 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 | **İki modeli KARIŞTIRMA** | 7b yüklüyken 3b istemek 6,5 sn model takası demek (ölçüldü). "Niyet için küçük model, sohbet için büyük model" fikri bu yüzden ÇÖP — her turda iki takas olur. Tek model kullan. |
 | **`keep_alive` olmadan her seferinde yükleme** | Ollama modeli 5 dakika sonra bellekten atar; arada bir konuşan kullanıcı her mesajda 11,7 sn (7b) bekler. Tüm çağrılara `keep_alive` (vars. 30 dk) gönderilir. Belleği sıkışan makinede config'ten kısalt. |
 | **HİBRİT "düşünen" model kullanma** | qwen3:4b ölçüldü (22 Eyl, Ollama 0.34): ① alan göndermezsen düşünür → **ilk kelime 77 sn** ② `think:false` düşünmeyi kapatmaz, düşünceyi **İngilizce olarak CEVABIN İÇİNE** yazar ("Okay, the user is feeling tired…") ③ `/no_think` içeriği temizler ama düşünce yine üretilir. Üçü de kullanılamaz → **düşünmeyen sürüm seç** (`qwen3:4b-instruct`). `dusunme_alani()` artık config açıkça istemedikçe `think` alanını GÖNDERMEZ. |
+| **Canlı hata avı: `ogrenme.db`** | Kullanıcı "eyleme geçtiğinde tam yapamıyor" dediğinde tahmin etme — `%APPDATA%\ULTRON\ogrenme.db` → `konusma` tablosunda her tur **niyet + başarılı** bilgisiyle duruyor. 22 Eyl'de üç gerçek hata oradan çıktı (`sohbet_gecmisi` tablosu 27 Tem'den beri boş, ona bakma). |
+| **Uygulama adındaki harf tekrarı komutu kaybettirir** | Ölçülen: "seyit e **whatssapptan** … mesaj gönder" → SYSTEM_CONTROL (mesaj hiç gitmedi); aynı cümle "whatsapptan" yazılınca WHATSAPP_MESSAGE. `NormalizationLayer` artık gövdeyi düzeltir (`wh?a+t+s+a+p+` → whatsapp; telegram/instagram aynı), **Türkçe ek korunur**. Desen yazarken "istatistik"/"telegraf" gibi masum kelimeleri yakalamadığını teste ekle. |
+| **Her para cümlesi harcama DEĞİLDİR** | Finans kapısını genişletirken `KATEGORI_KALIPLARI` da bağlama eklenmişti → **"bu telefon 5000 tl" harcama sanıldı** ("telefon" fatura kategorisinde). Sessiz yanlış kayıt = projenin en pahalı hata sınıfı. Kural: tutar + HARCAMA FİİLİ ("ödedim/verdim/harcadım") ya da "alışveriş"; kategori kelimesi yalnız tutarın hemen önündeyse sayılır ("markete 300 tl"). |
 | **Ayarlar model listesi bayatlar** | Liste yalnız ekran kurulurken (uygulama açılışında) çekiliyordu; kullanıcı `ollama pull` ile indirdiği modeli menüde bulamadı ("Ultron'da seçemedim"). `showEvent` artık her açılışta tazeliyor. Menü düzenlenebilir: listede olmayan model adı elle de yazılabilir. |
 | **Niyet çağrısı cevabın ÖNÜNDE ödenir** | Regex kaçırdığında LLM'e "bu komut mu?" sorulur; 7b ile 2,2 sn ve kullanıcı daha ilk harfi görmeden bekler. Ölçüldü: token tavanı + JSON zorlaması hız KAZANDIRMADI (çıktı zaten kısa), kazanç ÖNBELLEKTE (tekrar eden cümle 0 ms). Önbellek anahtarı modeli içerir — model değişince eski sınıflandırma geçersizdir. |
 | **Sesli sohbeti kapatan söz "komut" olabilir** | Eski kural cümlede "durdur/kapat/iptal" görmeyi yeterli sayıyordu: **"müziği durdur" canlı sesli sohbeti kapatıyordu** (komut da çalışmıyordu). `duplex.kapatma_istegi_mi` yalnız (1) tek başına söylenen kapatma sözünü ya da (2) açıkça "sesli sohbet"ten bahseden cümleyi kabul eder. |
@@ -363,6 +366,17 @@ qwen3:4b-instruct'ta ne Çince ne İngilizce sızıntı görüldü.
 Config (`%APPDATA%\ULTRON\config.json`) güncellendi, yedeği `.yedek-2026-09-22`.
 Not: instruct sürümü de VRAM'e TAM sığmıyor (3,5 GB → %33 işlemci) ama 7b'nin
 yarısı kadar CPU'ya düşüyor. Tam sığan tek model `qwen2.5:3b` (Türkçesi zayıf).
+
+### 🐞 22 Eyl — CANLI KULLANIMDAN ÇIKAN 2 HATA (ogrenme.db'den)
+Kullanıcı yeni modelle "cevaplar hızlandı ama eyleme geçince tam yapamıyor" dedi.
+`konusma` tablosundaki başarısız turlar okundu, iki kök neden bulundu ve düzeltildi:
+1. **"300 tl alışveriş yaptım" → GENERAL_CONVERSATION** (kayıt hiç yapılmadı).
+   Tutar vardı ama fiil 'harca' gövdesinde değildi. Kapı genişletildi;
+   genişletirken oluşan yan etki (**"bu telefon 5000 tl"** harcama sanıldı)
+   ölçümde yakalandı ve kural daraltıldı.
+2. **"seyit e whatssapptan … mesaj gönder" → SYSTEM_CONTROL** (mesaj gitmedi).
+   Sebep çift harf yazımı; normalizasyona uygulama adı düzeltmesi eklendi.
+Yedi yeni satır `tests/test_intent_routing.py`'ye kilitlendi. **847 test yeşil.**
 
 ⚠️ **İndirme tuzağı:** aynı anda İKİ `ollama pull` çalıştırma. 22 Eyl'de kullanıcı
 ve asistan aynı blob'u indirdi → "rename … dosya başka bir işlem tarafından

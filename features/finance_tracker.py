@@ -59,6 +59,24 @@ _PARA_FIIL_RE = re.compile(
 )
 
 
+# Harcama beyanını sıradan para cümlesinden ayıran bağlam: ya harcama fiili
+# ("ödedim", "alışveriş yaptım") ya da harcanan yer/şey (market, yemek, benzin…).
+# Kategori kelimeleri KATEGORI_KALIPLARI ile aynı kaynaktan gelir ki ikisi ayrışmasın.
+# ⚠️ KATEGORİ KELİMESİ TEK BAŞINA YETMEZ. İlk sürümde buraya KATEGORI_KALIPLARI
+# de eklenmişti ve ölçümde **"bu telefon 5000 tl" harcama sanıldı** ("telefon"
+# fatura kategorisinde geçiyor) — sessizce yanlış harcama kaydı, projenin en
+# pahalı hata sınıfı. Bu yüzden bağlam = HARCAMA FİİLİ ya da "alışveriş".
+# Kategori kelimesi ancak tutarın hemen önündeyse sayılır ("markete 300 tl"),
+# o kural ayrı satırda duruyor.
+_HARCAMA_BAGLAMI_RE = re.compile(
+    # "alışveriş" tek başına yeterli: fiil yazım hatası taşıyabilir
+    # (kullanıcının gerçek cümlesi "300 tl alışveriş yaaptım" idi).
+    r'\b(alışveriş|alisveris)\w*|'
+    r'\b(ödedim|odedim|ödedik|odedik|verdim|bıraktım|biraktim|ödeme\s+yap\w*)\b',
+    re.IGNORECASE,
+)
+
+
 def turkce_para_coz(sayi_metni: str) -> Optional[int]:
     """'1.250,75' → 125075 kuruş. Tanıyamazsa None.
 
@@ -126,6 +144,13 @@ def finans_niyeti_algila(cumle: str) -> bool:
     if _PARA_FIIL_RE.search(msg):
         return True
     if re.search(r'\b(markete|yemeğe|benzine|faturaya|kiraya)\s+' + _SAYI, msg):
+        return True
+    # ⚠️ TUTAR + HARCAMA BAĞLAMI. Ölçülen (22 Eyl, kullanıcının gerçek cümlesi):
+    #     "300 tl alışveriş yaptım" -> GENERAL_CONVERSATION (kayıt HİÇ yapılmadı)
+    # Tutar vardı ama fiil 'harca' gövdesinde değildi ve kategori kelimesi de
+    # tutarın hemen ÖNÜNDE değildi. Tek başına tutar yetmez ("bu telefon 5000 tl"
+    # bir harcama beyanı değildir) — yanında harcama bağlamı aranır.
+    if _PARA_RE.search(msg) and _HARCAMA_BAGLAMI_RE.search(msg):
         return True
     return False
 

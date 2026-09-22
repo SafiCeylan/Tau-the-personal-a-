@@ -161,6 +161,14 @@ class NormalizationLayer:
             r'\bhesp\b': 'hesap',
             r'\bkapaat\b': 'kapat',
             r'\bkapatt\b': 'kapat',
+            # ⚠️ UYGULAMA ADINDAKİ HARF TEKRARI KOMUTU KAYBETTİRİYOR.
+            # Ölçülen (22 Eyl): "seyit e whatssapptan ... mesaj gönder" cümlesi
+            # WHATSAPP_MESSAGE yerine SYSTEM_CONTROL'e düştü ve mesaj gitmedi;
+            # aynı cümle "whatsapptan" yazılınca sorunsuz çalışıyor. Sadece
+            # GÖVDE değiştirilir, Türkçe ek korunur ("...tan/...a/...ta").
+            r'\bwh?a+t+s+a+p+': 'whatsapp',
+            r'\bin?sta?gra+m+': 'instagram',
+            r'\btele?gra+m+': 'telegram',
         }
         for pattern, replacement in typo_map.items():
             text_clean = re.sub(pattern, replacement, text_clean, flags=re.IGNORECASE)
