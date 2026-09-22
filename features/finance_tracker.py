@@ -109,7 +109,19 @@ def kategori_tahmin_et(metin: str) -> str:
 
 def finans_niyeti_algila(cumle: str) -> bool:
     msg = cumle.lower()
-    if re.search(r'\b(harcama|harcamalar|harcamalarım|bütçe|butce)\b', msg):
+    # ⚠️ 'harca' ve 'bütçe' GÖVDESİYLE eşleş, tam kelimeyle DEĞİL.
+    #    Eski hâli `\b(harcama|harcamalar|harcamalarım|bütçe|butce)\b` idi ve
+    #    ölçülen şu cümleleri KAÇIRIYORDU:
+    #        'bugün ne kadar harcadım'  -> GENERAL_CONVERSATION
+    #        'bu hafta ne harcadım'     -> GENERAL_CONVERSATION
+    #        'bütçem ne durumda'        -> GENERAL_CONVERSATION
+    #    Yani soru LLM'e düşüyor ve model rakam uyduruyordu. Üstelik
+    #    `builtin_tools.finans_takip` özet anahtarları arasında zaten
+    #    'ne kadar harcadım' YAZIYORDU — araç bu cümleyi bekliyordu ama
+    #    niyet kapısı onu hiç içeri almıyordu: ölü yol.
+    #    Türkçe çekim zengin (harcadım/harcamışım/harcadığım/bütçem);
+    #    hepsini tek tek yazmak yerine gövdeyi yakalamak doğrusu.
+    if re.search(r'\bharca\w*', msg) or re.search(r'\b(bütçe|butce)\w*', msg):
         return True
     if _PARA_FIIL_RE.search(msg):
         return True

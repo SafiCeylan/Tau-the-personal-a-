@@ -109,6 +109,26 @@ YONLENDIRME_TABLOSU = [
     ("3'ü kapat", "SYSTEM_CONTROL"),
     ("sesi %50 yap", "SET_VOLUME"),
     ("saat 3'te hatırlat", "CREATE_REMINDER"),
+    # Ozet SORULARI da finansa gitmeli. Bunlar GENERAL_CONVERSATION'a
+    # dusuyordu -> LLM rakam uyduruyordu (arac cumleyi bekliyordu ama
+    # niyet kapisi tam-kelime eslestigi icin iceri almiyordu).
+    ("bugün ne kadar harcadım", "FINANCE_TRACK"),
+    ("bu ay ne kadar harcadım", "FINANCE_TRACK"),
+    ("bu hafta ne harcadım", "FINANCE_TRACK"),
+    ("bütçem ne durumda", "FINANCE_TRACK"),
+    ("tüm zamanların harcaması", "FINANCE_TRACK"),
+    # 🎯 Pomodoro. "25 dakika odaklan" WINDOW_FOCUS'a düşüyordu: pencere kapısında
+    # çıplak `\bodaklan\b` vardı. 16 Eyl'de sesli komut ölçümü yakaladı.
+    ("25 dakika odaklan", "FOCUS_MODE"),
+    ("45 dakika odaklan", "FOCUS_MODE"),
+    ("odaklan", "FOCUS_MODE"),
+    ("45 dk pomodoro başlat", "FOCUS_MODE"),
+    ("odak durumu", "FOCUS_MODE"),
+    ("odaklanmayı iptal et", "FOCUS_MODE"),
+    # ...ama hedef pencere/bilinen uygulamaysa hâlâ pencere komutu
+    ("chrome penceresine odaklan", "WINDOW_FOCUS"),
+    ("Chrome'a odaklan", "WINDOW_FOCUS"),
+    ("Zen'e odaklan", "WINDOW_FOCUS"),
 ]
 
 

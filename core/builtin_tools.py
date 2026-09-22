@@ -417,14 +417,15 @@ def ekran_takip_arac(metin="", **_):
     intent="DUPLEX_VOICE",
 )
 def canli_sesli_sohbet_arac(metin="", **_):
-    from features.speech import is_duplex_voice_active, set_duplex_voice_active
+    # Durum ve mesajlar features/duplex.py'deki OTURUM'dan gelir (tek gerçek kaynak).
+    from features.duplex import OTURUM
     m = (metin or "").lower()
-    if any(k in m for k in ["kapat", "durdur", "bitir", "iptal"]):
-        set_duplex_voice_active(False)
-        return AracSonuc.ok("🎙️ **Canlı Sesli Sohbet Kapatıldı:** Normal moda dönüldü.", duplex_voice=False)
-    else:
-        set_duplex_voice_active(True)
-        return AracSonuc.ok("🎙️ **Canlı Sesli Sohbet Başlatıldı:** Ultron her yanıtından sonra seni dinlemeye devam edecek.", duplex_voice=True)
+    if any(k in m for k in ["kapat", "durdur", "bitir", "iptal", "sonlandır", "sonlandir"]):
+        _, mesaj = OTURUM.kapat()
+        return AracSonuc.ok(mesaj or "🎙️ **Canlı sesli sohbet zaten kapalı.**",
+                            duplex_voice=False)
+    _, mesaj = OTURUM.baslat()
+    return AracSonuc.ok(mesaj or "🎙️ **Canlı sesli sohbet zaten açık.**", duplex_voice=True)
 
 
 @arac_kaydet(

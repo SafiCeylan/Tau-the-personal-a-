@@ -306,6 +306,30 @@ def send_photo(token: str, chat_id, photo_path: str, caption: str = '') -> bool:
         return False
 
 
+def send_voice(token: str, chat_id, ses_yolu: str, caption: str = '') -> bool:
+    """Sesli not gönderir (OGG/Opus → dalga formlu balon; mp3 de kabul edilir).
+
+    ⚠️ 1 Eyl'de bir `send_voice` yazılmış ama HİÇBİR YERDEN çağrılmadığı için
+    15 Eyl'de ölü kod diye silinmişti. Bu sürümün tek çağıranı
+    `TelegramWorkerThread._sesli_yanit_gonder`; bağlantıyı
+    tests/test_telegram_sesli_yanit.py kilitler.
+    """
+    if requests is None or not os.path.isfile(ses_yolu):
+        return False
+    try:
+        with open(ses_yolu, 'rb') as f:
+            r = requests.post(
+                _url(token, 'sendVoice'),
+                data={'chat_id': chat_id, 'caption': (caption or '')[:1000]},
+                files={'voice': (os.path.basename(ses_yolu), f)},
+                timeout=60,
+            )
+        return bool(r.json().get('ok'))
+    except Exception as e:
+        print(f"[Telegram] Sesli not gönderilemedi: {type(e).__name__}")
+        return False
+
+
 def send_document(token: str, chat_id, dosya_yolu: str, caption: str = ''):
     """
     PC'deki dosyayı telefona gönderir (multipart upload).

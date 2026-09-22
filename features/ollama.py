@@ -5,8 +5,36 @@ except ImportError:
     requests = None
 
 
+# 🕒 MODELİ BELLEKTE TUT. Ollama'nın varsayılanı 5 dakikadır; bu süre dolunca
+# model bellekten atılır ve sonraki ilk cümle yüklemeyi bekler.
+# ÖLÇÜLDÜ (21 Eyl 2026, RTX 3050 4 GB): qwen2.5:7b soğuk yükleme **11,7 sn**,
+# qwen2.5:3b **2,8 sn**. Yani 5 dakikada bir konuşan kullanıcı her seferinde
+# bu bedeli ödüyordu. 30 dakika, "arada bir soru soruyorum" kullanımını
+# tamamen kapsar. Bellek sıkışırsa config'ten kısaltılabilir (`ollama_keep_alive`).
+VARSAYILAN_KEEP_ALIVE = '30m'
+
+# 🧠 `think` ALANI VARSAYILAN OLARAK GÖNDERİLMEZ.
+#
+# ÖLÇÜLDÜ (22 Eyl 2026, Ollama 0.34, qwen3:4b — "düşünen/hibrit" model):
+#   • hiçbir şey göndermeyince: model düşünüyor → ilk kelime **77 sn**, cevap 80 sn.
+#   • `think: false`: düşünme alanı boş geliyor AMA model düşüncesini İNGİLİZCE
+#     olarak CEVABIN İÇİNE yazıyor ("Okay, the user is feeling tired…").
+#     Yani alan düşünmeyi kapatmıyor, sadece saklandığı yeri değiştiriyor.
+#   • prompt sonuna `/no_think`: içerik temiz ama düşünce yine üretiliyor (774 krk).
+# Üç yolun üçü de kötü → **hibrit düşünen modeller bu projeye uygun değil.**
+# Düşünmeyen sürüm kullan (örn. `qwen3:4b-instruct`), o zaman bu alana hiç
+# gerek kalmaz. Yine de denemek isteyen config'e `"ollama_dusunme": false/true`
+# yazarak alanı açıkça gönderebilir.
+def dusunme_alani(model: str = None, dusunme: bool = None) -> dict:
+    """Config açıkça belirtmediyse BOŞ döner — `think` alanı gönderilmez."""
+    if dusunme is None:
+        return {}
+    return {'think': bool(dusunme)}
+
+
 def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
-                       model='gemma3:4b', on_token=None):
+                       model='gemma3:4b', on_token=None, keep_alive=None,
+                       dusunme=None):
     """
     Modern /api/chat endpoint'i ile STREAMING üretim.
     Her gelen parça için on_token(delta) çağrılır; tam metin döner.
@@ -25,7 +53,9 @@ def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
         "stream": True,
         # Düşük sıcaklık: küçük modellerde (3B-4B) Türkçe tutarlılığı artırır
         "options": {"temperature": 0.5, "top_p": 0.9},
+        "keep_alive": keep_alive or VARSAYILAN_KEEP_ALIVE,
     }
+    payload.update(dusunme_alani(model, dusunme))
 
     parcalar = []
     with requests.post(url, json=payload, stream=True, timeout=(10, 300)) as r:
@@ -47,7 +77,7 @@ def ollama_chat_stream(prompt, ollama_url='http://127.0.0.1:11434',
     return ''.join(parcalar)
 
 def ollama_json(prompt, sema, ollama_url='http://127.0.0.1:11434',
-                model='qwen2.5:7b', timeout=180):
+                model='qwen2.5:7b', timeout=180, keep_alive=None):
     """
     ŞEMAYA ZORLANMIŞ JSON üretimi (planner'ın omurgası).
 
@@ -73,6 +103,7 @@ def ollama_json(prompt, sema, ollama_url='http://127.0.0.1:11434',
         "stream": False,
         "format": sema,
         "options": {"temperature": 0},
+        "keep_alive": keep_alive or VARSAYILAN_KEEP_ALIVE,
     }
 
     try:
@@ -94,7 +125,8 @@ def ollama_json(prompt, sema, ollama_url='http://127.0.0.1:11434',
 
 
 def ollama_generate(prompt, ollama_url='http://127.0.0.1:11434', model='gemma3:4b',
-                    context=None, temperature=0.5):
+                    context=None, temperature=0.5, keep_alive=None,
+                    num_predict=None, bicim=None, timeout=60, dusunme=None):
     """
     Ollama API'sine istek gönderir ve cevabı döner.
 
@@ -114,18 +146,29 @@ def ollama_generate(prompt, ollama_url='http://127.0.0.1:11434', model='gemma3:4
 
     url = f"{ollama_url.rstrip('/')}/api/generate"
 
+    secenekler = {"temperature": temperature, "top_p": 0.9}
+    if num_predict:
+        # Üretilecek token tavanı. Sınıflandırma gibi KISA çıktılarda model
+        # bazen açıklama eklemeye devam eder; her fazladan token doğrudan
+        # bekleme süresidir (7b bu makinede ~10 token/sn).
+        secenekler["num_predict"] = int(num_predict)
+
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": temperature, "top_p": 0.9},
+        "options": secenekler,
+        "keep_alive": keep_alive or VARSAYILAN_KEEP_ALIVE,
     }
+    if bicim:
+        payload["format"] = bicim
+    payload.update(dusunme_alani(model, dusunme))
 
     if context:
         payload["context"] = context
-        
+
     try:
-        response = requests.post(url, json=payload, timeout=60)
+        response = requests.post(url, json=payload, timeout=timeout)
         response.raise_for_status()
         
         data = response.json()

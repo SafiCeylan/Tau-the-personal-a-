@@ -75,6 +75,46 @@ class AyarlarCizimTest(unittest.TestCase):
             w.deleteLater()
 
 
+class ModelListesiTazelemeTest(unittest.TestCase):
+    """22 Eyl: yeni indirilen model menüde görünmüyordu (liste yalnız açılışta çekiliyordu)."""
+
+    def test_sayfa_acilinca_liste_yeniden_cekilir(self):
+        from unittest.mock import patch
+        with patch.object(SettingsViewWidget, '_list_ollama_models',
+                          return_value=['qwen2.5:7b']):
+            w = SettingsViewWidget(dict(TEMEL_CONFIG))
+        self.addCleanup(w.deleteLater)
+        self.assertEqual(w.ollama_model_combo.count(), 1)
+
+        # Kullanıcı bu sırada `ollama pull qwen3:4b-instruct` çalıştırdı
+        with patch.object(SettingsViewWidget, '_list_ollama_models',
+                          return_value=['qwen2.5:7b', 'qwen3:4b-instruct']):
+            w.show()
+            w.hide()
+        adlar = [w.ollama_model_combo.itemText(i) for i in range(w.ollama_model_combo.count())]
+        self.assertIn('qwen3:4b-instruct', adlar)
+
+    def test_secili_model_tazelemede_korunur(self):
+        from unittest.mock import patch
+        with patch.object(SettingsViewWidget, '_list_ollama_models',
+                          return_value=['qwen2.5:7b', 'qwen2.5:3b']):
+            w = SettingsViewWidget(dict(TEMEL_CONFIG))
+            self.addCleanup(w.deleteLater)
+            w.show()
+            w.hide()
+        self.assertEqual(w.ollama_model_combo.currentText(), 'qwen2.5:7b')
+
+    def test_ollama_kapaliysa_cokmez(self):
+        from unittest.mock import patch
+        with patch.object(SettingsViewWidget, '_list_ollama_models', return_value=[]):
+            w = SettingsViewWidget(dict(TEMEL_CONFIG))
+            self.addCleanup(w.deleteLater)
+            w.show()
+            w.hide()
+        # Kayıtlı model yazı olarak korunur ki "Kaydet" onu silmesin
+        self.assertEqual(w.ollama_model_combo.currentText(), 'qwen2.5:7b')
+
+
 class AyarlarKaydetmeTest(unittest.TestCase):
 
     def setUp(self):
@@ -121,6 +161,88 @@ class AyarlarKaydetmeTest(unittest.TestCase):
             self.w._webhook_token_uret()
         self.assertGreaterEqual(len(self.w.webhook_token_in.text()),
                                 ASGARI_TOKEN_UZUNLUGU)
+
+
+# 16 Eyl 2026'da bu makinede ölçülen MME giriş aygıtları
+OLCULEN_AYGITLAR = [
+    (0, 'Microsoft Ses Eşleştiricisi - Input'),
+    (1, 'Stereo Karışımı (Realtek(R) Aud'),
+    (2, 'Mikrofon Dizisi (Realtek(R) Aud'),
+]
+
+
+class AyarlarMikrofonTest(unittest.TestCase):
+    """Hoparlör kaydı listede yok, aygıt adıyla saklanır, eski yanlış ayar görünür uyarı verir."""
+
+    def _ekran(self, config_eki=None, aygitlar=OLCULEN_AYGITLAR):
+        from unittest.mock import patch
+        cfg = dict(TEMEL_CONFIG)
+        cfg.update(config_eki or {})
+        with patch('features.mic_devices.giris_aygitlari', return_value=aygitlar):
+            w = SettingsViewWidget(cfg)
+        self.addCleanup(w.deleteLater)
+        return w
+
+    def _menudeki_adlar(self, w):
+        return [w.mic_combo.itemText(i) for i in range(w.mic_combo.count())]
+
+    def test_hoparlor_kaydi_menude_YOK(self):
+        adlar = self._menudeki_adlar(self._ekran())
+        self.assertFalse(any('Stereo Karışımı' in a for a in adlar), adlar)
+        self.assertFalse(any('Eşleştiricisi' in a for a in adlar), adlar)
+        self.assertTrue(any('Mikrofon Dizisi' in a for a in adlar), adlar)
+
+    def test_16_eyl_yanlis_ayari_gorunur_uyari_verir(self):
+        w = self._ekran({'mic_device_index': 1})
+        self.assertEqual(w.mic_combo.currentData(), -1)
+        self.assertFalse(w.mic_uyari_lbl.isHidden())
+        self.assertIn('mikrofon değil', w.mic_uyari_lbl.text())
+
+    def test_kayitli_ad_numara_kaysa_da_secilir(self):
+        kaymis = [(0, 'Microsoft Ses Eşleştiricisi - Input'),
+                  (4, 'Mikrofon Dizisi (Realtek(R) Aud')]
+        w = self._ekran({'mic_device_index': 2,
+                         'mic_device_name': 'Mikrofon Dizisi (Realtek(R) Aud'}, kaymis)
+        self.assertEqual(w.mic_combo.currentData(), 4)
+        self.assertTrue(w.mic_uyari_lbl.isHidden())
+
+    def test_kaydetme_adi_da_yazar(self):
+        from unittest.mock import patch
+        w = self._ekran()
+        w.mic_combo.setCurrentIndex(w.mic_combo.findData(2))
+        kaydedilen = []
+        w.config_saved.connect(kaydedilen.append)
+        with patch('ui.components.settings_view.QMessageBox.information'):
+            w.save_settings()
+        self.assertEqual(kaydedilen[-1]['mic_device_index'], 2)
+        self.assertEqual(kaydedilen[-1]['mic_device_name'], 'Mikrofon Dizisi (Realtek(R) Aud')
+
+    def test_sistem_varsayilani_kaydedilince_ad_bos(self):
+        from unittest.mock import patch
+        w = self._ekran({'mic_device_name': 'Mikrofon Dizisi (Realtek(R) Aud'})
+        w.mic_combo.setCurrentIndex(0)
+        kaydedilen = []
+        w.config_saved.connect(kaydedilen.append)
+        with patch('ui.components.settings_view.QMessageBox.information'):
+            w.save_settings()
+        self.assertEqual(kaydedilen[-1]['mic_device_index'], -1)
+        self.assertEqual(kaydedilen[-1]['mic_device_name'], '')
+
+    def test_seviye_cubugu_ve_telegram_sesli_yanit_alani_var(self):
+        w = self._ekran()
+        for alan in ('mic_level_bar', 'mic_durum_lbl', 'mic_test_btn', 'tg_voice_reply_check'):
+            self.assertTrue(hasattr(w, alan), f'{alan} eksik')
+        self.assertTrue(w.tg_voice_reply_check.isChecked())  # varsayılan açık
+
+    def test_mikrofon_testi_sonucu_yazar_ve_dugmeyi_geri_acar(self):
+        """Gerçek mikrofona dokunmadan test bitişi: tepe %25 → 'hazır'."""
+        w = self._ekran()
+        w.mic_test_btn.setEnabled(False)
+        w._mic_tepe_max = 0.25
+        w._mikrofon_testini_bitir()
+        self.assertTrue(w.mic_test_btn.isEnabled())
+        self.assertIn('hazır', w.mic_durum_lbl.text())
+        self.assertEqual(w.mic_level_bar.value(), 0)
 
 
 if __name__ == '__main__':

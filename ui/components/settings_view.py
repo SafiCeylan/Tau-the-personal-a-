@@ -1,8 +1,12 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QFrame, QComboBox, QMessageBox, QFormLayout, QCheckBox
+    QFrame, QComboBox, QMessageBox, QFormLayout, QCheckBox, QProgressBar
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+
+# Mikrofon testi: kaç ms dinlenir, çubuk kaç ms'de bir tazelenir
+MIKROFON_TEST_SURESI_MS = 3000
+MIKROFON_CUBUK_ARALIGI_MS = 50
 
 class SettingsViewWidget(QWidget):
     config_saved = pyqtSignal(dict)
@@ -190,30 +194,67 @@ class SettingsViewWidget(QWidget):
             "Doğal dil komut anlama (LLM niyet — biraz daha yavaş, çok daha akıllı)")
         self.llm_intent_check.setChecked(bool(self.config.get("llm_intent_enabled")))
 
-        # Mikrofon seçici
+        self.tg_voice_reply_check = QCheckBox(
+            "Telegram'dan gelen sesli mesaja sesli not ile de cevap ver")
+        self.tg_voice_reply_check.setChecked(
+            bool(self.config.get("telegram_voice_reply", True)))
+
+        # Mikrofon seçici — hoparlör kaydı (Stereo Karışımı) listede YOK, aygıt
+        # ADIYLA saklanır (numara Bluetooth kulaklık takılıp çıkınca kayar).
+        # Bkz. features/mic_devices.py
         self.mic_combo = QComboBox()
         self.mic_combo.addItem("Sistem varsayılanı", -1)
+        self._mic_adlari = {}
         for idx, name in self._list_microphones():
             self.mic_combo.addItem(f"[{idx}] {name}", idx)
-        cur_mic = self.config.get("mic_device_index", -1)
-        mic_idx = self.mic_combo.findData(cur_mic)
-        if mic_idx >= 0:
-            self.mic_combo.setCurrentIndex(mic_idx)
+            self._mic_adlari[idx] = name
+
+        self.mic_uyari_lbl = QLabel("")
+        self.mic_uyari_lbl.setWordWrap(True)
+        self.mic_uyari_lbl.setStyleSheet("color: #ffb020; font-size: 12px;")
+        self.mic_uyari_lbl.setVisible(False)
+        self._kayitli_mikrofonu_sec()
 
         mic_row = QHBoxLayout()
         mic_row.addWidget(self.mic_combo, 1)
-        mic_test_btn = QPushButton("🎙️ Test Et")
-        mic_test_btn.setCursor(Qt.PointingHandCursor)
-        mic_test_btn.clicked.connect(self.test_microphone)
-        mic_row.addWidget(mic_test_btn)
+        self.mic_test_btn = QPushButton("🎙️ Test Et")
+        self.mic_test_btn.setCursor(Qt.PointingHandCursor)
+        self.mic_test_btn.clicked.connect(self.test_microphone)
+        mic_row.addWidget(self.mic_test_btn)
         mic_widget = QWidget()
         mic_widget.setLayout(mic_row)
+
+        # Canlı seviye çubuğu: test sırasında konuştukça dolar
+        self.mic_level_bar = QProgressBar()
+        self.mic_level_bar.setRange(0, 100)
+        self.mic_level_bar.setValue(0)
+        self.mic_level_bar.setTextVisible(False)
+        self.mic_level_bar.setFixedHeight(8)
+        self.mic_level_bar.setStyleSheet("""
+            QProgressBar { background: #14060a; border: 1px solid rgba(255,26,38,0.35);
+                           border-radius: 4px; }
+            QProgressBar::chunk { background: #ff1a26; border-radius: 3px; }
+        """)
+        self.mic_durum_lbl = QLabel("Test Et'e bas ve 3 saniye konuş — çubuk sesinle dolmalı.")
+        self.mic_durum_lbl.setWordWrap(True)
+        self.mic_durum_lbl.setStyleSheet("color: #a68c90; font-size: 12px;")
+
+        self._mic_stream = None
+        self._mic_tepe_anlik = 0.0
+        self._mic_tepe_max = 0.0
+        self._mic_cubuk_timer = QTimer(self)
+        self._mic_cubuk_timer.setInterval(MIKROFON_CUBUK_ARALIGI_MS)
+        self._mic_cubuk_timer.timeout.connect(self._mic_cubugu_tazele)
 
         form.addRow("🔊 Sesli Yanıt (TTS):", self.tts_check)
         form.addRow("TTS Motoru:", self.tts_engine_combo)
         form.addRow("🎙️ Wake Word:", self.wake_check)
         form.addRow("🧠 Akıllı Komut:", self.llm_intent_check)
+        form.addRow("📱 Telegram Sesli Yanıt:", self.tg_voice_reply_check)
         form.addRow("Mikrofon:", mic_widget)
+        form.addRow("", self.mic_uyari_lbl)
+        form.addRow("Ses Seviyesi:", self.mic_level_bar)
+        form.addRow("", self.mic_durum_lbl)
 
         layout.addWidget(card)
 
@@ -280,26 +321,66 @@ class SettingsViewWidget(QWidget):
                     "• Ollama açık mı? (terminalde 'ollama list' deneyin)\n"
                     "• Sunucu URL doğru mu?")
 
+    def showEvent(self, olay):
+        """Ayarlar sayfası her açıldığında model listesini TAZELE.
+
+        ⚠️ 22 Eyl 2026: liste yalnızca ekran KURULURKEN (uygulama açılışında)
+        dolduruluyordu. Kullanıcı `ollama pull` ile yeni model indirdiğinde menüde
+        göremedi ve "Ultron'da seçemedim" dedi — oysa model kuruluydu. Tazeleme
+        yerel bir HTTP çağrısı (~ms); Ollama kapalıysa sessizce eski liste kalır.
+        """
+        super().showEvent(olay)
+        try:
+            self._populate_ollama_models(
+                self.ollama_url_in.text().strip() or "http://127.0.0.1:11434",
+                self.ollama_model_combo.currentText().strip(),
+            )
+        except Exception as e:
+            print(f"[Ayarlar] Model listesi tazelenemedi: {e}")
+
     @staticmethod
     def _list_microphones():
-        mics = []
+        """Yalnız GERÇEK mikrofonlar (hoparlör kaydı ve varsayılan takma adı hariç)."""
+        from features.mic_devices import mikrofonlari_listele
+        return mikrofonlari_listele()
+
+    def _kayitli_mikrofonu_sec(self):
+        """Kayıtlı mikrofonu menüde seçer: önce ADA, yoksa numaraya bakar.
+
+        Kayıtlı aygıt listede yoksa (hoparlör kaydıydı ya da şu an bağlı değil)
+        "Sistem varsayılanı" seçilir ve NEDENİ uyarı satırında gösterilir —
+        sessizce başka bir aygıta geçmek, kullanıcının fark edemeyeceği hatadır.
+        """
+        from features.mic_devices import aygit_coz, giris_aygitlari
+        kayitli_ad = (self.config.get("mic_device_name") or "").strip()
+        kayitli_no = self.config.get("mic_device_index", -1)
+
+        hedef = None
+        if kayitli_ad:
+            hedef = next((no for no, ad in self._mic_adlari.items() if ad == kayitli_ad), None)
+        elif kayitli_no not in (None, -1, ""):
+            hedef = kayitli_no if kayitli_no in self._mic_adlari else None
+
+        if hedef is not None:
+            self.mic_combo.setCurrentIndex(self.mic_combo.findData(hedef))
+            return
+
+        self.mic_combo.setCurrentIndex(0)
+        if not kayitli_ad and kayitli_no in (None, -1, ""):
+            return  # zaten sistem varsayılanı
         try:
-            import sounddevice as sd
-            for i, d in enumerate(sd.query_devices()):
-                if d.get('max_input_channels', 0) > 0:
-                    try:
-                        host = sd.query_hostapis(d['hostapi'])['name']
-                    except Exception:
-                        host = ''
-                    if host == 'MME':
-                        mics.append((i, d['name']))
-        except Exception as e:
-            print(f"[Ayarlar] Mikrofon listesi alınamadı: {e}")
-        return mics
+            _, uyari = aygit_coz(giris_aygitlari(), kayitli_ad, kayitli_no)
+        except Exception:
+            uyari = None
+        if uyari:
+            self.mic_uyari_lbl.setText(uyari)
+            self.mic_uyari_lbl.setVisible(True)
 
     def test_microphone(self):
+        """Seçili mikrofonu 3 sn dinler; seviye çubuğu CANLI dolar (arayüz donmaz)."""
+        if self._mic_stream is not None:
+            return  # test zaten sürüyor
         try:
-            import array
             import sounddevice as sd
         except ImportError:
             QMessageBox.warning(self, "Eksik Paket", "sounddevice kurulu değil.")
@@ -307,33 +388,51 @@ class SettingsViewWidget(QWidget):
 
         device = self.mic_combo.currentData()
         device = None if device in (None, -1) else device
+        self._mic_tepe_anlik = 0.0
+        self._mic_tepe_max = 0.0
 
-        QMessageBox.information(
-            self, "Mikrofon Testi",
-            "Tamam'a bastıktan sonra 2 saniye boyunca KONUŞUN — ses seviyenizi ölçeceğim.")
+        def _cb(indata, frames, t, status):
+            # PortAudio thread'i — yalnız sayı yazar, arayüze DOKUNMAZ
+            if frames:
+                # int32'ye çevir: int16'da abs(-32768) taşar ve tam kırpılmış ses 0 görünür
+                tepe = float(abs(indata.astype('int32')).max()) / 32768.0
+                self._mic_tepe_anlik = tepe
+                if tepe > self._mic_tepe_max:
+                    self._mic_tepe_max = tepe
+
         try:
-            kayit = sd.rec(int(2 * 16000), samplerate=16000, channels=1,
-                           dtype='int16', device=device)
-            sd.wait()
-            samples = array.array('h', kayit.tobytes())
-            tepe = max(abs(s) for s in samples) if samples else 0
-            yuzde = round(tepe / 32767 * 100)
-            if yuzde >= 10:
-                QMessageBox.information(
-                    self, "Mikrofon Testi",
-                    f"✅ Ses algılandı! Tepe seviye: %{yuzde}\nBu mikrofon kullanıma hazır.")
-            elif yuzde >= 2:
-                QMessageBox.warning(
-                    self, "Mikrofon Testi",
-                    f"⚠️ Çok zayıf ses algılandı (%{yuzde}). Mikrofona daha yakın konuşun "
-                    "veya Windows ses ayarlarından mikrofon seviyesini yükseltin.")
-            else:
-                QMessageBox.warning(
-                    self, "Mikrofon Testi",
-                    f"❌ Ses algılanamadı (%{yuzde}). Yanlış mikrofon seçilmiş olabilir — "
-                    "listeden başka bir aygıt deneyin.")
+            self._mic_stream = sd.InputStream(samplerate=16000, channels=1, dtype='int16',
+                                              device=device, callback=_cb)
+            self._mic_stream.start()
         except Exception as e:
-            QMessageBox.critical(self, "Mikrofon Testi", f"Kayıt hatası:\n{e}")
+            self._mic_stream = None
+            self.mic_durum_lbl.setText(f"❌ Mikrofon açılamadı: {e}")
+            return
+
+        self.mic_test_btn.setEnabled(False)
+        self.mic_test_btn.setText("🎙️ Dinliyorum…")
+        self.mic_durum_lbl.setText("🎙️ Şimdi konuş (3 sn)…")
+        self._mic_cubuk_timer.start()
+        QTimer.singleShot(MIKROFON_TEST_SURESI_MS, self._mikrofon_testini_bitir)
+
+    def _mic_cubugu_tazele(self):
+        self.mic_level_bar.setValue(round(min(1.0, self._mic_tepe_anlik) * 100))
+
+    def _mikrofon_testini_bitir(self):
+        from features.mic_devices import seviye_yorumla
+        self._mic_cubuk_timer.stop()
+        if self._mic_stream is not None:
+            try:
+                self._mic_stream.stop()
+                self._mic_stream.close()
+            except Exception:
+                pass
+            self._mic_stream = None
+        self.mic_level_bar.setValue(0)
+        self.mic_test_btn.setEnabled(True)
+        self.mic_test_btn.setText("🎙️ Test Et")
+        _, mesaj = seviye_yorumla(self._mic_tepe_max)
+        self.mic_durum_lbl.setText(mesaj)
 
     def test_connection(self):
         prov = self.provider_combo.currentData()
@@ -416,7 +515,11 @@ class SettingsViewWidget(QWidget):
             "tts_engine": self.tts_engine_combo.currentData(),
             "wake_enabled": self.wake_check.isChecked(),
             "llm_intent_enabled": self.llm_intent_check.isChecked(),
+            "telegram_voice_reply": self.tg_voice_reply_check.isChecked(),
+            # Numara Bluetooth aygıtları takılıp çıktıkça kayar → esas olan AD.
+            # Numara eski sürümler/yedek için yine yazılır.
             "mic_device_index": self.mic_combo.currentData(),
+            "mic_device_name": self._mic_adlari.get(self.mic_combo.currentData(), ""),
             "takvim_ics_url": self.takvim_ics_in.text().strip(),
             "takvim_hatirlatma_dk": self._pozitif_sayi(
                 self.takvim_hatirlatma_in.text(), 15),

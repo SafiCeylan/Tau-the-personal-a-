@@ -382,6 +382,16 @@ haftalık analiz raporu
 (mikrofon butonu veya) Hey Ultron...      ← sesli uyanma
 sus                                       ← konuşmayı anında keser
 ```
+> **"Hey Ultron" iki kelime birlikte söylenmeli.** Tek başına "Ultron" artık
+> uyandırmaz — yalnız "ultra" duyunca uyanmak, "dolar kaç lira" gibi sıradan
+> cümlelerde de tetikliyordu.
+>
+> **Mikrofon:** Ayarlar → Mikrofon → listeden seç → **🎙️ Test Et** ve 3 saniye
+> konuş; seviye çubuğu sesinle dolmalı. "Stereo Karışımı" listede yok — o bir
+> mikrofon değil, hoparlörden çıkan sesi kaydeder.
+>
+> **İnternet yoksa** sesli komut yine çalışır (çevrimdışı tanıma), ama daha az
+> isabetlidir; ULTRON ne duyduğunu "📴 çevrimdışı tanındı: …" diye yazar.
 
 ## 🎛️ MODLAR
 ```
@@ -390,7 +400,8 @@ sus                                       ← konuşmayı anında keser
 > Kendi modunu Mod & Rutin Yöneticisi'nden kurabilirsin (çok adımlı).
 
 ## 📱 TELEGRAM ÖZEL
-- 🎙️ **Sesli mesaj** at → yazıya çevirip komut olarak işler
+- 🎙️ **Sesli mesaj** at → yazıya çevirip komut olarak işler; cevabı yazılı **ve sesli not**
+  olarak döner (Ayarlar → "Telegram Sesli Yanıt" ile kapatılabilir; yazılı komuta sesli not gitmez)
 - 📎 **Dosya/fotoğraf** gönder → PC'nin İndirilenler'ine kaydeder
 - `/start` → yardım menüsü
 
@@ -487,9 +498,20 @@ ekran takibini durdur
 ## 🎙️ CANLI ÇİFT YÖNLÜ SESLİ SOHBET
 ```
 canlı sesli sohbeti başlat     ← (veya avatarın altındaki 🎙️ butonu)
-sesli sohbeti kapat  ·  dur  ·  iptal
+sesli sohbeti kapat            ← ya da tek başına: dur · yeter · tamam · iptal
 ```
-> Açıkken Ultron her yanıtından sonra dinlemeye geri döner.
+> Açıkken Ultron her yanıtından sonra dinlemeye geri döner (sesli okuma kapalı olsa da).
+>
+> **Kapatma yalnız tek başına söylenen sözlerle olur.** "Müziği durdur",
+> "ekran takibini durdur", "hatırlatmayı iptal et" normal komuttur, sohbeti
+> kapatmaz — eskiden kapatıyordu.
+>
+> **Kendiliğinden kapanma:** üst üste 2 kez ses gelmezse, üst üste 2 dinleme
+> hatası olursa ya da sohbet 10 dakikayı geçerse kapanır ve sebebini yazar.
+> Tek bir sessizlik ya da tek bir hata kapatmaz, tekrar dinler.
+>
+> ⚠️ Ultron konuşurken mikrofon kapalıdır (kendi sesini duymasın diye), yani
+> sözünü sesle kesemezsin. Susturmak için **"sus"** yaz ya da 🎙️ butonuna bas.
 
 ---
 

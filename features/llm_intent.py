@@ -75,6 +75,25 @@ def _json_ayikla(metin: str):
         return None
 
 
+# Aynı cümle tekrar geldiğinde LLM'e ikinci kez sorulmaz.
+# GEREKÇE (ölçüldü 21 Eyl): bu çağrı qwen2.5:7b ile **2,1 sn** sürüyor ve
+# kullanıcı cevabın ilk harfini görmeden önce ödeniyor. Günlük kullanımda aynı
+# cümleler tekrarlanır ("nasılsın", "hava nasıl") — tekrarın maliyeti 0 olmalı.
+# Bellekte tutulur (süreç kapanınca gider), anahtar modeli de içerir: model
+# değişince eski sınıflandırma geçerli sayılmaz.
+_ONBELLEK = {}
+_ONBELLEK_TAVANI = 256
+
+# Sınıflandırma çıktısı tek satır JSON'dur; 64 token fazlasıyla yeter.
+# Tavan olmazsa model açıklama yazmaya devam edebilir ve her token beklemedir.
+_AZAMI_TOKEN = 64
+
+
+def onbellegi_temizle():
+    """Testler ve model değişimi için."""
+    _ONBELLEK.clear()
+
+
 def llm_intent_coz(mesaj: str, config: dict):
     """
     Mesajı LLM ile sınıflandırır → (intent, entities) veya None.
@@ -88,17 +107,37 @@ def llm_intent_coz(mesaj: str, config: dict):
     except Exception:
         return None
 
+    model = config.get('ollama_model', 'gemma3:4b')
+    anahtar = (model, mesaj.strip().lower())
+    if anahtar in _ONBELLEK:
+        return _ONBELLEK[anahtar]
+
     prompt = _PROMPT % mesaj.replace('"', "'")
     try:
         ans, _ctx = ollama_generate(
             prompt,
             ollama_url=config.get('ollama_url', 'http://127.0.0.1:11434'),
-            model=config.get('ollama_model', 'gemma3:4b'),
+            model=model,
+            temperature=0,          # sınıflandırma yaratıcılık değil ayrıştırmadır
+            num_predict=_AZAMI_TOKEN,
+            bicim='json',           # gramerle JSON'a zorla: fazla kelime üretmesin
+            keep_alive=config.get('ollama_keep_alive'),
+            dusunme=config.get('ollama_dusunme'),
+            timeout=30,
         )
     except Exception as e:
         print(f"[LLM Intent] Ollama çağrısı başarısız: {e}")
         return None
 
+    sonuc = _sonucu_coz(ans)
+    if len(_ONBELLEK) >= _ONBELLEK_TAVANI:
+        _ONBELLEK.clear()
+    _ONBELLEK[anahtar] = sonuc
+    return sonuc
+
+
+def _sonucu_coz(ans):
+    """Modelin ham çıktısını (intent, entities) çiftine çevirir — yoksa None."""
     data = _json_ayikla(ans if isinstance(ans, str) else '')
     if not isinstance(data, dict):
         return None

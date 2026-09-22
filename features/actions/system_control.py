@@ -855,10 +855,15 @@ _PENCERE_DEGIL = re.compile(
     re.IGNORECASE)
 _PENCERE_KELIMESI = re.compile(r'\bpencere\w*\b', re.IGNORECASE)
 _ODAK_FIILI = re.compile(r'\b(geç|gec|getir|aç|ac|odaklan\w*)\b', re.IGNORECASE)
-_ONE_GETIR = re.compile(r'\b(öne|one|ekrana|en\s+öne)\s+getir\b|\bodaklan\b', re.IGNORECASE)
+# ⚠️ Burada çıplak `\bodaklan\b` DA vardı → "25 dakika odaklan" (pomodoro, KOMUTLAR.md)
+# WINDOW_FOCUS'a düşüyordu; odak modu aracı sağlamdı (test_tools doğrudan çağırıyor)
+# ama cümle ona hiç ULAŞMIYORDU. 16 Eyl'de sesli komut ölçümü (scripts/ses_testi.py)
+# yakaladı. "odaklan" artık yalnız pencere kelimesiyle ya da BİLİNEN uygulama adıyla
+# pencere komutudur ("chrome'a odaklan") — `_ADA_GEC`'teki gibi.
+_ONE_GETIR = re.compile(r'\b(öne|one|ekrana|en\s+öne)\s+getir\b', re.IGNORECASE)
 # "zen'e geç" biçimi: hedef BİLİNEN bir uygulama olmalı — yoksa "şarkıyı geç"
 # (sonraki parça) ve "bunu geç" de pencere komutu sayılırdı.
-_ADA_GEC = re.compile(r"([\wçğıöşü]+(?:\s+[\wçğıöşü]+)?)\s*['’]?[a-zçğıöşü]{0,3}\s+(?:geç|gec)\b",
+_ADA_GEC = re.compile(r"([\wçğıöşü]+(?:\s+[\wçğıöşü]+)?)\s*['’]?[a-zçğıöşü]{0,3}\s+(?:geç|gec|odaklan)\b",
                       re.IGNORECASE)
 
 

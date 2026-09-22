@@ -49,7 +49,8 @@ from ui.components.modes_view import ModesViewWidget
 from ui.components.stats_view import StatsViewWidget
 
 try:
-    from features.speech import dinle_ve_yaziya_cevir, seslendir, konusmayi_durdur
+    from features.speech import (dinle_ve_yaziya_cevir_ayrintili, seslendir,
+                                 konusmayi_durdur)
     SPEECH_AVAILABLE = True
 except ImportError:
     SPEECH_AVAILABLE = False
@@ -76,10 +77,9 @@ PROVIDER_LABELS = {
     'tau_backend': 'TAU Backend',
 }
 
-# Canlı sesli sohbeti kapatan sözler. Kelime sınırı ŞART: alt dizi kontrolü
-# ("dur" in metin) "hava durumu nedir" cümlesinde de sohbeti kapatıyordu.
-_DUPLEX_KAPAT_RE = re.compile(
-    r'\b(dur|durdur|kapat|kapan|bitir|iptal|sus|yeter|tamamdır)\b', re.IGNORECASE)
+# Canlı sesli sohbetin kapatma kuralı artık features/duplex.py'de
+# (`kapatma_istegi_mi`). Buradaki kalıp cümlenin HERHANGİ bir yerinde "durdur"
+# görmeyi yeterli sayıyordu ve "müziği durdur" sesli sohbeti kapatıyordu.
 
 # Bekleyen güvenlik onayı SADECE bu mesajlarla (tam eşleşme) onaylanabilir.
 # Substring eşleşmesi ("tamam kanka başka şey soracağım" gibi) kabul edilmez.
@@ -187,6 +187,8 @@ class StreamWorkerThread(QThread):
                 ollama_url=self.config.get('ollama_url', 'http://127.0.0.1:11434'),
                 model=self.config.get('ollama_model', 'gemma3:4b'),
                 on_token=lambda t: self.token_signal.emit(t),
+                keep_alive=self.config.get('ollama_keep_alive'),
+                dusunme=self.config.get('ollama_dusunme'),
             )
             self.finished_signal.emit(full or "Yanıt alınamadı.")
         except Exception as e:
@@ -257,13 +259,17 @@ class WakeWordThread(QThread):
                 "ℹ️ Wake word modeli bulunamadı (models/vosk-tr) — özellik devre dışı.")
             return
 
-        vosk.SetLogLevel(-1)
-        model = vosk.Model(self.model_path)
+        from features.speech import (vosk_modeli, uyandirma_tanicisi,
+                                     uyandirma_sonucu_mu)
+        model = vosk_modeli(self.model_path)
+        if model is None:
+            self.status_signal.emit("⚠️ Wake word modeli yüklenemedi — özellik devre dışı.")
+            return
         # Gramer kilidi: tanıyıcı SADECE bu kelimeleri arar → hızlı + isabetli.
         # NOT: 'ultron' TR sözlüğünde yok; fonetik komşusu 'ultra' kullanılır —
         # kullanıcı "hey ultron" dediğinde model "hey ultra" duyar, biz onu yakalarız.
-        rec = vosk.KaldiRecognizer(model, 16000, json.dumps(
-            ["hey ultra", "ultra", "[unk]"], ensure_ascii=False))
+        # Tanıyıcı ve karar fonksiyonu speech.py'de: scripts/ses_testi.py aynısını ölçer.
+        rec = uyandirma_tanicisi(model, 16000)
 
         q = queue.Queue()
 
@@ -334,8 +340,7 @@ class WakeWordThread(QThread):
                 except queue.Empty:
                     continue
                 if rec.AcceptWaveform(data):
-                    text = json.loads(rec.Result()).get('text', '')
-                    if 'ultra' in text:
+                    if uyandirma_sonucu_mu(rec.Result()):
                         self.wake_detected.emit()
                         rec.Reset()
 
@@ -739,6 +744,9 @@ class TelegramWorkerThread(QThread):
             # Çok-turlu bağlam için turu kaydet (bir sonraki mesaj bunu görsün)
             self._gecmise_ekle(chat_id, "user", text)
             self._gecmise_ekle(chat_id, "assistant", reply)
+        # Sesli mesaj yolu cevabı seslendirebilsin diye döner. Menü dalları ve
+        # onay bekleyen komutlar None döner → onlara sesli yanıt gitmez.
+        return reply
 
     def _gecmise_ekle(self, chat_id, role, text):
         """Telegram sohbet geçmişine bir tur ekler (son 20 tur tutulur)."""
@@ -779,9 +787,10 @@ class TelegramWorkerThread(QThread):
         return engine_ctx.final_output or "Yanıt alınamadı."
 
     def _handle_voice_message(self, tg, token, chat_id, voice):
-        """🎙️ Telegram sesli mesajı: indir → OGG/Opus çöz → Google STT → komut olarak işle."""
+        """🎙️ Telegram sesli mesajı: indir → OGG/Opus çöz → STT (Google, yoksa Vosk)
+        → komut olarak işle → cevabı yazılı + (ayar açıksa) SESLİ NOT olarak dön."""
         import tempfile
-        from features.speech import ogg_sesi_yaziya_cevir
+        from features.speech import ogg_sesi_yaziya_cevir_ayrintili
 
         fp = tg.get_file_path(token, voice.get('file_id', ''))
         if not fp:
@@ -793,19 +802,50 @@ class TelegramWorkerThread(QThread):
             if not tg.download_file(token, fp, ogg):
                 tg.send_message(token, chat_id, "⚠️ Sesli mesaj indirilemedi.")
                 return
-            text = ogg_sesi_yaziya_cevir(ogg)
+            text, motor, hata = ogg_sesi_yaziya_cevir_ayrintili(ogg)
         finally:
             try:
                 os.remove(ogg)
             except Exception:
                 pass
 
+        if hata:
+            tg.send_message(token, chat_id, f"🎙️ Sesli mesaj yazıya çevrilemedi: {hata}")
+            return
         if not text:
             tg.send_message(token, chat_id, "🎙️ Sesli mesajı anlayamadım — tekrar dener misin?")
             return
 
-        tg.send_message(token, chat_id, f"🎙️ Algılanan: \"{text}\"")
-        self._handle_text_command(tg, token, chat_id, text)
+        etiket = " (çevrimdışı tanıma)" if motor == 'vosk' else ""
+        tg.send_message(token, chat_id, f"🎙️ Algılanan{etiket}: \"{text}\"")
+        reply = self._handle_text_command(tg, token, chat_id, text)
+        if reply:
+            self._sesli_yanit_gonder(tg, token, chat_id, reply)
+
+    def _sesli_yanit_gonder(self, tg, token, chat_id, reply: str):
+        """Sesli mesaja sesli not ile cevap verir (yazılı cevap zaten gitti).
+
+        Yalnız SESLİ mesajın cevabı seslendirilir — yazılı komuta sesli not
+        atmak telefonu dırdıra çevirir. Ayar: `telegram_voice_reply` (varsayılan açık).
+        Başarısızlık sessiz kalmaz ama yazılı cevabı da tekrarlamaz.
+        """
+        if not self.controller.config.get('telegram_voice_reply', True):
+            return
+        from features.speech import sesli_yanit_dosyasi_uret
+        yol = sesli_yanit_dosyasi_uret(reply)
+        if not yol:
+            tg.send_message(token, chat_id,
+                            "🔇 Sesli yanıt üretilemedi (edge-tts'e ulaşılamadı) — yazılı cevap yukarıda.")
+            return
+        try:
+            if not tg.send_voice(token, chat_id, yol):
+                tg.send_message(token, chat_id,
+                                "🔇 Sesli yanıt gönderilemedi — yazılı cevap yukarıda.")
+        finally:
+            try:
+                os.remove(yol)
+            except Exception:
+                pass
 
     def _handle_incoming_file(self, tg, token, chat_id, msg):
         """📥 Telefondan gelen dosya/fotoğrafı PC'nin İndirilenler klasörüne kaydeder."""
@@ -900,6 +940,8 @@ class FuncWorkerThread(QThread):
 class ListenWorkerThread(QThread):
     finished_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
+    # Kullanıcıya bilgi notu (ör. "çevrimdışı tanındı") — komut metnine KARIŞMAZ
+    note_signal = pyqtSignal(str)
 
     def __init__(self, device_index=None, pre_delay=0.0):
         super().__init__()
@@ -915,10 +957,19 @@ class ListenWorkerThread(QThread):
         if self.pre_delay > 0:
             time.sleep(self.pre_delay)
         try:
-            text = dinle_ve_yaziya_cevir(device_index=self.device_index)
-            self.finished_signal.emit(text or "")
+            text, motor, hata = dinle_ve_yaziya_cevir_ayrintili(device_index=self.device_index)
         except Exception as e:
             self.error_signal.emit(str(e))
+            return
+        if hata:
+            # Eskiden Google'a ulaşılamayınca None dönüp SESSİZCE hiçbir şey olmuyordu.
+            self.error_signal.emit(hata)
+            return
+        if text and motor == 'vosk':
+            # Sessiz olamaz: çevrimdışı tanıma daha az isabetli, kullanıcı bilsin.
+            self.note_signal.emit(
+                f"📴 İnternet yok — çevrimdışı tanındı: \"{text}\"")
+        self.finished_signal.emit(text.lower() if text else "")
 
 
 class AssistantController:
@@ -1120,6 +1171,13 @@ class TauMainWindow(QMainWindow):
         self.pending_confirmation_timer = QTimer(self)
         self.pending_confirmation_timer.setSingleShot(True)
         self.pending_confirmation_timer.timeout.connect(self._expire_pending_confirmation)
+
+        # 🎙️ Canlı sesli sohbet oturumu config tavanlarını baştan görsün
+        try:
+            from features.duplex import OTURUM
+            OTURUM.config_guncelle(config)
+        except Exception as e:
+            print(f"[Ultron Duplex] Oturum ayarı uygulanamadı: {e}")
 
         # 🎯 Odak modu (pomodoro) durumu
         self._focus_qtimer = None
@@ -1366,10 +1424,25 @@ class TauMainWindow(QMainWindow):
         Konuşma sırasında wake word duraklatılır — Ultron kendi sesindeki
         'Ultron' kelimesiyle kendini uyandırmasın."""
         if not SPEECH_AVAILABLE or not self.controller.config.get('tts_enabled'):
+            # TTS kapalıyken de canlı sesli sohbet dinlemeye dönmeli. Eskiden devam
+            # tetiği YALNIZ konuşma bitince kuruluyordu → TTS kapalıysa döngü hiç
+            # dönmüyordu.
+            self._konusma_bitince_duplex_devam()
             return
         engine = self.controller.config.get('tts_engine', 'gtts')
+        try:
+            from features.duplex import OTURUM
+            OTURUM.konusma_basladi()
+        except Exception:
+            pass
 
         def _do_speak():
+            # Mikrofon konuşma boyunca KAPALI. Ölçüm (21 Eyl): Ultron'un kendi
+            # cevaplarının 20 örneğinden 18'i uyandırma kelimesini tetiklemedi,
+            # ama "Hey, bu komutu anlayamadım…" diye başlayan cevap İKİ hızda da
+            # kendi kendini uyandırdı. Yani mikrofonu açık bırakıp "sözünü
+            # kesme" özelliği eklemek, Ultron'un kendi sesiyle kendini
+            # dinlemeye geçmesi demek. Susturmak için "sus" komutu var.
             if self.wake_worker is not None:
                 self.wake_worker.paused = True
             try:
@@ -1388,14 +1461,22 @@ class TauMainWindow(QMainWindow):
         worker.start()
 
     def _konusma_bitince_duplex_devam(self, _sonuc=None):
-        """Canlı sesli sohbet açıkken konuşma biter bitmez tekrar dinlemeye geçer."""
+        """Canlı sesli sohbet açıkken konuşma biter bitmez tekrar dinlemeye geçer.
+
+        ⚠️ 13 Ağu–16 Eyl arası burada `self._on_wake_word` yazıyordu — sınıfta
+        öyle bir metot YOK. QTimer geri çağrısındaki AttributeError'ı Qt yutuyor:
+        canlı sesli sohbet ilk cevaptan sonra dinlemeye HİÇ dönmedi, kimse fark
+        etmedi. tests/test_olu_referans.py artık bu hata sınıfını kilitliyor.
+        """
         try:
-            from features.speech import is_duplex_voice_active
-            if not is_duplex_voice_active():
+            from features.duplex import OTURUM
+            if not OTURUM.aktif_mi():
                 return
-        except Exception:
+            eylem, mesaj = OTURUM.konusma_bitti()
+        except Exception as e:
+            print(f"[Ultron Duplex] Devam edilemedi: {e}")
             return
-        QTimer.singleShot(600, self._on_wake_word)
+        self._duplex_kararini_uygula(eylem, mesaj)
 
     def _trim_history(self):
         """Sohbet geçmişi tamponunun sınırsız büyümesini engeller."""
@@ -1950,16 +2031,37 @@ class TauMainWindow(QMainWindow):
         if not SPEECH_AVAILABLE:
             return
 
-        worker = WakeWordThread(WAKE_MODEL_PATH,
-                                device_index=self.controller.config.get('mic_device_index', -1))
+        worker = WakeWordThread(WAKE_MODEL_PATH, device_index=self._mikrofon_aygiti())
         worker.wake_detected.connect(self._on_wake_detected)
         worker.status_signal.connect(lambda s: self._post_assistant(s, speak=False))
         self._track_worker(worker)
         self.wake_worker = worker
         worker.start()
 
+    def _mikrofon_aygiti(self):
+        """Kayıtlı mikrofonu o anki aygıt numarasına çözer (-1 = sistem varsayılanı).
+
+        Numara değil AD esas alınır ve hoparlör kaydı (Stereo Karışımı) asla
+        mikrofon sayılmaz — bkz. features/mic_devices.py. Aynı uyarı oturumda bir
+        kez gösterilir; canlı sesli sohbet her turda buraya uğruyor, dırdır olmasın.
+        """
+        from features.mic_devices import mikrofon_sec
+        no, uyari = mikrofon_sec(self.controller.config)
+        if uyari:
+            gosterilen = getattr(self, '_gosterilen_mikrofon_uyarilari', None)
+            if gosterilen is None:
+                gosterilen = self._gosterilen_mikrofon_uyarilari = set()
+            if uyari not in gosterilen:
+                gosterilen.add(uyari)
+                self._post_assistant(uyari, speak=False)
+        return -1 if no is None else no
+
     def _on_wake_detected(self):
         """'Hey Ultron' duyuldu → uyarı sesi + komut dinlemeye geç."""
+        # Zaten dinliyorsak ikinci dinleyici açma: aynı mikrofon iki akışa
+        # verilemez (canlı sohbette bir turda iki mesaj konuşulursa iki tetik gelir).
+        if self.listen_worker is not None and self.listen_worker.isRunning():
+            return
         QApplication.beep()
         konusmayi_durdur()  # konuşuyorsa sussun, kullanıcı bir şey diyecek
         self.chat_view.set_ai_state("listening")
@@ -1971,32 +2073,62 @@ class TauMainWindow(QMainWindow):
             self.wake_worker.paused = True
 
         self.listen_worker = ListenWorkerThread(
-            device_index=self.controller.config.get('mic_device_index', -1),
+            device_index=self._mikrofon_aygiti(),
             pre_delay=0.7)
         self.listen_worker.finished_signal.connect(self._on_wake_command)
         self.listen_worker.error_signal.connect(self._on_wake_command_error)
+        self.listen_worker.note_signal.connect(lambda s: self._post_assistant(s, speak=False))
         self._track_worker(self.listen_worker)
         self.listen_worker.start()
+
+    def _duplex_kararini_uygula(self, eylem: str, mesaj: str) -> bool:
+        """DuplexOturumu'nun kararını arayüze uygular → oturum devraldı mı?
+
+        Tek karar noktası: kapatma, yeniden dinleme ve mesaj gösterimi burada.
+        (Eskiden bu mantık üç ayrı slot'a dağılmıştı ve biri tanımsız bir metodu
+        çağırıyordu — bkz. features/duplex.py başlığı.)
+        """
+        if mesaj:
+            # speak=False: kendi bildirim cümlemizi seslendirip döngüyü yeniden
+            # tetiklemeyelim (konuşma bitişi dinlemeye dönüşü tetikler).
+            self._post_assistant(mesaj, speak=False)
+        if eylem == 'kapat':
+            self._set_ai_state("idle")
+            return True
+        if eylem == 'dinle':
+            QTimer.singleShot(400, self._on_wake_detected)
+            return True
+        return eylem == 'yoksay' and False
 
     def _on_wake_command(self, text: str):
         if self.wake_worker is not None:
             self.wake_worker.paused = False
         self._set_ai_state("idle")
-        if text:
-            from features.speech import is_duplex_voice_active, set_duplex_voice_active
-            # ⚠️ KELİME SINIRI ŞART. Alt dizi kontrolü ("dur" in metin) yüzünden
-            # "hava durumu nedir" / "durum raporu ver" gibi sıradan cümleler
-            # canlı sohbeti kapatıyordu.
-            if is_duplex_voice_active() and _DUPLEX_KAPAT_RE.search(text):
-                set_duplex_voice_active(False)
-                self._post_assistant("🎙️ **Canlı Sesli Sohbet Kapatıldı.** Normal moda dönüldü.")
+        from features.duplex import OTURUM
+
+        if OTURUM.aktif_mi():
+            eylem, mesaj = OTURUM.kullanici_konustu(text)
+            if eylem != 'isle':
+                self._duplex_kararini_uygula(eylem, mesaj)
                 return
-            self.on_user_send_message(text)
+            if mesaj:
+                self._post_assistant(mesaj, speak=False)
+        elif not text:
+            return
+        self.on_user_send_message(text)
 
     def _on_wake_command_error(self, err: str):
         if self.wake_worker is not None:
             self.wake_worker.paused = False
         self._set_ai_state("idle")
+        from features.duplex import OTURUM
+        if OTURUM.aktif_mi():
+            # TEK hata oturumu kapatmaz — geçici ağ/mikrofon sorununda kullanıcıyı
+            # komutu baştan söylemeye zorlamak için sebep yok.
+            self._duplex_kararini_uygula(*OTURUM.hata_oldu(err))
+            return
+        # Eskiden bu yol tamamen sessizdi: kullanıcı "Hey Ultron" deyip hiçbir şey görmüyordu.
+        self._post_assistant(f"🎙️ Sesli komut alınamadı: {err}", speak=False)
 
     # ------------------------------------------------------------------
     # Telegram Köprüsü
@@ -2204,10 +2336,11 @@ class TauMainWindow(QMainWindow):
 
         self.chat_view.set_ai_state("listening")
         self.listen_worker = ListenWorkerThread(
-            device_index=self.controller.config.get('mic_device_index', -1),
+            device_index=self._mikrofon_aygiti(),
             pre_delay=0.7 if wake_var else 0.0)
         self.listen_worker.finished_signal.connect(self.on_voice_input)
         self.listen_worker.error_signal.connect(self._on_stt_error)
+        self.listen_worker.note_signal.connect(lambda s: self._post_assistant(s, speak=False))
         self._track_worker(self.listen_worker)
         self.listen_worker.start()
 
@@ -2269,3 +2402,10 @@ class TauMainWindow(QMainWindow):
             # Telegram / wake word ayarları değişmiş olabilir — yeniden başlat
             self._start_telegram_bridge()
             self._start_wake_word()
+
+            # Canlı sesli sohbetin tavanları (sessizlik/hata/süre) de config'ten gelir
+            try:
+                from features.duplex import OTURUM
+                OTURUM.config_guncelle(new_cfg)
+            except Exception:
+                pass

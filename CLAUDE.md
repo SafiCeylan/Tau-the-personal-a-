@@ -103,7 +103,14 @@ features/
   actions/whatsapp_control.py  whatsapp://send + UIA "Gönder" + odak korumalı Enter + doğrulama
   email_control.py           Gmail SMTP + email_kisiler rehberi
   telegram_bridge.py         Saf requests long-polling (kütüphanesiz), whitelist, inline onay
-  speech.py                  TTS (edge-tts tr-TR-AhmetNeural varsayılan) + STT + wake word (Vosk)
+  speech.py                  TTS (edge-tts tr-TR-AhmetNeural varsayılan) + STT (Google, internet
+                             yoksa Vosk) + wake word kararı (`uyandirma_sonucu_mu`) +
+                             Telegram sesli not üretimi (`sesli_yanit_dosyasi_uret`)
+  mic_devices.py             🎙️ Mikrofon seçimi: hoparlör kaydı (Stereo Karışımı) ASLA mikrofon
+                             sayılmaz, aygıt ADIYLA saklanıp o anki numaraya çözülür
+  duplex.py                  🎙️ CANLI SESLİ SOHBET OTURUMU — durum makinesi (saf mantık):
+                             kapatma kuralı, sessizlik/hata sayacı, süre tavanı. Arayüz
+                             yalnız olay bildirir, kararı buradan alır.
   briefing.py                Sabah brifingi (hava + döviz + hatırlatmalar)
   scheduler.py               zamanli_gorevler tablosu + akşam raporu
   auto_memory.py             "en sevdiğim dizi Dark" gibi cümlelerden otomatik hafıza
@@ -129,6 +136,10 @@ database/schema.sql          bilgiler · kategoriler · sohbet_gecmisi · ogrenm
                              memory · hatirlatmalar · custom_routines · ruh_hali_gecmisi ·
                              zamanli_gorevler · notlar
 archive/                     Ölü modüller ve eski web-view arayüzler (kullanılmıyor)
+scripts/ses_testi.py         🎙️ MİKROFONSUZ ses ölçümü: edge-tts (2 ses × 3 hız) → wake word +
+                             Google/Vosk STT → niyet. Ağ ister, ~5 dk. Ses kodu değişince çalıştır.
+tests/ses_ornekleri/         Çevrimdışı Vosk testlerinin WAV kayıtları (`--ornek-kaydet` üretir)
+tests/test_olu_referans.py   AST ile sınıfta TANIMSIZ `self._x` çağrılarını yakalar (Qt yutar!)
 ```
 
 ---
@@ -168,9 +179,12 @@ archive/                     Ölü modüller ve eski web-view arayüzler (kullan
 
 ## ⚙️ Config (`config.json` — git'te YOK, `config.example.json`'dan kopyalanır)
 
-`ai_provider` · `ollama_url` · `ollama_model` · `gemini_api_key` · `tau_backend_url` ·
+`ai_provider` · `ollama_url` · `ollama_model` · `ollama_keep_alive` (vars. 30m) ·
+`ollama_dusunme` (qwen3 vb. için, vars. kapalı) · `duplex_max_sessizlik` / `duplex_max_hata` /
+`duplex_max_dakika` · `gemini_api_key` · `tau_backend_url` ·
 `smtp_user` / `smtp_pass` · `telegram_token` / `telegram_chat_id` ·
-`tts_enabled` / `tts_engine` (edge|gtts|sapi) · `wake_enabled` · `mic_device_index` ·
+`tts_enabled` / `tts_engine` (edge|gtts|sapi) · `wake_enabled` ·
+`mic_device_name` (esas) / `mic_device_index` (yedek) · `telegram_voice_reply` (varsayılan açık) ·
 `llm_intent_enabled` · `reminder_lead_minutes` ·
 `webhook_enabled` / `webhook_port` / `webhook_token`
 
@@ -257,6 +271,23 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 | **Reddedilen POST'un gövdesi de okunur** | Gövdeyi okumadan hata cevabı yazıp bağlantıyı kapatmak, istemciye 415/401 yerine "connection reset" gösterir (Windows'ta `WinError 10053`) — yani hata mesajın hiç ulaşmaz. `do_POST` gövdeyi her hâlükârda boşaltır; koruma `AZAMI_GOVDE` sınırıdır, okumamak değil. |
 | **Testi olmayan ekran sessizce bozulur** | `settings_view.save_settings` 5 Ağu'dan (`cf31002`) beri hiç TANIMLANMAMIŞ bir metodu (`_pozitif_sayi`) çağırıyordu: Ayarlar'da **"Kaydet"e basmak `AttributeError` fırlatıyor**, `config_saved` sinyali gönderilmiyor ve "kaydedildi" onayı bile çıkmıyordu — yani **~6 hafta boyunca hiçbir ayar kaydedilemedi.** Slot içindeki istisnayı Qt yutuyor, uygulama çökmüyor, kullanıcı sadece "bir şey olmadı" görüyor. Sebep: ekranın HİÇ testi yoktu. Yeni bir UI ekranı/alanı eklerken en az bir çizim + kaydetme duman testi yaz (`tests/test_settings_view.py`). |
 | **Aynı sınıfta çift metot** | `tau_window.py`'de `_set_ai_state` İKİ kez tanımlıydı; Python sessizce ikincisini kullanır. Davranış "doğru" görünür ama biri ölü koddur ve bir sonraki oturumda yanlışını düzenlersin. Yeni metot eklerken adını dosyada ara. |
+| **Qt, slot içindeki AttributeError'ı YUTAR** | Aynı hata sınıfı iki kez haftalarca yaşadı: `save_settings` → tanımsız `_pozitif_sayi` (Kaydet 6 hafta çalışmadı) ve `_konusma_bitince_duplex_devam` → tanımsız `_on_wake_word` (canlı sesli sohbet 13 Ağu'dan 16 Eyl'e kadar ilk cevaptan sonra dinlemeye HİÇ dönmedi). Uygulama çökmez, kullanıcı "bir şey olmadı" görür. `tests/test_olu_referans.py` kodu AST ile okuyup tanımsız `self._x` erişimlerini yakalar — iki eski hatayı da git geçmişindeki dosyada yakaladığı doğrulandı. **Bu testi gevşetme.** |
+| **Mikrofon NUMARAYLA saklanmaz** | 16 Eyl: config `mic_device_index: 1` "Stereo Karışımı"nı gösteriyordu — mikrofon değil, hoparlörden çıkan sesin kaydı. Wake word kullanıcıyı hiç duymadı; kullanıcı PC'de mikrofon olmadığını sandı (dahili "Mikrofon Dizisi" çalışıyordu: hoparlörden çalınan 1 kHz bip mikrofonda 12 kat sinyal verdi). Numara BT kulaklık takılıp çıktıkça kayar ve yanlış aygıt hata vermeden AÇILDIĞI için "açılamazsa varsayılana düş" yedeği devreye girmez. Kural: `mic_device_name` esas, her kullanımda `mic_devices.mikrofon_sec()` ile çözülür; hoparlör kaydı listede yok ve seçiliyse uyarı verilir. Dinleyicilere `config['mic_device_index']`'i DOĞRUDAN verme — `_mikrofon_aygiti()` kullan. |
+| **Uyandırma "hey"+"ultra" ART ARDA ister** | Gramer kilidi her sesi `hey ultra`/`ultra`/`[unk]`'a zorlar; tek başına "ultra" yeterken sıradan cümlelerin %13'ü uyandırıyordu ("dolar kaç lira" iki seste de). **Güven puanı ayırt etmiyor** — yanlış tetikler de conf 1.0. Art arda kuralı: "Hey Ultron" 12/12 korundu, yanlış tetik 17/131 → 4/126. Bedeli: tek başına "Ultron" uyandırmaz (belgelenmemişti, zaten 4/6). Grameri ölçmeden değiştirme; `scripts/ses_testi.py` ile karşılaştır. |
+| **Google "anlamadı" ≠ Google'a ulaşılamadı** | `pcm_yaziya_cevir` yalnız `RequestError`'da (internet yok/429) Vosk'a düşer. `UnknownValueError`'da Vosk'a SORULMAZ: Google'ın anlamadığı sesten Vosk'un ürettiği metin çoğunlukla uydurma komuttur. Vosk kullanıldığında kullanıcıya "📴 çevrimdışı tanındı: …" notu düşülür (sessiz olamaz — daha az isabetli). Ölçüm: Google 32/32, Vosk 26/32 doğru niyet (sentetik sesle, üst sınır). |
+| **Ses ölçümünde beklenen niyet ELLE yazılır** | `ses_testi.py`'nin ilk sürümü beklenen niyeti cümlenin yazılı hâlinden türetiyordu → "25 dakika odaklan" hem yazılıda hem seste WINDOW_FOCUS'a gittiği için "doğru" sayıldı. Taban çizgisini ölçülen sistemden türetmek, sistemin hatasını beklenti yapar. |
+| **Çıplak "odaklan" pencere komutu DEĞİL** | `_ONE_GETIR`'de `\bodaklan\b` vardı → "25 dakika odaklan" (pomodoro, KOMUTLAR.md'de yazılı) WINDOW_FOCUS'a düşüyordu. `test_tools` aracı doğrudan çağırdığı için yeşildi; cümle araca hiç ulaşmıyordu. Artık "odaklan" yalnız "pencere" kelimesiyle ya da BİLİNEN uygulamayla ("Chrome'a odaklan") pencere komutu. |
+| **Model GPU'ya SIĞMALI** | Bu makinede RTX 3050 **4 GB**. Ölçüm (21 Eyl): `qwen2.5:7b` (4,7 GB) sığmıyor → `ollama ps` **%55 CPU / %45 GPU**, **10 token/sn**, soğuk yükleme 11,7 sn. `qwen2.5:3b` (2,2 GB) → **%100 GPU, 74 token/sn**, yükleme 2,8 sn. Aynı sohbet cevabı: 7b 6,7 sn, 3b 0,9 sn. **Yavaşlık şikâyetinin kaynağı burası** — prompt kısaltmak, token tavanı koymak bu farkın yanında gürültü. Model seçerken önce "VRAM'e sığıyor mu" diye bak (`ollama ps` PROCESSOR sütunu). |
+| **İki modeli KARIŞTIRMA** | 7b yüklüyken 3b istemek 6,5 sn model takası demek (ölçüldü). "Niyet için küçük model, sohbet için büyük model" fikri bu yüzden ÇÖP — her turda iki takas olur. Tek model kullan. |
+| **`keep_alive` olmadan her seferinde yükleme** | Ollama modeli 5 dakika sonra bellekten atar; arada bir konuşan kullanıcı her mesajda 11,7 sn (7b) bekler. Tüm çağrılara `keep_alive` (vars. 30 dk) gönderilir. Belleği sıkışan makinede config'ten kısalt. |
+| **HİBRİT "düşünen" model kullanma** | qwen3:4b ölçüldü (22 Eyl, Ollama 0.34): ① alan göndermezsen düşünür → **ilk kelime 77 sn** ② `think:false` düşünmeyi kapatmaz, düşünceyi **İngilizce olarak CEVABIN İÇİNE** yazar ("Okay, the user is feeling tired…") ③ `/no_think` içeriği temizler ama düşünce yine üretilir. Üçü de kullanılamaz → **düşünmeyen sürüm seç** (`qwen3:4b-instruct`). `dusunme_alani()` artık config açıkça istemedikçe `think` alanını GÖNDERMEZ. |
+| **Ayarlar model listesi bayatlar** | Liste yalnız ekran kurulurken (uygulama açılışında) çekiliyordu; kullanıcı `ollama pull` ile indirdiği modeli menüde bulamadı ("Ultron'da seçemedim"). `showEvent` artık her açılışta tazeliyor. Menü düzenlenebilir: listede olmayan model adı elle de yazılabilir. |
+| **Niyet çağrısı cevabın ÖNÜNDE ödenir** | Regex kaçırdığında LLM'e "bu komut mu?" sorulur; 7b ile 2,2 sn ve kullanıcı daha ilk harfi görmeden bekler. Ölçüldü: token tavanı + JSON zorlaması hız KAZANDIRMADI (çıktı zaten kısa), kazanç ÖNBELLEKTE (tekrar eden cümle 0 ms). Önbellek anahtarı modeli içerir — model değişince eski sınıflandırma geçersizdir. |
+| **Sesli sohbeti kapatan söz "komut" olabilir** | Eski kural cümlede "durdur/kapat/iptal" görmeyi yeterli sayıyordu: **"müziği durdur" canlı sesli sohbeti kapatıyordu** (komut da çalışmıyordu). `duplex.kapatma_istegi_mi` yalnız (1) tek başına söylenen kapatma sözünü ya da (2) açıkça "sesli sohbet"ten bahseden cümleyi kabul eder. |
+| **Tek sessizlik/hata oturumu kapatmaz** | Ardışık 2 sessizlik, 2 hata ya da 10 dk süre tavanı kapatır. Tek bir ağ kesintisinde kapatmak kullanıcıyı sohbeti baştan açmaya zorlar; hiç kapatmamak da mikrofonu saatlerce açık bırakır. Tavanlar config'te. |
+| **Ultron kendi sesiyle uyanabilir** | Ölçüm (21 Eyl): Ultron'un 20 cevabından 18'i uyandırma kelimesini tetiklemedi, ama **"Hey, bu komutu anlayamadım…" diye başlayan cevap iki hızda da kendini uyandırdı**. Bu yüzden konuşurken mikrofon KAPALI ve "sesle sözünü kesme" yok. Eklemek istersen önce bu ölçümü tekrarla (`scratchpad` betiği CLAUDE.md günlüğünde). |
+| **Duplex bildirimi SESLENDİRİLMEZ** | "Tekrar dinliyorum" gibi mesajlar `speak=False` gider. Seslendirilirse konuşma bitişi yeniden dinlemeyi tetikler → oturum kendi kuyruğunu kovalar. `tests/test_duplex_dongusu.py` kilitler. |
+| **QtWebEngineWidgets QApplication'dan ÖNCE** | `ui.tau_window` import eden test modülleri, başka modül QApplication'ı önceden kurduysa toplanamıyor. `tests/conftest.py` WebEngine'i her şeyden önce yükler; `unittest` ile tek modül koşarken diye modülün başında da import edilir. |
 
 ---
 
@@ -275,7 +306,76 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 
 ---
 
-## 📊 Durum (son güncelleme: 15 Eyl 2026 — bir aylık birikmiş iş commit edildi)
+## 📊 Durum (son güncelleme: 21 Eyl 2026 — canlı sesli sohbet + gecikme, commit EDİLMEDİ)
+
+### 🎙️ 21 Eyl — canlı sesli sohbet komple elden geçirildi
+Kurallar `tau_window`'daki üç slot'tan alınıp **`features/duplex.py`** içinde bir durum
+makinesine taşındı (saf mantık, `tests/test_duplex.py` donanımsız sınar):
+* **Kapatma kuralı düzeltildi:** "müziği durdur" artık komuttur, sohbeti kapatmaz.
+* Ardışık **2 sessizlik / 2 hata / 10 dk** tavanı; tek sessizlik ya da tek hata kapatmaz.
+* Kapanışta özet ("3 konuşma, 74 sn") ve sebep yazılır; bildirimler seslendirilmez.
+* `speech.is/set_duplex_voice_active` artık ikinci bir bayrak tutmuyor, oturuma bakıyor.
+* **Sesle sözünü kesme EKLENMEDİ** — ölçümde Ultron'un "Hey…" diye başlayan cevabı
+  kendi kendini uyandırdı (tuzaklar tablosu).
+
+### ⚡ 21 Eyl — "çok yavaş cevap veriyor" ölçüldü
+Kök neden **model/donanım uyumsuzluğu**: RTX 3050 4 GB, `qwen2.5:7b` 4,7 GB → %55'i
+işlemciden çalışıyor (10 token/sn). Ölçülen sohbet turu: **niyet 3,75 sn + cevap 6,7 sn**.
+`qwen2.5:3b` aynı işi 0,96 + 0,86 sn'de yapıyor ama Türkçesi belirgin bozuk
+("Umarım bugünün size uygun olmayan bir gün olduğunu hissetmiyor").
+Kod tarafında yapılanlar (modelden bağımsız):
+* Tüm Ollama çağrılarına **`keep_alive` 30 dk** — 11,7 sn'lik yeniden yüklemeler bitti.
+* **Niyet önbelleği** — tekrar eden cümle 0 ms (ölçüm: token tavanı/JSON zorlaması hız
+  kazandırmadı, dürüstçe not edildi).
+* **`think: false`** düşünen modellere (qwen3 vb.) — model değişince hazır.
+
+**exe 22 Eyl 09:45'te yeniden derlenip dağıtıldı** (masaüstü kısayolu bu sürümü açar;
+Ayarlar'daki model listesi tazeleme düzeltmesi dahil).
+
+### 🧪 22 Eyl — qwen3:4b denendi, ELENDİ
+Kullanıcı indirdi, ölçüldü: 26 token/sn (7b'nin 3 katı) ama **%33'ü işlemcide**
+(3,5 GB, 4 GB VRAM'e sığmıyor) ve asıl sorun düşünme modu — üç susturma yolunun
+üçü de başarısız (tuzaklar tablosu). **Bu haliyle kullanılamaz.**
+
+Ölçülen tablo (aynı soru, soğuk yükleme dahil):
+| model | token/sn | GPU | not |
+|-------|----------|-----|-----|
+| qwen2.5:7b | 8,1 | %45 | Türkçesi en iyisi, yavaş |
+| qwen3:4b | 26,5 | %67 | düşünce cevaba sızıyor → elendi |
+| qwen2.5:3b | 70,4 | %100 | hızlı, Türkçesi zayıf (ölçümde konuyu kaçırdı) |
+
+**SIRADAKİ:** `ollama pull qwen3:4b-instruct` (düşünmeyen sürüm, 2,5 GB) →
+indince Ayarlar'dan seç, `scratchpad/model_3b_kalite.py` benzeri ölçümle
+niyet doğruluğu + hız + Türkçe kalitesi ölçülmeli. Olmazsa 7b'de kalınır.
+
+### 🎙️ 16 Eyl — ses katmanı (mikrofonsuz ölçülerek)
+
+Kullanıcının test edecek mikrofonu yoktu; ses boru hattı **edge-tts ile üretilen
+konuşmayla** ölçüldü (`scripts/ses_testi.py`). Bulunan ve düzeltilen:
+1. **Mikrofon yanlıştı:** config "Stereo Karışımı"nı (hoparlör kaydı) gösteriyordu →
+   `features/mic_devices.py` (ad ile saklama, hoparlör kaydı filtresi, uyarı), Ayarlar'da
+   canlı seviye çubuğu. Kullanıcının `%APPDATA%\ULTRON\config.json`'ı "Mikrofon Dizisi
+   (Realtek)"e çekildi (yedeği: `config.json.yedek-2026-09-16`).
+2. **Canlı sesli sohbet hiç dönmüyordu:** tanımsız `_on_wake_word` → `_on_wake_detected`;
+   TTS kapalıyken de döngü devam eder; ses gelmezse döngü kapanır ve söylenir;
+   aynı anda iki dinleyici açılmaz.
+3. **Yanlış uyanma %13 → %3:** kural "hey ultra" art arda (tuzaklar tablosu).
+4. **İnternetsiz sesli komut:** Google'a ulaşılamazsa Vosk (diskteki 56 MB model). Önceden
+   sesli komut sessizce hiçbir şey yapmıyordu; dinleme hataları da artık kullanıcıya söyleniyor.
+5. **Telegram sesli yanıt:** sesli mesaja yazılı cevaba ek olarak OGG/Opus sesli not
+   (`telegram_bridge.send_voice`, Ayarlar'da anahtar). Yazılı komuta sesli not gitmez.
+6. **Pomodoro yönlendirmesi:** "25 dakika odaklan" pencere komutuna düşüyordu (yazılıda da).
+7. **`tests/test_olu_referans.py`:** Qt'nin yuttuğu tanımsız metot hatalarını AST ile yakalar.
+
+Son ölçüm (sentetik ses, üst sınır): yazılı 16/16 · "Hey Ultron" 12/12 · yanlış uyanma
+4/126 · Google 32/32 · Vosk 26/32. **797 test yeşil** (önce 727).
+
+**exe 16 Eyl 18:18'de yeniden derlenip `C:\Users\memoc\UltronApp\ULTRON`'a dağıtıldı** —
+masaüstü kısayolu bugünkü kodu açar.
+
+⚠️ **Canlıda denenmedi** — hiçbiri gerçek insan sesiyle doğrulanmadı.
+Kullanıcının denemesi gerekenler: Ayarlar → Test Et (çubuk dolmalı) · "Hey Ultron" ·
+"canlı sesli sohbeti başlat" (cevaptan sonra tekrar dinlemeli) · Telegram'a sesli mesaj.
 
 ### 🆕 15 Eyl — komple elden geçirme
 Bir aydır commit edilmeden duran tüm iş (`ad399c4`, 40 dosya / +4137 satır) commit edildi.
@@ -286,7 +386,7 @@ mola sayacının import anında başlaması. Ölü kod temizlendi (Telegram sesl
 
 5 Ağu'dan kalan **CLAUDE.md ↔ AGENTS.md ikiz borcu kapatıldı**: OCR ve Takvim bölümleri ile 4/5/6 Ağu ve 1 Eyl günlük satırları yalnızca AGENTS.md'de duruyordu, artık ikisi de aynı.
 
-### 🖥️ exe — 15 Eyl'de yeniden derlendi
+### 🖥️ exe — 15 Eyl'de yeniden derlendi (16 Eyl'de tekrar — bkz. yukarı)
 `python build_and_deploy.py` ile derlenip `C:\Users\memoc\UltronApp\ULTRON`'a
 dağıtıldı (OneDrive dışında derlenir: `--workpath C:\Users\memoc\ultron_build_tmp`,
 `--distpath C:\Users\memoc\ultron_dist_tmp`). **Eski "exe 28 Tem'den kalma"
@@ -405,6 +505,8 @@ istenmeyen bir yan etkidir.
 
 | Tarih | Yapılan | Sonuç |
 |-------|---------|-------|
+| 21 Eyl | **🎙️ CANLI SESLİ SOHBET + ⚡ GECİKME.** Kullanıcı "canlı sesli sohbeti komple elden geçir, bir de çok yavaş cevap veriyor" dedi. **(1)** Oturum kuralları `features/duplex.py`'ye taşındı (durum makinesi): "müziği durdur" artık sohbeti kapatmıyor, 2 sessizlik/2 hata/10 dk tavanı, kapanış özeti, tek gerçek kaynak. `tests/test_duplex.py` (36 test) + arayüz bağlantı testleri yeniden yazıldı. **(2)** Yavaşlık ÖLÇÜLDÜ: `ollama ps` 7b'nin %55'inin işlemcide çalıştığını gösterdi (4 GB VRAM'e sığmıyor) → 10 token/sn; 3b %100 GPU, 74 token/sn. Katman ölçümü: sohbet turunda niyet katmanı 2,1 sn (LLM çağrısı), uygulama açmadaki 1,2 sn ise ölçüm yan etkisi (pencere bekleme tavanı). Kod tarafında `keep_alive` 30 dk, niyet önbelleği, düşünen modellere `think:false`; token tavanı/JSON zorlamasının hız kazandırmadığı dürüstçe not edildi. Kullanıcı `qwen3:4b`'yi seçti, indirme ağ hatasıyla takıldı, kendisi indirecek | ✅ **838 test yeşil** (önce 797) · ⚠️ canlıda denenmedi, model değişimi bekliyor |
+| 16 Eyl | **🎙️ SES KATMANI — MİKROFONSUZ ÖLÇÜM + 7 DÜZELTME.** Kullanıcı "sesli yönetimi kullanacağız" dedi ama mikrofonu yoktu. Teşhis ölçümüyle PC'de çalışan dahili mikrofon bulundu (hoparlörden 1 kHz bip → mikrofonda 12 kat sinyal); config ise "Stereo Karışımı"na ayarlıydı. Kod okunurken canlı sesli sohbetin tanımsız `_on_wake_word` çağırdığı görüldü (13 Ağu'dan beri ölü). `scripts/ses_testi.py` yazıldı: edge-tts (Ahmet/Emel × 3 hız) → Vosk wake word + Google/Vosk STT → gerçek niyet zinciri. İlk çalıştırma **yazılı komutta da** bir hata buldu ("25 dakika odaklan" → WINDOW_FOCUS) ve yanlış uyanmayı ölçtü (%13). Güven puanı ayırt etmedi; "hey"+"ultra" art arda kuralı 150 örnekte karşılaştırılıp seçildi. Yeni: `features/mic_devices.py`, Google→Vosk yedeği, Telegram sesli yanıt (`send_voice` — 15 Eyl'de ölü kod diye silinmişti, bu kez bağlantı testle kilitli), Ayarlar'da canlı seviye çubuğu, `tests/test_olu_referans.py` (git geçmişindeki iki eski hatayı yakaladığı doğrulandı), `tests/conftest.py`. Testler: `test_mic_devices`, `test_ses_tanima` (gerçek WAV'larla çevrimdışı Vosk dahil), `test_telegram_sesli_yanit`, `test_duplex_dongusu`, Ayarlar mikrofon testleri, yönlendirme tablosuna 9 pomodoro/pencere satırı | ✅ **797 test yeşil** (önce 727) · ölçüm: "Hey Ultron" 12/12, yanlış uyanma 17/131 → 4/126, Google 32/32, Vosk 26/32 · exe derlenip dağıtıldı · ⚠️ canlıda denenmedi, commit yok |
 | 1 Eyl | **🚀 GÜNLÜK HAYAT ENTEGRASYON PAKETİ & 6 YENİ YETENEK + OTOMATİK DERLEME.** Kullanıcının "hepsini ekle, her adımda test et açıklarını bul ve düzelterek ekle" talimatı üzerine 6 yeni modül ve sistem entegrasyonu aşamalı inşa edildi. **(1) Finans & Bütçe Takibi (`features/finance_tracker.py`):** `harcamalar` tablosu, `FINANCE_TRACK` niyeti, harcama kaydı ("markete 350 TL harcadım"), Türkçe ek toleransı (`\w*`) ve harcama özeti. **(2) Derleme & Dağıtım Otomasyonu (`build_and_deploy.py`):** `pyinstaller ULTRON.spec` derlemesini otomatize edip OneDrive dışındaki `C:\Users\memoc\UltronApp\ULTRON` klasörüne kopyalama. **(3) Yerel HTTP Webhook API (`features/webhook_api.py`):** iOS Shortcuts/Android Tasker/Home Assistant entegrasyonu için harici kütüphanesiz HTTP sunucusu (`8899` portu, `/api/command`, `/api/status`). **(4) Proaktif Olay Motoru (`features/proactive_events.py`):** Takvimde başlayacak toplantıya 15 dk kala otomatik bildirim, mola ve su içme uyarısı. **(5) Proaktif Öneri Entegrasyonu (`features/suggestions.py` & `briefing.py`):** Akşam ve sabah raporlarının sonuna tek satırlık aktif öneri kartı (`tek_satir_oneri_sun`). **(6) Telegram Çift Yönlü Sesli Yanıt (`features/telegram_bridge.py` & `speech.py`):** Telegram sesli mesajlarına Edge-TTS ile üretilen ses notu (`send_voice`) ile yanıt verme + `Optional` tip tanımı fiksi. **(7) Otomatik Süreç-Rutin Tetikleyici (`core/layers/routine_engine.py`):** VS Code (`code.exe`) / PyCharm açılınca çalışma moduna geçiş. ⚠️ **15 EYL DÜZELTMESİ:** bu oturumun işi commit EDİLMEDİ ve yazılan üç modülden ikisi (`webhook_api`, `proactive_events`) uygulamadan hiç çağrılmıyordu — testleri yeşildi ama özellik yoktu. Telegram sesli yanıt üçlüsü de (`send_voice`, `metni_sese_cevir_dosya`, `toggle_duplex_voice`) hiçbir yerden çağrılmıyordu. Ayrıca finans modülü Türkçe binlik ayracını yanlış okuyordu ("1.200 TL" → 1,20 TL). Hepsi 15 Eyl denetiminde yakalandı. | ⚠️ 671 test yeşildi ama **iddia ≠ gerçek** — bkz. 15 Eyl |
 | 15 Eyl (3) | **🐞 6 HAFTALIK SESSİZ HATA + exe.** Ayarlar ekranına webhook alanları eklerken ona ilk kez test yazıldı (`tests/test_settings_view.py`) ve test hemen **mevcut bir hatayı** ortaya çıkardı: `save_settings`, 5 Ağu'dan (`cf31002`) beri hiç tanımlanmamış olan `_pozitif_sayi`'yı çağırıyordu → **"Kaydet" düğmesi `AttributeError` fırlatıyor, hiçbir ayar kaydedilmiyordu.** Qt slot istisnasını yuttuğu için uygulama çökmüyor, kullanıcı yalnızca "bir şey olmadı" görüyordu. Metot yazıldı (geçersiz/boş girdi varsayılana düşer), 9 test kilitledi. **exe yeniden derlenip dağıtıldı** — 1 Eyl'den beri ilk kez, bugünkü tüm düzeltmeler dahil | ✅ **727 test yeşil** (önce 718) |
 | 15 Eyl (2) | **⚡ PERFORMANS + 🌐 WEBHOOK CANLIYA.** Ölçülerek üç darboğaz kapatıldı: **(1)** ağır ses bağımlılıkları tembel import edildi — açılış importu **2.784 ms → 678 ms** (%76); pygame tek başına 1.671 ms tutuyordu ve numpy + pkg_resources zincirini çekiyordu, üçü de yalnız fonksiyon içinde kullanılıyordu. **(2)** uygulama açmadaki sabit `time.sleep(1.2)` yoklamaya çevrildi ("chrome aç" 1212 ms'in 1200'ü uykuydu); yeni pencere VEYA odak değişimi beklenir, tavan yine 1,2 sn yani en kötü durum eskisiyle aynı. **(3)** hava/döviz 10 dk önbelleğe alındı (1134 ms / 1011 ms → 0 ms) ve çevrimdışıyken bayat değer **yaşıyla birlikte** dönüyor — brifingin o bölümü artık internet yokken tamamen düşmüyor. **Webhook API canlıya bağlandı:** üç bağımsız kapı (token / Content-Type / Origin yokluğu), yalnız 127.0.0.1, varsayılan kapalı, tokensiz başlamaz; Ayarlar'a açma anahtarı + port + token üreteci eklendi; `do_POST` reddettiği isteğin gövdesini de boşaltıyor (yoksa istemci hata mesajı yerine bağlantı kopması görüyordu). Yeni testler: `test_acilis_hizi.py` (süre değil SEBEP ölçer — ağır kütüphane açılışta yükleniyor mu), `test_pencere_bekleme.py`, `test_brifing_onbellek.py`, `test_webhook_api.py` yeniden yazıldı | ✅ **718 test yeşil** (önce 684) |

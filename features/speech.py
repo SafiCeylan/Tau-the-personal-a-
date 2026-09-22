@@ -31,20 +31,24 @@ def _sr():
 # ---------------------------------------------------------------------------
 _pyttsx3_engine = None
 _tts_lock = threading.Lock()
-_DUPLEX_ACTIVE = False
-_DUPLEX_LOCK = threading.Lock()
 
 
+# Canlı sesli sohbetin durumu artık `features/duplex.py`'deki OTURUM nesnesinde
+# (sessizlik/hata sayacı, süre tavanı, kapatma kuralı hep orada). Buradaki iki
+# fonksiyon eski çağıranlar için ince kapıdır — İKİNCİ BİR BAYRAK TUTMA,
+# iki gerçek kaynağı olan durum er geç ayrışır.
 def is_duplex_voice_active() -> bool:
-    with _DUPLEX_LOCK:
-        return _DUPLEX_ACTIVE
+    from features.duplex import OTURUM
+    return OTURUM.aktif_mi()
 
 
 def set_duplex_voice_active(active: bool) -> bool:
-    global _DUPLEX_ACTIVE
-    with _DUPLEX_LOCK:
-        _DUPLEX_ACTIVE = active
-        return _DUPLEX_ACTIVE
+    from features.duplex import OTURUM
+    if active:
+        OTURUM.baslat()
+    else:
+        OTURUM.kapat()
+    return OTURUM.aktif_mi()
 
 
 _EMOJI_RE = re.compile(
@@ -232,30 +236,199 @@ def text_to_speech(text, lang='tr'):
     except Exception as e:
         print(f"TTS Genel Hatası: {e}")
 
-def ogg_sesi_yaziya_cevir(ogg_path: str):
+# ---------------------------------------------------------------------------
+# STT (Konuşmayı yazıya çevirme) — Google birincil, Vosk çevrimdışı yedek
+# ---------------------------------------------------------------------------
+# Vosk Türkçe modeli (~56 MB). Hem wake word hem çevrimdışı tanıma kullanır.
+# exe'de ULTRON.spec modeli `_internal/models/vosk-tr`'ye koyar; bu dosya
+# `_internal/features/` altında olduğu için yol iki ortamda da doğru çözülür.
+VOSK_MODEL_YOLU = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'vosk-tr')
+
+# Wake word gramer kilidi. 'ultron' TR sözlüğünde YOK → fonetik komşusu 'ultra'.
+UYANDIRMA_GRAMERI = ["hey ultra", "ultra", "[unk]"]
+
+_vosk_model = None
+_vosk_model_lock = threading.Lock()
+
+
+def vosk_modeli(model_yolu: str = None):
+    """Vosk modelini BİR KEZ yükler ve paylaşır (Model thread'ler arası paylaşılabilir;
+    her dinleyici kendi KaldiRecognizer'ını açar). Model/paket yoksa None."""
+    global _vosk_model
+    yol = model_yolu or VOSK_MODEL_YOLU
+    with _vosk_model_lock:
+        if _vosk_model is not None:
+            return _vosk_model
+        if not os.path.isdir(yol):
+            return None
+        try:
+            import vosk
+            vosk.SetLogLevel(-1)
+            _vosk_model = vosk.Model(yol)
+        except Exception as e:
+            print(f"[Ultron STT] Vosk modeli yüklenemedi: {e}")
+            return None
+        return _vosk_model
+
+
+def uyandirma_tanicisi(model, sample_rate: int = 16000):
+    """Wake word için gramere kilitli tanıyıcı. WakeWordThread ve ses testi
+    (scripts/ses_testi.py) AYNI tanıyıcıyı kullanır — test gerçek yolu ölçsün."""
+    import json
+    import vosk
+    return vosk.KaldiRecognizer(model, sample_rate,
+                                json.dumps(UYANDIRMA_GRAMERI, ensure_ascii=False))
+
+
+def uyandirma_sonucu_mu(sonuc_json: str) -> bool:
+    """KaldiRecognizer.Result() çıktısında "hey" hemen ardından "ultra" var mı?
+
+    ⚠️ Eskiden tek başına "ultra" yetiyordu. Gramer kilidi her sesi bu üç
+    seçenekten birine zorladığı için sıradan cümleler de "ultra" çıkıyordu.
+    Ölçüm (16 Eyl, edge-tts 2 ses × 3 hız, 150 örnek):
+        kural                 "hey ultron"   yalnız "ultron"   sıradan cümlede tetik
+        "ultra" geçsin           12/12           4/6              17/131  (%13)
+        "hey ultra" art arda     12/12           0/6               4/131  (%3)
+    Yanlış tetikleyenler: "dolar kaç lira", "ekran görüntüsü al", "ultra hd…".
+    Güven puanı (conf) AYIRT ETMİYOR — yanlış tetikler de 1.0 geliyordu.
+    Bedeli: yalnız "Ultron" demek artık uyandırmaz (hiç belgelenmemişti,
+    ölçümde de yarı yarıya çalışıyordu). Belgelenen ifade "Hey Ultron".
+    Ölçümü tekrarlamak için: python scripts/ses_testi.py
     """
-    Telegram sesli mesajını (OGG/Opus) yazıya çevirir.
-    soundfile (libsndfile) ile PCM'e çözülür → Google STT (tr-TR).
-    Dönen değer: metin veya None.
+    import json
+    try:
+        metin = json.loads(sonuc_json or '{}').get('text', '')
+    except ValueError:
+        return False
+    kelimeler = metin.split()
+    return any(a == 'hey' and b == 'ultra' for a, b in zip(kelimeler, kelimeler[1:]))
+
+
+def vosk_yaziya_cevir(pcm: bytes, sample_rate: int):
+    """16-bit mono PCM → serbest metin (çevrimdışı). Model yoksa / ses yoksa None.
+
+    Ölçüm (16 Eyl): edge-tts "hava durumu nasıl" → Vosk birebir aynı metni verdi,
+    model yüklemesi 0,4 sn. Doğruluk tablosu için: python scripts/ses_testi.py
     """
+    model = vosk_modeli()
+    if model is None or not pcm:
+        return None
+    import json
+    import vosk
+    rec = vosk.KaldiRecognizer(model, sample_rate)
+    adim = sample_rate * 2          # 2 bayt/örnek → ~1 sn'lik parçalar
+    for i in range(0, len(pcm), adim):
+        rec.AcceptWaveform(pcm[i:i + adim])
+    metin = json.loads(rec.FinalResult()).get('text', '').strip()
+    return metin or None
+
+
+def pcm_yaziya_cevir(pcm: bytes, sample_rate: int, sample_width: int = 2):
+    """Ham PCM'i yazıya çevirir. Dönüş: (metin | None, motor | None, hata | None).
+
+    motor: 'google' | 'vosk'. Sıra:
+      • Google anlarsa → Google metni.
+      • Google "anlaşılamadı" derse → None (Vosk'a SORULMAZ: Google'ın
+        anlamadığı sesten Vosk'un ürettiği metin çoğunlukla uydurma komuttur).
+      • Google'a ULAŞILAMAZSA (internet yok, 429, zaman aşımı) → Vosk.
+        Eskiden bu durumda sesli komut sessizce hiçbir şey yapmıyordu.
+    """
+    sr = _sr()
+    audio = sr.AudioData(pcm, sample_rate, sample_width)
+    try:
+        metin = sr.Recognizer().recognize_google(audio, language='tr-TR')
+        return ((metin or '').strip() or None), 'google', None
+    except sr.UnknownValueError:
+        return None, 'google', None
+    except sr.RequestError as e:
+        google_hatasi = e
+
+    metin = vosk_yaziya_cevir(audio.get_raw_data(convert_width=2), sample_rate)
+    if metin:
+        return metin, 'vosk', None
+    if vosk_modeli() is None:
+        return None, None, (f"Google konuşma tanımaya ulaşılamadı ({google_hatasi}) "
+                            f"ve çevrimdışı model (models/vosk-tr) bulunamadı.")
+    return None, 'vosk', None
+
+
+def ogg_sesi_yaziya_cevir_ayrintili(ogg_path: str):
+    """Telegram sesli mesajı (OGG/Opus) → (metin, motor, hata). Bkz. pcm_yaziya_cevir."""
     try:
         import soundfile as sf
         data, rate = sf.read(ogg_path, dtype='int16')
         if getattr(data, 'ndim', 1) > 1:
             data = data[:, 0]
-        audio = _sr().AudioData(data.tobytes(), rate, 2)
-        r = _sr().Recognizer()
-        text = r.recognize_google(audio, language='tr-TR')
-        return (text or '').strip() or None
-    except _sr().UnknownValueError:
-        return None
     except Exception as e:
         print(f"[TAU STT] Sesli mesaj çözülemedi: {e}")
+        return None, None, f"Ses dosyası okunamadı: {e}"
+    try:
+        return pcm_yaziya_cevir(data.tobytes(), rate, 2)
+    except Exception as e:
+        print(f"[TAU STT] Sesli mesaj yazıya çevrilemedi: {e}")
+        return None, None, str(e)
+
+
+def ogg_sesi_yaziya_cevir(ogg_path: str):
+    """Geriye uyumlu kısa yol: yalnız metin (veya None)."""
+    return ogg_sesi_yaziya_cevir_ayrintili(ogg_path)[0]
+
+
+def sesli_yanit_dosyasi_uret(text: str):
+    """Cevabı Telegram SESLİ NOTU olarak gönderilecek dosyaya çevirir.
+
+    edge-tts (Ahmet) mp3 üretir → soundfile ile OGG/Opus'a çevrilir: Telegram
+    sesli not balonunu (dalga formu) OGG/Opus ile gösterir. Çevirme başarısızsa
+    mp3 yolu döner (sendVoice mp3'ü de kabul eder). Hiç üretilemezse None.
+    Metin `tts_metin_temizle` ile kısaltılır — masaüstünde okunanla aynı özet.
+    Dosyayı SİLMEK çağıranın işidir.
+    """
+    t = tts_metin_temizle(text)
+    if not t:
         return None
+    import asyncio
+    import edge_tts
+
+    kok = os.path.join(tempfile.gettempdir(), f'ultron_sesli_yanit_{int(time.time() * 1000)}')
+    mp3 = kok + '.mp3'
+    try:
+        async def _gen():
+            await edge_tts.Communicate(t, voice="tr-TR-AhmetNeural",
+                                       rate="+4%", pitch="-8Hz").save(mp3)
+        asyncio.run(_gen())
+    except Exception as e:
+        print(f"[Ultron TTS] Sesli yanıt üretilemedi: {e}")
+        try:
+            os.remove(mp3)
+        except Exception:
+            pass
+        return None
+
+    ogg = kok + '.ogg'
+    try:
+        import soundfile as sf
+        data, rate = sf.read(mp3, dtype='int16')
+        sf.write(ogg, data, rate, format='OGG', subtype='OPUS')
+    except Exception as e:
+        print(f"[Ultron TTS] OGG/Opus'a çevrilemedi, mp3 gönderilecek: {e}")
+        return mp3
+    try:
+        os.remove(mp3)
+    except Exception:
+        pass
+    return ogg
 
 
 def dinle_ve_yaziya_cevir(device_index=None):
-    """Mikrofondan sesi dinler ve yazıya çevirir (Online - Google).
+    """Geriye uyumlu kısa yol: küçük harf metin (veya None)."""
+    metin = dinle_ve_yaziya_cevir_ayrintili(device_index)[0]
+    return metin.lower() if metin else None
+
+
+def dinle_ve_yaziya_cevir_ayrintili(device_index=None):
+    """Mikrofondan dinler → (metin, motor, hata). Bkz. pcm_yaziya_cevir.
+    Konuşma gelmezse (zaman aşımı) üçü de None — bu bir hata değil.
     device_index: PortAudio aygıt indeksi (None/-1 = sistem varsayılanı)."""
     r = _sr().Recognizer()
 
@@ -286,25 +459,18 @@ def dinle_ve_yaziya_cevir(device_index=None):
             r.adjust_for_ambient_noise(source, duration=0.6)
             # timeout: konuşmaya başlamak için süre; phrase_time_limit: tek cümle tavanı
             audio = r.listen(source, timeout=8, phrase_time_limit=30)
-            
-            print("Ses işleniyor...")
-            # Google Speech API ile yazıya çevir
-            text = r.recognize_google(audio, language='tr-TR')
-            print(f"Algılanan: {text}")
-            return text.lower()
-            
     except _sr().WaitTimeoutError:
         print("Zaman aşımı: Ses algılanamadı.")
-        return None
-    except _sr().UnknownValueError:
-        print("Anlaşılamadı.")
-        return None
-    except _sr().RequestError as e:
-        print(f"Google Speech API hatası: {e}")
-        return None
+        return None, None, None
     except Exception as e:
         print(f"Mikrofon hatası: {e}")
-        return None
+        return None, None, f"Mikrofon hatası: {e}"
+
+    print("Ses işleniyor...")
+    metin, motor, hata = pcm_yaziya_cevir(
+        audio.get_raw_data(), audio.sample_rate, audio.sample_width)
+    print(f"Algılanan ({motor}): {metin}")
+    return metin, motor, hata
 
 
 

@@ -324,6 +324,7 @@ def plan_uret(komut: str, config: Dict[str, Any]) -> Tuple[Optional[Plan], Optio
         ollama_url=config.get('ollama_url', 'http://127.0.0.1:11434'),
         model=config.get('ollama_model', 'qwen2.5:7b'),
         timeout=int(config.get('planner_timeout', 180)),
+        keep_alive=config.get('ollama_keep_alive'),
     )
     if hata:
         return None, hata

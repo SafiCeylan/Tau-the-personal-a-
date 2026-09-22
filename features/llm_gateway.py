@@ -26,6 +26,8 @@ def llm_uret(provider, prompt, config, context=None):
             ollama_url=config.get('ollama_url', 'http://127.0.0.1:11434'),
             model=config.get('ollama_model', 'gemma3:4b'),
             context=context,
+            keep_alive=config.get('ollama_keep_alive'),
+            dusunme=config.get('ollama_dusunme'),
         )
     if provider == 'gemini':
         return gemini_generate(
