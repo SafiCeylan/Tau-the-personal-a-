@@ -13,7 +13,7 @@
 | **Yol** | `C:\Users\memoc\OneDrive\Desktop\Projeler\tau` |
 | **Geliştirici** | Mehmet Safi Ceylan (SafiCeylan / memoc) |
 | **Yığın** | Python + PyQt5 (QPainter, web view YOK) + SQLite + Ollama |
-| **Varsayılan model** | Ollama `qwen2.5:7b` (config.json'da aktif; `qwen2.5:3b` kurulu ama kullanılmıyor. Kod içi varsayılanlar hâlâ küçük modele göre yazılı — prompt kuralları gevşetilmemeli) |
+| **Varsayılan model** | Ollama **`qwen3:4b-instruct`** (22 Eyl'de ölçülerek seçildi — bkz. Durum). Kurulu ama kullanılmayanlar: `qwen2.5:7b` (yavaş, 4 GB VRAM'e sığmıyor), `qwen2.5:3b`, `qwen3:4b` (düşünen sürüm, elendi). Prompt kuralları küçük modele göre yazılı — **gevşetilmemeli** |
 | **Çalıştırma** | `python main.py` · `start_tau.bat` · exe: **`C:\Users\memoc\UltronApp\ULTRON\ULTRON.exe`** (OneDrive DIŞINDA — masaüstü/Başlat menüsü/Başlangıç kısayolları buraya bakar) |
 | **Otomatik başlatma** | Başlangıç klasöründeki kısayol `--tray` argümanıyla çalışır → pencere açılmaz, doğrudan sistem tepsisine iner |
 | **Diğer dokümanlar** | `KOMUTLAR.md` (kullanıcı kopya kağıdı) · `KURULUM.md` · `README.md` |
@@ -344,9 +344,30 @@ Kullanıcı indirdi, ölçüldü: 26 token/sn (7b'nin 3 katı) ama **%33'ü işl
 | qwen3:4b | 26,5 | %67 | düşünce cevaba sızıyor → elendi |
 | qwen2.5:3b | 70,4 | %100 | hızlı, Türkçesi zayıf (ölçümde konuyu kaçırdı) |
 
-**SIRADAKİ:** `ollama pull qwen3:4b-instruct` (düşünmeyen sürüm, 2,5 GB) →
-indince Ayarlar'dan seç, `scratchpad/model_3b_kalite.py` benzeri ölçümle
-niyet doğruluğu + hız + Türkçe kalitesi ölçülmeli. Olmazsa 7b'de kalınır.
+### ✅ 22 Eyl — MODEL DEĞİŞTİ: `qwen3:4b-instruct`
+ULTRON'un GERÇEK promptuyla, uygulamanın kendi boru hattından ölçüldü
+(`scratchpad/gercek_yol.py` — motor + akış ayrı ayrı):
+
+| | qwen3:4b-instruct | qwen2.5:7b (eski) |
+|---|---|---|
+| "nasılsın" → ilk kelime | **0,99 sn** | 2,28 sn |
+| cevabın tamamı | 2,8–3,9 sn | 4,6–12,6 sn |
+| token/sn | 31,9 | 12,7 |
+| niyet (10 vaka) | 10/10, ort 0,82 sn | 10/10, ort 2,08 sn |
+| kimlik ("kendini tanıt") | ✅ "Ben ULTRON'um" | ✅ ama… |
+
+**7b'nin elenme sebebi yalnız hız değil:** bir cevabın ortasına ÇİNCE meta-yorum
+karıştırdı ("…bugün biraz yorgun了他的回复不符合ULTRON的角色设定…").
+qwen3:4b-instruct'ta ne Çince ne İngilizce sızıntı görüldü.
+
+Config (`%APPDATA%\ULTRON\config.json`) güncellendi, yedeği `.yedek-2026-09-22`.
+Not: instruct sürümü de VRAM'e TAM sığmıyor (3,5 GB → %33 işlemci) ama 7b'nin
+yarısı kadar CPU'ya düşüyor. Tam sığan tek model `qwen2.5:3b` (Türkçesi zayıf).
+
+⚠️ **İndirme tuzağı:** aynı anda İKİ `ollama pull` çalıştırma. 22 Eyl'de kullanıcı
+ve asistan aynı blob'u indirdi → "rename … dosya başka bir işlem tarafından
+kullanılıyor" ve ardından "remove …-partial-0: dosya bulunamıyor" ile kilitlendi;
+çözüm `blobs/sha256-<hash>*` yarım dosyalarını silip tek seferde yeniden indirmek.
 
 ### 🎙️ 16 Eyl — ses katmanı (mikrofonsuz ölçülerek)
 
