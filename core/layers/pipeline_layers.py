@@ -431,8 +431,11 @@ class IntentAnalyzerLayer:
         # yerel LLM'e sınıflandırma danış. Doğal dille yazılmış komutları
         # ("bana motivasyon şarkısı koy") yakalar. Ollama yoksa/yavaşsa sessizce
         # regex sonucunda kalır — akış asla bozulmaz.
+        # Ajan açıkken bu sınıflandırıcı ÇALIŞMAZ: aynı cümleyi ajan zaten
+        # araçlarla birlikte modele soruyor; ikinci çağrı yalnızca gecikmedir.
         if ctx.intent == "GENERAL_CONVERSATION" and not hafif and \
-                self.config.get('llm_intent_enabled'):
+                self.config.get('llm_intent_enabled') and \
+                self.config.get('ajan_modu', 'kapali') not in ('yerel', 'hibrit'):
             try:
                 from features.llm_intent import llm_intent_coz
                 sonuc = llm_intent_coz(ctx.normalized_input, self.config)

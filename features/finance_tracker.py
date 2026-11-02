@@ -178,16 +178,21 @@ def donem_coz(cumle: str) -> Tuple[str, str]:
 
 
 def _donem_kosulu(donem: str) -> Tuple[str, list]:
-    """Dönem kodunu SQL WHERE parçasına çevirir (SQLite tarih fonksiyonlarıyla)."""
+    """Dönem kodunu SQL WHERE parçasına çevirir (SQLite tarih fonksiyonlarıyla).
+
+    `tarih` CURRENT_TIMESTAMP ile yazılır, yani UTC'dir; karşılaştırma ise
+    yerel güne göre. Sütun da 'localtime' ile çevrilmezse gece 00:00–03:00
+    arasında girilen harcama DÜNÜN özetine düşer (ay/yıl sınırında da aynı).
+    Test bu saatlerde koşunca yakalandı (15 Eki)."""
     if donem == 'hepsi':
         return "", []
     if donem == 'gun':
-        return "date(tarih) = date('now','localtime')", []
+        return "date(tarih,'localtime') = date('now','localtime')", []
     if donem == 'hafta':
-        return "date(tarih) >= date('now','localtime','-6 days')", []
+        return "date(tarih,'localtime') >= date('now','localtime','-6 days')", []
     if donem == 'yil':
-        return "strftime('%Y', tarih) = strftime('%Y','now','localtime')", []
-    return "strftime('%Y-%m', tarih) = strftime('%Y-%m','now','localtime')", []
+        return "strftime('%Y', tarih,'localtime') = strftime('%Y','now','localtime')", []
+    return "strftime('%Y-%m', tarih,'localtime') = strftime('%Y-%m','now','localtime')", []
 
 
 _TABLO = """

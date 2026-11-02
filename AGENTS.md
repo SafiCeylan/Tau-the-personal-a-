@@ -68,6 +68,9 @@ core/
   aliases.py                 🧠 TAKMA ADLAR (Faz 3) — "patronum" → Ahmet Kaya
   world_state.py             🌍 WORLD STATE (Faz 6) — ne açık, pil, internet
   reflection.py              🔍 REFLECTION (Faz 8) — kanıt kontrolü + halüsinasyon freni
+  ajan.py                    🤖 AJAN (15 Eki) — regex'in bıraktığını model + defterdeki
+                             araçlarla yapar; her çağrı SecurityAnalyzer'dan geçer,
+                             riskli araçta durup onay kartına devreder
   layers/pipeline_layers.py  14 katmanın tamamı (intent regex'leri burada; execution
                              artık deftere dağıtım yapıyor, ~260 satır zincir kalktı)
   layers/routine_engine.py   Modlar/rutinler (çalışma modu, dinlenme modu…)
@@ -79,7 +82,11 @@ core/
     level4_input.py          ODAK KORUMALI klavye (en son çare)
 features/
   llm_gateway.py             LLM sağlayıcı seçimi — TEK KAPI (UI'dan bağımsız)
-  llm_intent.py              Regex'in kaçırdığını LLM ile sınıflandırır (Ollama yoksa None)
+  llm_intent.py              Regex'in kaçırdığını LLM ile sınıflandırır (Ollama yoksa None).
+                             Ajan açıkken ÇALIŞMAZ (aynı işi ajan yapıyor)
+  ajan_saglayici.py          🤖 Ajan sağlayıcıları: Ollama /api/chat tools + Claude (anthropic
+                             SDK). `saglayici_sec` → kapali / yerel / hibrit
+  ses_kapisi.py              🎙️ Mikrofondan duyulan ORTAM konuşması (TV) eylem tetiklemez
   memory_rag.py              Mesaja EN ALAKALI hafızaları getirir (offline skor + ops. embedding)
   chat_learning.py           🧠 ÖĞRENME KATMANI — geçmiş sohbet arşivi (ayrı ogrenme.db):
                              FTS5 geri çağırma · örüntü çıkarımı · düzeltmeden öğrenme
@@ -186,7 +193,10 @@ tests/test_olu_referans.py   AST ile sınıfta TANIMSIZ `self._x` çağrıların
 `tts_enabled` / `tts_engine` (edge|gtts|sapi) · `wake_enabled` ·
 `mic_device_name` (esas) / `mic_device_index` (yedek) · `telegram_voice_reply` (varsayılan açık) ·
 `llm_intent_enabled` · `reminder_lead_minutes` ·
-`webhook_enabled` / `webhook_port` / `webhook_token`
+`webhook_enabled` / `webhook_port` / `webhook_token` ·
+`ajan_modu` (kapali|yerel|hibrit, vars. **kapali**) · `ajan_max_adim` (5) ·
+`claude_api_key` (boşsa `ANTHROPIC_API_KEY`) · `claude_model` (vars. `claude-opus-5-5`) ·
+`claude_effort` (vars. `low` — gecikme) · `ajan_num_ctx` (8192) · `ajan_zaman_asimi` (90 sn)
 
 Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.json`,
 `capability_cache.json`, `bilgiler.db`, `models/` (Vosk TR modeli ~50MB), `dist/`, `build/`.
@@ -290,6 +300,15 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 | **Tek sessizlik/hata oturumu kapatmaz** | Ardışık 2 sessizlik, 2 hata ya da 10 dk süre tavanı kapatır. Tek bir ağ kesintisinde kapatmak kullanıcıyı sohbeti baştan açmaya zorlar; hiç kapatmamak da mikrofonu saatlerce açık bırakır. Tavanlar config'te. |
 | **Ultron kendi sesiyle uyanabilir** | Ölçüm (21 Eyl): Ultron'un 20 cevabından 18'i uyandırma kelimesini tetiklemedi, ama **"Hey, bu komutu anlayamadım…" diye başlayan cevap iki hızda da kendini uyandırdı**. Bu yüzden konuşurken mikrofon KAPALI ve "sesle sözünü kesme" yok. Eklemek istersen önce bu ölçümü tekrarla (`scratchpad` betiği CLAUDE.md günlüğünde). |
 | **Duplex bildirimi SESLENDİRİLMEZ** | "Tekrar dinliyorum" gibi mesajlar `speak=False` gider. Seslendirilirse konuşma bitişi yeniden dinlemeyi tetikler → oturum kendi kuyruğunu kovalar. `tests/test_duplex_dongusu.py` kilitler. |
+| **Önbellek dönüş tipini değiştirince ÇAĞIRANLARI ara** | 15 Eyl'de `_doviz()` önbellek için `(metin, yaş)` ikilisine çevrildi; `sabah_brifingi_olustur` ikiliyi doğrudan `join`'e veriyordu → **zamanlanmış 08:00 brifingi bir ay boyunca her sabah TypeError ile çöktü**, akış LLM'e düştü ve model "Sabah brifingi kurabilirim, hangi konular?" diye uydurdu. Önbellek testleri yeşildi çünkü hiçbiri brifingin KENDİSİNİ çağırmıyordu. `tests/test_brifing_onbellek.py::SabahBrifingiTest` kilitler. |
+| **`CURRENT_TIMESTAMP` UTC'dir** | SQLite varsayılanı UTC yazar; uygulamanın geri kalanı yerel saat. İki ölçülen sonuç: **(1)** `sohbet_gecmisi` öğrenme arşivine 3 saat kayık girdi (saat alışkanlığı yanlış dilime düştü); **(2)** gece 00:00–03:00 arası girilen harcama DÜNÜN özetine düştü (`finance_tracker._donem_kosulu`, test o saatte koşunca yakalandı). Sorguda `date(tarih,'localtime')`, Python'da `_utc_yerele` kullan. |
+| **Göç kaynağı canlıyken göç DURMALI** | `gecmisi_iceri_al` tek seferlik göç sanılıyordu ama arayüz `sohbet_gecmisi`ne yazmaya DEVAM ediyor → her açılışta canlı turlar arşive İKİNCİ kez girdi (1264 geçmiş satırın 635'i ikizdi; alışkanlık/öneri sayıları iki katıydı). Artık canlı kaydın başladığı andan sonraki satırlar alınmıyor; eski ikizler yedek alınıp bir kez temizleniyor (`gecmis_duzeltme_v1`). |
+| **Telegram'da yazılı onay** | Onay beklerken gelen HER mesaj onayı iptal edip yeni komut sayılıyordu: "Evet bilgisayarı kapat" yazan kullanıcı yeniden kart gördü, komut hiç çalışmadı. `telegram_bridge.yazili_onay_coz` SIKI: tek başına onay kelimesi ya da onay + bekleyen komutun AYNISI. "evet ama önce müziği aç" onay DEĞİLDİR. |
+| **Mikrofondan gelen her cümle komut değildir** | 24 Eyl–3 Eki: TV diyalogları STT'den komut olarak geldi (dinlemeyi neyin açtığı kesinleşmedi — wake ve canlı sohbet kapalıydı; şüpheli: odak ekranında kutu boşken Enter mikrofon butonunu "tıklıyor"). Planner 18 plan üretti, ekrana tıklama/harcama/ses niyetleri tetiklendi. `features/ses_kapisi.py`: sesle gelen, "Ultron" diye başlamayan, **15 kelimeden uzun** cümle hiçbir araç/plan çalıştırmaz (eşik ölçüldü: gerçek komutların en uzunu 13 kelime, ortam cümlelerinin 38/48'i >15). Canlı sohbet kapalıyken hiç işlenmez. **Kapı yalnız sese uygulanır** — yazılan cümle kullanıcınındır. |
+| **Ajan riskli aracı ASLA kendisi çalıştırmaz** | `RISK_ONAY` araçları ve SecurityAnalyzer'ın CONFIRM verdiği her çağrı → ajan DURUR, kartı motora verir, onaylanınca `ctx.onay_komutu` (ajanın kanonik cümlesi) çalışır. Onaydan SONRAKİ adımlar yürütülmez: model onay sonucunu bilmeden devam ederse "gönderdim" der. Güvenlik ölçülemezse (istisna) iş YAPILMAZ, sorulur. |
+| **Buluta ekran/pano/dosya içeriği gitmez** | Hibrit modda `BULUTA_KAPALI` araçları (ekrani_oku, pano_isle, dosya_oku, ekranda_sec/tikla, ekran_takip) Claude'a HİÇ verilmez — OCR içeriğinin Gemini'ye gitmemesi kuralının ajan karşılığı. Kullanıcı bunları isterse komut zaten regex yolunda yerelde karşılanır. |
+| **Claude (Opus 5.5) istek kuralları** | Zorlanmış `tool_choice` (any/tool) **400** döner — kullanılmaz. Düşünme kapatılamaz; hız için `effort: low`. Asistan içeriği (thinking blokları dahil) OLDUĞU GİBİ geri eklenir, konuşma yalnız sona eklenir (bloklar konuşmaya bağlı). Sistem talimatı bayt bayt sabit — saat/hafıza KULLANICI mesajında (önbellek). Reddetme için `fallbacks: "default"` açık. |
+| **Ollama araç şeması bağlamı taşırır** | ~38 araç şeması ≈4k token; varsayılan bağlam penceresinde Ollama BAŞTAN keser ve sistem talimatı sessizce kaybolur. Ajan isteği `num_ctx` 8192 gönderir. |
 | **QtWebEngineWidgets QApplication'dan ÖNCE** | `ui.tau_window` import eden test modülleri, başka modül QApplication'ı önceden kurduysa toplanamıyor. `tests/conftest.py` WebEngine'i her şeyden önce yükler; `unittest` ile tek modül koşarken diye modülün başında da import edilir. |
 
 ---
@@ -309,7 +328,47 @@ Git izlemesinde OLMAYAN dosyalar: `config.json`, `user_data.json`, `app_cache.js
 
 ---
 
-## 📊 Durum (son güncelleme: 21 Eyl 2026 — canlı sesli sohbet + gecikme, commit EDİLMEDİ)
+## 📊 Durum (son güncelleme: 15 Eki 2026 — Faz 0 canlı hatalar + Faz 1 ajan çekirdeği, commit EDİLMEDİ)
+
+### 🤖 15 Eki — "Ultron'u tam asistana çevireceğiz": analiz → Faz 0 → Faz 1
+Analiz canlı arşivden yapıldı (`ogrenme.db`, 1.902 tur): en çok kullanılanlar uygulama
+aç/kapat, klavye, medya, ekran görüntüsü, ses — yani **uzaktan kumanda**. Serbest
+cümlede 329 sohbet turunun 314'ü başarısız. Kullanıcı kararı: **hibrit** — hızlı
+komutlar yerelde kalır, ajan işleri için isteğe bağlı Claude API.
+
+**Faz 0 — canlıdan çıkan hatalar (hepsi testle kilitli):**
+1. **Sabah brifingi 15 Eyl'den beri her sabah çöküyordu** (`_doviz` ikilisi `join`'e) → `_doviz_satiri`.
+2. **Arşive çift kayıt + 3 saat UTC kayması** → göç canlı kayıttan sonrasını almıyor;
+   635 ikiz yedek alınıp bir kez temizlenir (gerçek arşivin KOPYASINDA doğrulandı:
+   1264 → 629 geçmiş satır, ikinci açılışta tekrar çalışmıyor). Gerçek arşiv uygulama
+   ilk açıldığında onarılır, yedeği `ogrenme.db.yedek-<tarih>`.
+3. **Telegram yazılı onay hiç çalışmıyordu** → `yazili_onay_coz` (sıkı kural).
+4. **TV sesi komut olarak işlendi** → `features/ses_kapisi.py` (eşik 15 kelime, ölçülerek).
+   ⚠️ Dinlemeyi neyin açtığı KESİNLEŞMEDİ — kullanıcıya sorulmalı.
+5. (yan bulgu) Harcama özeti gece 00–03 arası UTC yüzünden dünün gününe düşüyordu.
+
+**Faz 1 — ajan çekirdeği** (`core/ajan.py`, `features/ajan_saglayici.py`):
+regex'in sohbete bıraktığı ve çok adımlı cümleler (ajan açıkken planner yerine) ajana
+gider. Defterdeki araçlar şemaya otomatik çevrilir (`metin` = kısa komut cümlesi;
+araçların kendi ayrıştırıcıları yeniden kullanılır). Güvenlik kuralları tuzaklar
+tablosunda. Ayarlar'da **Ajan Modu** (varsayılan **kapalı**), Claude anahtarı ve modeli.
+Cevabın altına iz satırı düşer (`🤖 yerel · model: hava_durumu✓`) — sessiz ajan yok.
+`tests/test_ajan.py` (37), `test_ses_kapisi.py`, `test_telegram_onay.py`.
+
+**Ölçüm — yerel ajan (`scripts/ajan_olcum.py`, kuru çalıştırma, arşivden 30 bilinen + 12 kaçan cümle):**
+qwen3:4b-instruct ilk turda **8/30** doğru araç, ort. 9,4 sn; araç çağırmadan "basıldı" dedi (halüsinasyon).
+Bağlam notu kullanıcı cümlesinin önünden alınıp düzeltme turu eklenince **10/30**, ort. 8,7 sn;
+"Tab+1 bas" artık aracı çağırıyor. Etiketlerin ~6'sı arşivde zaten yanlış/ulaşılamaz (öneri araçları ajana kapalı),
+yine de **4B yerel model ajan için yetersiz**: çoğu komutta araç hiç çağırmıyor. 8192 bağlamla model %42 CPU'da.
+Sonuç: ajan varsayılan KAPALI kalmalı; gerçek kullanım için hibrit (Claude) ölçülmeli — ücretli, anahtar gerekir.
+
+**Açık kalanlar:**
+* Ajan **canlıda denenmedi**; Claude ile ölçüm YAPILMADI; masaüstünde ajan cevabı akmaz (streaming yok) — tek parça gelir.
+* `plan_executor._adim_guvenlik` `getattr(arac, 'intent')` okuyor ama `Arac`'ta alan
+  `intentler` → planner adımlarının güvenliği niyetsiz değerlendiriliyor (ajan bunu
+  doğru yapıyor; planner için ayrı düzeltme).
+* exe yeniden DERLENMEDİ — masaüstü kısayolu hâlâ 22 Eyl sürümünü açar.
+
 
 ### 🎙️ 21 Eyl — canlı sesli sohbet komple elden geçirildi
 Kurallar `tau_window`'daki üç slot'tan alınıp **`features/duplex.py`** içinde bir durum

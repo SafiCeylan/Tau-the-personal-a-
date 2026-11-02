@@ -50,7 +50,7 @@ import re
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.paths import veri_yolu
 
@@ -410,6 +410,13 @@ def gecmisi_iceri_al(ana_db_yolu: str, limit: int = 20000) -> int:
         if not ana_db_yolu or not os.path.exists(ana_db_yolu):
             return 0
         with _acik() as conn:
+            _cift_kayitlari_temizle(conn)
+            # Canlı kayıt başladıktan sonra `sohbet_gecmisi` YİNELEMEDİR: arayüz
+            # her turu oraya da yazmaya devam ediyor. Bu sınır olmadan her tur
+            # arşive iki kez giriyordu (ölçüm, 15 Eki: 1264 geçmiş satırın 635'i
+            # canlı kaydın ikiziydi) ve alışkanlık sayıları iki katına çıkıyordu.
+            canli_baslangic = conn.execute(
+                "SELECT MIN(tarih) FROM konusma WHERE kaynak = 'canli'").fetchone()[0]
             son_id = int(_meta_al(conn, 'gecmis_son_id', '0') or 0)
             kaynak = sqlite3.connect(f"file:{ana_db_yolu}?mode=ro", uri=True, timeout=10)
             try:
@@ -424,6 +431,9 @@ def gecmisi_iceri_al(ana_db_yolu: str, limit: int = 20000) -> int:
             for kid, soru, cevap, tarih in satirlar:
                 son_id = max(son_id, kid)
                 if not ogrenilebilir_mi(soru):
+                    continue
+                tarih = _utc_yerele(tarih)
+                if canli_baslangic and tarih >= canli_baslangic:
                     continue
                 sade = sadelestir(soru).strip()
                 saat, gun = _tarih_parcala(tarih)
@@ -488,6 +498,71 @@ def _niyet_tahmincisi():
     except Exception as e:
         print(f"[ULTRON Ogrenme] Niyet tahmincisi yuklenemedi: {e}")
         return None
+
+
+def _utc_yerele(tarih: str) -> str:
+    """`sohbet_gecmisi.tarih` SQLite'ın CURRENT_TIMESTAMP'idir, yani UTC.
+    Canlı kayıt YEREL saat yazar. Çevrilmezse geçmiş satırlar 3 saat kayık
+    durur: saat alışkanlığı yanlış dilime düşer ("her gün 09:00" önerisi
+    gerçekte 12:00 alışkanlığından üretilir). Çözülemezse olduğu gibi döner."""
+    try:
+        d = datetime.strptime(str(tarih)[:19], '%Y-%m-%d %H:%M:%S')
+        return (d.replace(tzinfo=timezone.utc).astimezone()
+                .replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S'))
+    except Exception:
+        return tarih
+
+
+def _cift_kayitlari_temizle(conn) -> int:
+    """
+    TEK SEFERLİK onarım (meta `gecmis_duzeltme_v1`): eski sürümün arşive
+    yazdığı ikizleri siler ve kalan geçmiş satırların saatini yerele çevirir.
+
+    İkiz tanımı: canlı kaydın başladığı andan SONRAKİ her `gecmis` satırı —
+    o tarihten sonra aynı tur zaten `canli` olarak yazılmış durumda. Önce
+    arşivin yedeği alınır (kullanıcının tek öğrenme kaydı budur).
+    Dönüş: silinen satır sayısı.
+    """
+    if _meta_al(conn, 'gecmis_duzeltme_v1') == '1':
+        return 0
+    satirlar = conn.execute(
+        "SELECT id, tarih FROM konusma WHERE kaynak = 'gecmis'").fetchall()
+    canli_baslangic = conn.execute(
+        "SELECT MIN(tarih) FROM konusma WHERE kaynak = 'canli'").fetchone()[0]
+    if satirlar:
+        try:
+            yedek_yolu = _db_yolu() + '.yedek-' + datetime.now().strftime('%Y-%m-%d')
+            if not os.path.exists(yedek_yolu):
+                hedef = sqlite3.connect(yedek_yolu)
+                try:
+                    conn.commit()
+                    conn.backup(hedef)
+                finally:
+                    hedef.close()
+        except Exception as e:
+            # Yedek alınamıyorsa onarım YAPILMAZ — bir sonraki açılışta denenir.
+            print(f"[ULTRON Ogrenme] Yedek alinamadi, onarim ertelendi: {e}")
+            return 0
+
+    silinen = 0
+    for satir_id, tarih in satirlar:
+        yerel = _utc_yerele(tarih)
+        if canli_baslangic and yerel >= canli_baslangic:
+            conn.execute("DELETE FROM etiket WHERE konusma_id = ?", (satir_id,))
+            conn.execute("DELETE FROM konusma WHERE id = ?", (satir_id,))
+            if _fts_destegi:
+                conn.execute("DELETE FROM konusma_fts WHERE rowid = ?", (satir_id,))
+            silinen += 1
+        else:
+            saat, gun = _tarih_parcala(yerel)
+            conn.execute("UPDATE konusma SET tarih = ?, saat = ?, gun = ? WHERE id = ?",
+                         (yerel, saat, gun, satir_id))
+    _meta_yaz(conn, 'gecmis_duzeltme_v1', '1')
+    conn.commit()
+    if silinen:
+        _onbellegi_dusur()
+        print(f"[ULTRON Ogrenme] Arsivdeki {silinen} cift kayit temizlendi")
+    return silinen
 
 
 def _tarih_parcala(tarih: str):

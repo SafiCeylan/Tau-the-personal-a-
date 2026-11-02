@@ -390,6 +390,92 @@ class GocTest(OgrenmeTemeli):
         cl.gecmisi_iceri_al(yol)
         self.assertEqual(cl.oruntuler(zorla=True)['sik_komut'], [])
 
+    # --- 15 Eki: çift kayıt -------------------------------------------------
+    # Arayüz her turu `sohbet_gecmisi`ne yazmaya DEVAM ediyor; canlı kayıt da
+    # aynı turu yazıyor. Göç her açılışta yeni satırları alınca her tur iki kez
+    # sayılıyordu (gerçek arşivde 1264 geçmiş satırın 635'i ikizdi).
+
+    @staticmethod
+    def _yerel(utc: str) -> str:
+        from datetime import datetime, timezone
+        d = datetime.strptime(utc, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+        return d.astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+
+    def _sayi(self, kaynak):
+        conn = cl._baglanti()
+        try:
+            return conn.execute("SELECT COUNT(*) FROM konusma WHERE kaynak = ?",
+                                (kaynak,)).fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_canli_kayit_basladiktan_sonraki_gecmis_alinmaz(self):
+        cl.kaydet("spotify aç", "açıldı", intent="SYSTEM_CONTROL", basarili=True)
+        yol = self._sahte_ana_db([
+            (1, "kedimin adı Pamuk", "Not aldım", "2020-01-01 10:00:00"),
+            # Canlı kaydın ikizi — şimdiki zamanın UTC karşılığı
+            (2, "spotify aç", "açıldı",
+             __import__('datetime').datetime.now(__import__('datetime').timezone.utc)
+             .strftime('%Y-%m-%d %H:%M:%S')),
+        ])
+        self.assertEqual(cl.gecmisi_iceri_al(yol), 1)
+        self.assertEqual(self._sayi('canli'), 1)
+        self.assertEqual(self._sayi('gecmis'), 1)
+
+    def test_gecmis_saati_yerel_saate_cevrilir(self):
+        yol = self._sahte_ana_db([(1, "hava nasıl", "güneşli", "2026-07-01 06:00:00")])
+        cl.gecmisi_iceri_al(yol)
+        conn = cl._baglanti()
+        try:
+            tarih, saat = conn.execute("SELECT tarih, saat FROM konusma").fetchone()
+        finally:
+            conn.close()
+        beklenen = self._yerel("2026-07-01 06:00:00")
+        self.assertEqual(tarih, beklenen)
+        self.assertEqual(saat, int(beklenen[11:13]))
+
+    def test_eski_surumun_ikizleri_bir_kez_temizlenir(self):
+        cl.kaydet("spotify aç", "açıldı", intent="SYSTEM_CONTROL", basarili=True)
+        conn = cl._baglanti()
+        try:
+            canli = conn.execute("SELECT tarih FROM konusma").fetchone()[0]
+            # Eski sürümün yazdığı satırlar: ham UTC tarih, onarım bayrağı yok
+            conn.execute("DELETE FROM meta WHERE anahtar = 'gecmis_duzeltme_v1'")
+            conn.execute("INSERT INTO konusma (kaynak_id, kanal, kullanici, sade, intent, "
+                         "basarili, kaynak, tarih) VALUES (90, 'desktop', 'eski', 'eski', "
+                         "NULL, 0, 'gecmis', '2020-01-01 07:00:00')")
+            import datetime as dt
+            ikiz_utc = (dt.datetime.strptime(canli, '%Y-%m-%d %H:%M:%S').astimezone()
+                        .astimezone(dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+            conn.execute("INSERT INTO konusma (kaynak_id, kanal, kullanici, sade, intent, "
+                         "basarili, kaynak, tarih) VALUES (91, 'desktop', 'spotify aç', "
+                         "'spotify ac', 'SYSTEM_CONTROL', 1, 'gecmis', ?)", (ikiz_utc,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        yol = self._sahte_ana_db([])
+        cl.gecmisi_iceri_al(yol)
+        self.assertEqual(self._sayi('gecmis'), 1, 'ikiz silinmedi ya da eski kayıt gitti')
+        self.assertEqual(self._sayi('canli'), 1)
+        self.assertTrue(os.path.exists(cl._db_yolu() + '.yedek-' +
+                                       __import__('datetime').datetime.now().strftime('%Y-%m-%d')),
+                        'onarımdan önce yedek alınmadı')
+        conn = cl._baglanti()
+        try:
+            kalan = conn.execute("SELECT tarih FROM konusma WHERE kaynak='gecmis'").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(kalan, self._yerel('2020-01-01 07:00:00'))
+        # İkinci açılışta onarım tekrar çalışmaz (saat iki kez kaydırılmamalı)
+        cl.gecmisi_iceri_al(yol)
+        conn = cl._baglanti()
+        try:
+            kalan2 = conn.execute("SELECT tarih FROM konusma WHERE kaynak='gecmis'").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(kalan2, kalan)
+
 
 # =========================================================================
 # KANAL ETİKETİ — "[Telegram] " öneki komutun parçası değildir

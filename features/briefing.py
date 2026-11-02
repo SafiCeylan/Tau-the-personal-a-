@@ -272,6 +272,18 @@ def doviz_raporu() -> str:
     return r
 
 
+def _doviz_satiri():
+    """Brifing için tek satırlık döviz. `_doviz()` (metin, yas) İKİLİSİ döner;
+    brifing onu doğrudan bölüm listesine koyuyordu → `join` TypeError ile
+    çöküyor, zamanlanmış 08:00 brifingi 15 Eyl'den beri LLM'e düşüyordu."""
+    r, yas = _doviz()
+    if not r:
+        return None
+    if yas:
+        r += f" _({_yas_metni(yas)} alındı — servise şu an ulaşılamıyor)_"
+    return r
+
+
 def _doviz_ham():
     """USD bazlı kur tablosundan TRY ve EUR/TRY hesaplanır."""
     if requests is None:
@@ -401,7 +413,7 @@ def sabah_brifingi_olustur(cursor=None):
     bolumler = []
     for uretici, hata_etiketi in (
         (_hava_durumu, "🌤️ Hava durumu alınamadı"),
-        (_doviz, "💵 Döviz kurları alınamadı"),
+        (_doviz_satiri, "💵 Döviz kurları alınamadı"),
         (lambda: _bugunku_etkinlikler(cursor), "📅 Takvim okunamadı"),
         (lambda: _bugunku_hatirlatmalar(cursor), "⏰ Hatırlatmalar okunamadı"),
     ):

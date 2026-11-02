@@ -35,7 +35,10 @@ hiddenimports = [
 for pkg in ('vosk', 'sounddevice', 'pywinauto', 'comtypes', 'pygame', 'gtts',
             # winsdk: OCR için WinRT projeksiyonu — native _winrt uzantısı ve
             # namespace alt modülleri elle toplanmazsa exe'de "No module named" verir
-            'winsdk'):
+            'winsdk',
+            # anthropic: ajan için Claude SDK (opsiyonel) — fonksiyon içinde
+            # tembel import edilir; alt modülleri elle toplanmazsa exe'de eksik kalır
+            'anthropic'):
     try:
         d, b, h = collect_all(pkg)
         datas += d

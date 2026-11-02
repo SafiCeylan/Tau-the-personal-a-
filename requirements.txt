@@ -31,3 +31,6 @@ edge-tts>=7.0.0
 # "Hey Ultron" wake word (lokal tanıma — models/vosk-tr klasörüne Türkçe model gerekir)
 vosk>=0.3.45
 sounddevice>=0.4.6
+
+# 🤖 Ajan — hibrit modda Claude (opsiyonel; yoksa ajan yalnız yerel Ollama'yla çalışır)
+anthropic>=0.101.0

@@ -89,6 +89,39 @@ def onay_butonlari() -> dict:
     ]]}
 
 
+_YAZILI_ONAY = ('evet', 'onayla', 'onaylıyorum', 'onayliyorum')
+_YAZILI_RET = ('hayır', 'hayir', 'iptal', 'vazgeç', 'vazgec', 'reddet')
+
+
+def _onay_sade(metin: str) -> str:
+    metin = (metin or '').replace('İ', 'i').replace('I', 'ı').lower()
+    return ' '.join(re.sub(r'[^\wçğıöşü\s]', ' ', metin).split())
+
+
+def yazili_onay_coz(metin: str, bekleyen_komut: str):
+    """
+    Bekleyen onaya YAZIYLA verilen cevabı çözer: 'onay' | 'ret' | None.
+
+    Eskiden onay beklerken gelen HER mesaj onayı iptal edip yeni komut
+    sayılıyordu; "Evet bilgisayarı kapat" yazan kullanıcı yeniden onay kartı
+    görüyor, komut hiç çalışmıyordu (canlı kayıt, 23 Eyl).
+
+    Kural sıkıdır — bu bir güvenlik kapısıdır: onay ya TEK BAŞINA onay kelimesi
+    ya da onay kelimesi + bekleyen komutun AYNISI. "evet ama önce müziği aç"
+    onay sayılmaz (None → eski davranış: iptal + yeni komut).
+    """
+    sade = _onay_sade(metin)
+    if not sade:
+        return None
+    ilk, _, kalan = sade.partition(' ')
+    if ilk in _YAZILI_RET and kalan in ('', 'et', 'ediyorum'):
+        return 'ret'
+    if ilk in _YAZILI_ONAY:
+        if not kalan or kalan == _onay_sade(bekleyen_komut):
+            return 'onay'
+    return None
+
+
 def ana_menu_klavyesi() -> dict:
     """Telegram Ana Kategori Menüsü."""
     return {

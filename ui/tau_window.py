@@ -204,15 +204,17 @@ class EngineWorkerThread(QThread):
     finished_signal = pyqtSignal(str, object)  # (orijinal metin, UltronContext)
     error_signal = pyqtSignal(str)
 
-    def __init__(self, engine, text, recent_context=None):
+    def __init__(self, engine, text, recent_context=None, input_type="text"):
         super().__init__()
         self.engine = engine
         self.text = text
         self.recent_context = recent_context
+        self.input_type = input_type
 
     def run(self):
         try:
-            ctx = self.engine.process(self.text, recent_context=self.recent_context)
+            ctx = self.engine.process(self.text, input_type=self.input_type,
+                                      recent_context=self.recent_context)
             self.finished_signal.emit(self.text, ctx)
         except Exception as e:
             self.error_signal.emit(f"Engine Hatası: {str(e)}")
@@ -731,6 +733,15 @@ class TelegramWorkerThread(QThread):
             if ozel_komut:
                 text = ozel_komut
 
+        # Bekleyen onaya YAZIYLA cevap ("evet", "evet bilgisayarı kapat", "iptal").
+        # Kural sıkı: tg.yazili_onay_coz yalnız tek başına onay kelimesini ya da
+        # onay + bekleyen komutun aynısını kabul eder.
+        if chat_id in self.pending:
+            cevap = tg.yazili_onay_coz(text, self.pending[chat_id][0])
+            if cevap:
+                self._bekleyeni_sonuclandir(tg, token, chat_id, cevap == 'onay')
+                return None
+
         # Bekleyen onay varken başka mesaj gelirse güvenlik gereği iptal et
         if chat_id in self.pending:
             self.pending.pop(chat_id, None)
@@ -769,7 +780,7 @@ class TelegramWorkerThread(QThread):
             return engine_ctx.security_message
 
         if engine_ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM"):
-            self.pending[chat_id] = (text, time.time() + 60)
+            self.pending[chat_id] = (engine_ctx.onay_komutu or text, time.time() + 60)
             tg.send_message(token, chat_id, engine_ctx.security_message,
                             reply_markup=tg.onay_butonlari())
             self.activity_signal.emit(text, "(onay bekleniyor — Telegram)")
@@ -897,13 +908,17 @@ class TelegramWorkerThread(QThread):
         if not allowed or str(chat_id) != allowed:
             return
 
+        self._bekleyeni_sonuclandir(tg, token, chat_id, data == 'ultron_confirm')
+
+    def _bekleyeni_sonuclandir(self, tg, token, chat_id, onay: bool):
+        """Bekleyen onayı buton ya da yazılı cevapla sonuçlandırır (tek yol)."""
         pending = self.pending.pop(chat_id, None)
         if not pending or time.time() > pending[1]:
             tg.send_message(token, chat_id, "⏱️ Onay süresi dolmuş — komut iptal edildi.")
             return
 
         cmd = pending[0]
-        if data != 'ultron_confirm':
+        if not onay:
             tg.send_message(token, chat_id, "🛡️ **GÜVENLİK İPTALİ:** İşlem iptal edildi.")
             self.activity_signal.emit(cmd, "(Telegram'dan iptal edildi)")
             return
@@ -1544,7 +1559,17 @@ class TauMainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Mesaj Akışı
     # ------------------------------------------------------------------
-    def on_user_send_message(self, text: str):
+    def on_user_send_message(self, text: str, input_type: str = "text"):
+        # 🎙️ Ses kapısı: canlı sohbet kapalıyken duyulan ortam konuşması (TV)
+        # hiç işlenmez — kullanıcı konuşmayı kendisi başlatmadı. Canlı sohbette
+        # sohbet cevabı alır, eylemi motor engeller (features/ses_kapisi.py).
+        if input_type == "voice":
+            from features import ses_kapisi
+            from features.duplex import OTURUM
+            if ses_kapisi.ortam_konusmasi_mi(text) and not OTURUM.aktif_mi():
+                self._post_assistant(ses_kapisi.bildirim(text), speak=False)
+                return
+
         now_str = datetime.now().strftime("%H:%M")
         self.chat_view.add_message("user", text, now_str)
         self.ultron_focus_view.add_message("user", text)
@@ -1574,7 +1599,8 @@ class TauMainWindow(QMainWindow):
         self._set_ai_state("thinking")
 
         # 2. Engine'i worker thread'de çalıştır (web araması / uygulama tarama UI'ı dondurmasın)
-        worker = EngineWorkerThread(self.controller.engine, text, list(self.recent_chat_history))
+        worker = EngineWorkerThread(self.controller.engine, text, list(self.recent_chat_history),
+                                    input_type=input_type)
         worker.finished_signal.connect(self._on_engine_result)
         worker.error_signal.connect(self.on_ai_error)
         self._track_worker(worker)
@@ -1589,7 +1615,9 @@ class TauMainWindow(QMainWindow):
                 self._set_ai_state("idle")
                 return
 
-            self.pending_confirmation_cmd = text
+            # Ajan riskli bir araçta durduysa onaylanınca ONUN komut cümlesi
+            # çalışır (kullanıcının serbest cümlesi yürütücünün kalıplarına uymayabilir).
+            self.pending_confirmation_cmd = getattr(engine_ctx, 'onay_komutu', None) or text
             self.pending_confirmation_timer.start(CONFIRMATION_TIMEOUT_MS)
 
             def _on_confirm():
@@ -2115,7 +2143,7 @@ class TauMainWindow(QMainWindow):
                 self._post_assistant(mesaj, speak=False)
         elif not text:
             return
-        self.on_user_send_message(text)
+        self.on_user_send_message(text, input_type="voice")
 
     def _on_wake_command_error(self, err: str):
         if self.wake_worker is not None:
@@ -2350,7 +2378,7 @@ class TauMainWindow(QMainWindow):
         if self.wake_worker is not None:
             self.wake_worker.paused = False
         if text:
-            self.on_user_send_message(text)
+            self.on_user_send_message(text, input_type="voice")
 
     def _on_stt_error(self, err: str):
         """Sesli komut hatası: wake'i geri aç ve kullanıcıyı bilgilendir."""

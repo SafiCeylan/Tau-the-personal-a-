@@ -85,6 +85,23 @@ class SettingsViewWidget(QWidget):
             self.config.get("ollama_model", "qwen2.5:3b"),
         )
 
+        # 🤖 Ajan (core/ajan.py): regex'in anlamadığı işi model araçlarla yapar.
+        self.ajan_modu_combo = QComboBox()
+        self.ajan_modu_combo.addItem("Kapalı (yalnız hızlı komutlar)", "kapali")
+        self.ajan_modu_combo.addItem("Yerel (Ollama)", "yerel")
+        self.ajan_modu_combo.addItem("Hibrit (Claude, yoksa Ollama)", "hibrit")
+        idx = self.ajan_modu_combo.findData(self.config.get("ajan_modu", "kapali"))
+        self.ajan_modu_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.ajan_modu_combo.setToolTip(
+            "Hızlı komutlar her modda yerelde kalır. Ajan yalnız anlaşılmayan ya da "
+            "çok adımlı istekleri üstlenir. Hibrit modda ekran/pano/dosya içeriği "
+            "okuyan araçlar buluta verilmez.")
+        self.claude_key_in = QLineEdit(self.config.get("claude_api_key", "") or "")
+        self.claude_key_in.setEchoMode(QLineEdit.Password)
+        self.claude_key_in.setPlaceholderText("sk-ant-... (boşsa ANTHROPIC_API_KEY ortam değişkeni)")
+        self.claude_model_in = QLineEdit(self.config.get("claude_model", "") or "")
+        self.claude_model_in.setPlaceholderText("claude-opus-5-5")
+
         self.gemini_key_in = QLineEdit(self.config.get("gemini_api_key", "") or "")
         self.gemini_key_in.setEchoMode(QLineEdit.Password)
         self.gemini_key_in.setPlaceholderText("AIzaSy...")
@@ -154,6 +171,9 @@ class SettingsViewWidget(QWidget):
         model_widget = QWidget()
         model_widget.setLayout(model_row)
         form.addRow("Ollama Model Adı:", model_widget)
+        form.addRow("🤖 Ajan Modu:", self.ajan_modu_combo)
+        form.addRow("Claude API Anahtarı:", self.claude_key_in)
+        form.addRow("Claude Modeli:", self.claude_model_in)
         form.addRow("Google Gemini API Key:", self.gemini_key_in)
         form.addRow("Gemini Model:", self.gemini_model_in)
         form.addRow("KoboldCPP URL:", self.kobold_url_in)
@@ -502,6 +522,10 @@ class SettingsViewWidget(QWidget):
             "ai_provider": self.provider_combo.currentData(),
             "ollama_url": self.ollama_url_in.text().strip(),
             "ollama_model": self.ollama_model_combo.currentText().strip(),
+            "ajan_modu": self.ajan_modu_combo.currentData(),
+            "claude_api_key": self.claude_key_in.text().strip(),
+            # Boş bırakılırsa sağlayıcı varsayılanı (claude-opus-5-5) kullanılır.
+            "claude_model": self.claude_model_in.text().strip(),
             "gemini_api_key": self.gemini_key_in.text().strip(),
             "gemini_model": self.gemini_model_in.text().strip(),
             "kobold_url": self.kobold_url_in.text().strip(),

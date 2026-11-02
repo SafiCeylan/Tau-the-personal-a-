@@ -115,14 +115,14 @@ class DuplexKomutSonucuTest(unittest.TestCase):
         self.p = _sahte_pencere()
         Pencere._on_wake_command(self.p, 'hava durumu nedir')
         self.assertTrue(self.oturum.aktif_mi())
-        self.p.on_user_send_message.assert_called_once_with('hava durumu nedir')
+        self.p.on_user_send_message.assert_called_once_with('hava durumu nedir', input_type='voice')
 
     def test_muzigi_durdur_komuttur_sohbeti_kapatmaz(self):
         self.oturum.baslat()
         self.p = _sahte_pencere()
         Pencere._on_wake_command(self.p, 'müziği durdur')
         self.assertTrue(self.oturum.aktif_mi())
-        self.p.on_user_send_message.assert_called_once_with('müziği durdur')
+        self.p.on_user_send_message.assert_called_once_with('müziği durdur', input_type='voice')
 
     def test_dur_sohbeti_kapatir(self):
         self.oturum.baslat()

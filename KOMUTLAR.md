@@ -594,5 +594,35 @@ gelen istekler (`Origin`/`Referer` taşıyanlar) doğru token'la bile reddedilir
 zararlı bir web sayfasının arka planda Ultron'a komut göndermesini engeller.
 
 ---
+
+## 🤖 AJAN MODU (anlaşılmayan ve çok adımlı istekler)
+
+Ayarlar → **🤖 Ajan Modu**: `Kapalı` (varsayılan) · `Yerel (Ollama)` · `Hibrit (Claude, yoksa Ollama)`.
+Hızlı komutlar ("chrome aç", "sesi %50 yap") her modda eskisi gibi anında çalışır.
+Ajan yalnızca Ultron'un kalıplarla ANLAMADIĞI ya da çok adımlı cümleleri üstlenir:
+
+- "bugün dışarı çıksam üşür müyüm" → hava aracı çağrılır, cevap ondan kurulur
+- "önce dolar kaç bak, sonra yarın 10'da bankayı aramayı hatırlat"
+- Cevabın altında hangi araçların çalıştığı yazar: `(🤖 yerel · qwen3:4b-instruct: hava_durumu✓)`
+
+**Güvenlik:** mesaj/dosya gönderme ve ekrana tıklama gibi işlerde ajan durur ve
+onay kartı açar — "evet" demeden hiçbir şey gönderilmez. Hibrit modda ekran, pano
+ve dosya İÇERİĞİ okuyan araçlar Claude'a verilmez.
+
+## 🎙️ SESLİ KOMUTTA "ORTAM KONUŞMASI"
+
+Mikrofon 15 kelimeden uzun ve "Ultron" diye başlamayan bir cümle duyarsa (TV,
+yan odadaki konuşma) onu **komut olarak işlemez** ve sohbete not düşer. Uzun bir
+komutun varsa **"Ultron, ..."** diye başla. Canlı sesli sohbetteyken uzun cümleler
+sohbet cevabı alır ama yine de hiçbir eylem çalıştırmaz.
+
+## 📱 TELEGRAM'DA YAZIYLA ONAY
+
+Onay kartı geldiğinde butona basmak yerine yazabilirsin:
+- `evet` / `onayla` — ya da `evet` + aynı komut ("evet bilgisayarı kapat")
+- `hayır` / `iptal` / `vazgeç` — iptal
+- Başka bir şey yazarsan bekleyen onay iptal olur ve yeni mesajın komut olarak işlenir.
+
+---
 *Bu dosya: `KOMUTLAR.md` — proje kökünde durur, yeni özellik eklendikçe güncellenir.*
 

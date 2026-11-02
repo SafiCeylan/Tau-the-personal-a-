@@ -153,5 +153,46 @@ class RaporlardaBayatUyarisiTest(unittest.TestCase):
         self.assertIn('ulaşılamadı', metin)
 
 
+class SabahBrifingiTest(unittest.TestCase):
+    """15 Eyl'deki önbellek değişikliği `_doviz()`'i (metin, yas) ikilisine
+    çevirdi, brifing ise ikiliyi doğrudan `join`'e veriyordu → zamanlanmış
+    08:00 brifingi her sabah TypeError ile çöktü ve cevabı LLM uydurdu
+    ("Sabah brifingi kurabilirim, hangi konular?"). Önbellek testleri yeşildi
+    çünkü hiçbiri brifingin KENDİSİNİ çağırmıyordu."""
+
+    def setUp(self):
+        briefing.onbellegi_temizle()
+
+    def tearDown(self):
+        briefing.onbellegi_temizle()
+
+    def test_brifing_doviz_ve_havayla_metin_uretir(self):
+        with patch.object(briefing, '_doviz_ham', return_value='💵 **Döviz:** Dolar **40.00 ₺**'), \
+             patch.object(briefing, '_hava_ozet_veri_ham',
+                          return_value=RaporlardaBayatUyarisiTest.SAHTE_HAVA):
+            metin = briefing.sabah_brifingi_olustur(None)
+        self.assertIsInstance(metin, str)
+        self.assertIn('40.00', metin)
+        self.assertIn('Istanbul', metin)
+
+    def test_ag_yokken_brifing_cokmez(self):
+        with patch.object(briefing, '_doviz_ham', side_effect=OSError('ag yok')), \
+             patch.object(briefing, '_hava_ozet_veri_ham', side_effect=OSError('ag yok')):
+            metin = briefing.sabah_brifingi_olustur(None)
+        self.assertIn('Döviz kurları alınamadı', metin)
+
+    def test_bayat_kur_brifingde_yasiyla_gorunur(self):
+        with patch.object(briefing, '_doviz_ham', return_value='💵 **Döviz:** Dolar **40.00 ₺**'):
+            briefing._doviz()
+        with briefing._ONBELLEK_KILIDI:
+            _z, d = briefing._ONBELLEK['doviz']
+            briefing._ONBELLEK['doviz'] = (time.time() - 1800, d)
+        with patch.object(briefing, '_doviz_ham', side_effect=OSError('ag yok')), \
+             patch.object(briefing, '_hava_ozet_veri_ham', side_effect=OSError('ag yok')):
+            metin = briefing.sabah_brifingi_olustur(None)
+        self.assertIn('40.00', metin)
+        self.assertIn('ulaşılamıyor', metin)
+
+
 if __name__ == '__main__':
     unittest.main()

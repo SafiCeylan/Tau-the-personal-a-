@@ -57,7 +57,15 @@ class UltronContext:
     security_score: int = 0  # 0-100+
     security_level: str = "SAFE"  # SAFE (0-20), INFO (20-60), CONFIRM (60-80), DOUBLE_CONFIRM (80-100), FORBIDDEN (100+)
     security_message: str = ""
-    
+    # Onay kartı onaylanınca ÇALIŞTIRILACAK komut. Boşsa kullanıcının ham
+    # cümlesi çalışır (eski davranış). Ajan (core/ajan.py) riskli bir araçta
+    # durduğunda buraya o aracın kanonik komut cümlesini yazar — kullanıcının
+    # uzun serbest cümlesi confirmed_executor'ın regex'lerine uymayabilir.
+    onay_komutu: Optional[str] = None
+    # Ajanın bu turda çağırdığı araçlar: [{"arac", "metin", "durum"}] — izleme
+    # ve öğrenme kaydı için.
+    ajan_izi: List[Dict[str, Any]] = field(default_factory=list)
+
     # 7. Task Planner
     subtasks: List[str] = field(default_factory=list)
     

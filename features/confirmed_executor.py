@@ -25,6 +25,16 @@ def onayli_komut_yurut(komut: str, kanal: str = 'desktop'):
     `kanal`: komut hangi kanaldan geldiyse ('desktop' veya Telegram chat_id).
     Dosya gönderiminde "2'yi gönder" seçimi kanal başına tutulduğu için gerekli.
     """
+    # -1) Ajanın onaya bıraktığı DOĞRUDAN araç (ekrana tıklama/seçme) — bu
+    #     araçların burada metin kalıbı yok; ajan aracı ve argümanları sakladı.
+    try:
+        from core.ajan import bekleyen_araci_yurut
+        sonuc = bekleyen_araci_yurut(komut, kanal)
+        if sonuc is not None:
+            return sonuc
+    except Exception as e:
+        print(f"[Onaylı Yürütücü] Ajan aracı yürütülemedi: {e}")
+
     # 0) Dosya gönderimi mi? ("staj raporunu anneme mail at", "2'yi patrona whatsapp'tan gönder")
     #    Mesaj gönderiminden ÖNCE bakılır: ikisi de "anneme mail at" kalıbına benziyor,
     #    ama dosya planı yalnızca indekste gerçek bir dosya eşleştiyse üretilir.

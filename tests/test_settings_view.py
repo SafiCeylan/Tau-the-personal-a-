@@ -143,6 +143,28 @@ class AyarlarKaydetmeTest(unittest.TestCase):
         self.assertEqual(cfg["webhook_port"], 9300)
         self.assertEqual(cfg["webhook_token"], "bu-token-yeterince-uzundur")
 
+    def test_ajan_varsayilani_KAPALI_ve_anahtar_gizli(self):
+        """Ajan davranışı değiştirir (sohbet cevabı akmaz, araç çağırır) —
+        kullanıcı açmadan açık gelemez. Anahtar ekranda görünmemeli."""
+        from PyQt5.QtWidgets import QLineEdit
+        self.assertEqual(self.w.ajan_modu_combo.currentData(), "kapali")
+        self.assertEqual(self.w.claude_key_in.echoMode(), QLineEdit.Password)
+
+    def test_ajan_ayarlari_kaydedilir(self):
+        self.w.ajan_modu_combo.setCurrentIndex(self.w.ajan_modu_combo.findData("hibrit"))
+        self.w.claude_key_in.setText("  sk-ant-test  ")
+        self.w.claude_model_in.setText("claude-sonnet-5-5")
+        cfg = self._kaydet()
+        self.assertEqual(cfg["ajan_modu"], "hibrit")
+        self.assertEqual(cfg["claude_api_key"], "sk-ant-test")
+        self.assertEqual(cfg["claude_model"], "claude-sonnet-5-5")
+
+    def test_kayitli_ajan_modu_yansir(self):
+        cfg = dict(TEMEL_CONFIG, ajan_modu="yerel")
+        w = SettingsViewWidget(cfg)
+        self.addCleanup(w.deleteLater)
+        self.assertEqual(w.ajan_modu_combo.currentData(), "yerel")
+
     def test_bozuk_port_varsayilana_duser(self):
         """Harf girilirse çökmemeli, 8899'a düşmeli."""
         self.w.webhook_port_in.setText("port yok")

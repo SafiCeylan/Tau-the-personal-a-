@@ -153,11 +153,27 @@ class UltronCoreEngine:
         # 3. Intent Analyzer
         ctx = self.l3_intent.process(ctx)
 
+        # 3.1 SES KAPISI — mikrofondan duyulan ortam konuşması (TV, yan oda)
+        #     hiçbir araç/plan/rutin çalıştıramaz; en fazla sohbet cevabı alır.
+        #     Canlı kayıtta TV diyaloğu 18 plan ve ekrana tıklama tetikledi.
+        ortam = False
+        if input_type == "voice":
+            from features.ses_kapisi import ortam_konusmasi_mi
+            ortam = ortam_konusmasi_mi(raw_input)
+            if ortam:
+                ctx.intent = "GENERAL_CONVERSATION"
+                ctx.intent_source = "ses_kapisi"
+
         # 4. Entity Extraction
         ctx = self.l4_entity.process(ctx)
 
         # 5. Memory Context
         ctx = self.l5_memory.process(ctx)
+
+        if ortam:
+            ctx = self.l9_prompt.process(ctx)
+            ctx = self.l10_llm.process(ctx, allow_llm=allow_llm)
+            return self.l14_response.process(ctx)
 
         # 6. Security Analyzer (0-100+ Risk Rating)
         ctx = self.l6_security.process(ctx)
@@ -211,7 +227,15 @@ class UltronCoreEngine:
         # sıralama/koşul ifadesi varsa açılır ("sonra", "bulamazsan"...).
         # "chrome aç" gibi tek komutlar bu kapıdan geçmez, planner'ı görmez.
         planlandi = False
-        if self.config.get('planner_enabled', True) and cok_adimli_olabilir(ctx.normalized_input):
+        ajan_acik = self.config.get('ajan_modu', 'kapali') in ('yerel', 'hibrit')
+        if ajan_acik and cok_adimli_olabilir(ctx.normalized_input):
+            # 🤖 Ajan açıkken çok adımlı cümleyi JSON planner değil ajan yürütür:
+            # her adımın sonucunu görüp sonraki adıma karar verir. Güvenlik her
+            # araç çağrısında ayrıca uygulanır (core/ajan.py).
+            ctx, planlandi = self._ajani_calistir(ctx, cursor, conn)
+            if ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM") and ctx.onay_komutu:
+                return self.l14_response.process(ctx)
+        elif self.config.get('planner_enabled', True) and cok_adimli_olabilir(ctx.normalized_input):
             ctx, planlandi = self._plani_kur_ve_calistir(ctx, cursor, conn)
 
         if not planlandi:
@@ -242,6 +266,15 @@ class UltronCoreEngine:
             #      üstlenmediyse ve daraltma gerçekten dosya buluyorsa devral.
             if not ctx.execution_success and not ctx.execution_result:
                 ctx = self._aramayi_daralt(ctx)
+
+            # 12.8 🤖 AJAN — regex hiçbir araca bağlayamadı ("sohbet" sandı).
+            #      Eskiden burası serbest sohbetti ve kullanıcının işi hiç
+            #      yapılmıyordu (canlı kayıtta 329 sohbet turunun 314'ü başarısız).
+            if ajan_acik and not ctx.execution_success and not ctx.execution_result \
+                    and ctx.intent in ("GENERAL_CONVERSATION", "UNKNOWN"):
+                ctx, _ = self._ajani_calistir(ctx, cursor, conn)
+                if ctx.security_level in ("CONFIRM", "DOUBLE_CONFIRM") and ctx.onay_komutu:
+                    return self.l14_response.process(ctx)
 
         # Self-Reflection Check (Auto-Correction & Self-Retry on failure)
         if not ctx.execution_success and ctx.intent == "FILE_OPERATION":
@@ -359,6 +392,57 @@ class UltronCoreEngine:
         # bırakır ve cevabı LLM üretir → Ultron olmayan dosyayı anlatır.
         ctx.execution_success = kurtarma.basarili or ctx.execution_success
         return ctx
+
+    # =====================================================================
+    # AJAN (Faz 1 — core/ajan.py)
+    # =====================================================================
+    def _ajani_calistir(self, ctx, cursor, conn):
+        """Ajanı çalıştırır → (ctx, islendi).
+
+        Sağlayıcıya ulaşılamazsa ctx DEĞİŞMEDEN döner ve eski akış (sohbet)
+        devam eder — ajan, var olan davranışı asla kötüleştirmemeli."""
+        try:
+            from core.ajan import Ajan, iz_satiri
+            from features.ajan_saglayici import saglayici_sec
+            birincil, yedek = saglayici_sec(self.config)
+            if birincil is None:
+                return ctx, False
+            ajan = Ajan(birincil, self.config, db_cursor=cursor, db_conn=conn,
+                        kanal=ctx.kanal, yedek_saglayici=yedek)
+            sonuc = ajan.calistir(ctx.normalized_input or ctx.raw_input,
+                                  gecmis=ctx.recent_context, hafiza=ctx.user_memories)
+        except Exception as e:
+            print(f"[Ultron Ajan] Çalıştırılamadı: {e}")
+            return ctx, False
+
+        if sonuc.hata:
+            print(f"[Ultron Ajan] {sonuc.saglayici}: {sonuc.hata}")
+            return ctx, False
+
+        ctx.ajan_izi = sonuc.adimlar
+        ctx.intent_source = "ajan"
+        if sonuc.son_arac:
+            ctx.son_arac = sonuc.son_arac
+            ctx.son_arac_argumanlari = sonuc.son_arac_argumanlari
+            ctx.son_arac_sonucu = sonuc.son_arac_sonucu
+        if sonuc.veri:
+            ctx.entities.update(sonuc.veri)
+
+        iz = iz_satiri(sonuc)
+        if sonuc.onay_gerekli:
+            onceki = f"{sonuc.metin}\n\n" if sonuc.metin else ""
+            ctx.security_level = "CONFIRM"
+            ctx.security_message = f"{onceki}{sonuc.onay_mesaji}" + (f"\n\n{iz}" if iz else "")
+            ctx.onay_komutu = sonuc.onay_komutu
+            ctx.execution_success = False
+            ctx.execution_result = ctx.security_message
+            return ctx, True
+
+        if not sonuc.metin and not sonuc.adimlar:
+            return ctx, False
+        ctx.execution_success = True
+        ctx.execution_result = sonuc.metin + (f"\n\n{iz}" if iz else "")
+        return ctx, True
 
     def _aramayi_daralt(self, ctx):
         """
